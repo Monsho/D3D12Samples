@@ -1,10 +1,10 @@
-﻿#include <windows.h>
-#include <d3d12.h>
-#include <dxgi1_4.h>
-#include <D3Dcompiler.h>
-#include <DirectXMath.h>
+﻿#include <sl12/device.h>
+#include <sl12/swapchain.h>
+#include <sl12/command_queue.h>
+#include <sl12/command_list.h>
+#include <sl12/descriptor_heap.h>
+#include <sl12/descriptor.h>
 #include <DirectXTex.h>
-#include <array>
 
 #include "file.h"
 
@@ -14,14 +14,42 @@ namespace
 	static const wchar_t* kWindowTitle = L"D3D12Sample";
 	static const int kWindowWidth = 1920;
 	static const int kWindowHeight = 1080;
-
-	template <typename T>
-	void SafeRelease(T*& p)
-	{
-		if (p) { p->Release(); p = nullptr; }
-	}
+	//static const DXGI_FORMAT	kDepthBufferFormat = DXGI_FORMAT_R32G8X24_TYPELESS;
+	//static const DXGI_FORMAT	kDepthViewFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+	static const DXGI_FORMAT	kDepthBufferFormat = DXGI_FORMAT_R32_TYPELESS;
+	static const DXGI_FORMAT	kDepthViewFormat = DXGI_FORMAT_D32_FLOAT;
 
 	HWND	g_hWnd_;
+
+	sl12::Device		g_Device_;
+	sl12::CommandList	g_mainCmdList_;
+
+	ID3D12Resource*		g_pDepthBuffer_ = nullptr;
+	sl12::Descriptor*	g_pDepthBufferDesc_ = nullptr;
+
+	static const uint32_t kMaxCBs = 4;
+	ID3D12Resource*		g_pCBScenes_[kMaxCBs] = { nullptr };
+	void*				g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
+	sl12::Descriptor*	g_pCBSceneDescs_[kMaxCBs] = { nullptr };
+
+	ID3D12Resource*	g_pVB0_ = nullptr;
+	ID3D12Resource*	g_pVB1_ = nullptr;
+	ID3D12Resource*	g_pVB2_ = nullptr;
+	ID3D12Resource*	g_pIB_ = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW g_VB0View_, g_VB1View_, g_VB2View_;
+	D3D12_INDEX_BUFFER_VIEW g_IBView_;
+
+	ID3D12Resource*		g_pTexture_ = nullptr;
+	sl12::Descriptor*	g_pTextureDesc_ = nullptr;
+	sl12::Descriptor*	g_pSamplerDesc_ = nullptr;
+
+	File	g_VShader_, g_PShader_;
+
+	ID3D12RootSignature*	g_pRootSig_ = nullptr;
+
+	ID3D12PipelineState*	g_pPipelineWriteS_ = nullptr;
+	ID3D12PipelineState*	g_pPipelineUseS_ = nullptr;
+
 }
 
 // Window Proc
@@ -72,538 +100,9 @@ void InitWindow(HINSTANCE hInstance, int nCmdShow)
 	ShowWindow(g_hWnd_, nCmdShow);
 }
 
-class Device;
-
-class CommandQueue
-{
-	friend class CommandList;
-
-public:
-	CommandQueue()
-	{}
-	~CommandQueue()
-	{
-		Destroy();
-	}
-
-	bool Initialize(ID3D12Device* pDev, D3D12_COMMAND_LIST_TYPE type)
-	{
-		D3D12_COMMAND_QUEUE_DESC desc{};
-		desc.Type = type;
-		desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;		// GPUタイムアウトが有効
-		desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-		auto hr = pDev->CreateCommandQueue(&desc, IID_PPV_ARGS(&pQueue_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		listType_ = type;
-		return true;
-	}
-
-	void Destroy()
-	{
-		SafeRelease(pQueue_);
-	}
-
-	ID3D12CommandQueue* GetQueueDep() { return pQueue_; }
-
-private:
-	ID3D12CommandQueue*	pQueue_{ nullptr };
-	D3D12_COMMAND_LIST_TYPE listType_{ D3D12_COMMAND_LIST_TYPE_DIRECT };
-};	// class CommandQueue
-
-class CommandList
-{
-public:
-	CommandList()
-	{}
-	~CommandList()
-	{}
-
-	bool Initialize(ID3D12Device* pDev, CommandQueue* pQueue)
-	{
-		auto hr = pDev->CreateCommandAllocator(pQueue->listType_, IID_PPV_ARGS(&pCmdAllocator_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		hr = pDev->CreateCommandList(0, pQueue->listType_, pCmdAllocator_, nullptr, IID_PPV_ARGS(&pCmdList_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		pCmdList_->Close();
-
-		pParentQueue_ = pQueue;
-		return true;
-	}
-
-	void Destroy()
-	{
-		pParentQueue_ = nullptr;
-		SafeRelease(pCmdList_);
-		SafeRelease(pCmdAllocator_);
-	}
-
-	void Reset()
-	{
-		auto hr = pCmdAllocator_->Reset();
-		assert(SUCCEEDED(hr));
-
-		hr = pCmdList_->Reset(pCmdAllocator_, nullptr);
-		assert(SUCCEEDED(hr));
-	}
-
-	void Close()
-	{
-		auto hr = pCmdList_->Close();
-		assert(SUCCEEDED(hr));
-	}
-
-	void Execute()
-	{
-		ID3D12CommandList* lists[] = { pCmdList_ };
-		pParentQueue_->GetQueueDep()->ExecuteCommandLists(ARRAYSIZE(lists), lists);
-	}
-
-	// getter
-	ID3D12CommandAllocator* GetCommandAllocator() { return pCmdAllocator_; }
-	ID3D12GraphicsCommandList* GetCommandList() { return pCmdList_; };
-
-private:
-	CommandQueue*				pParentQueue_{ nullptr };
-	ID3D12CommandAllocator*		pCmdAllocator_{ nullptr };
-	ID3D12GraphicsCommandList*	pCmdList_{ nullptr };
-};	// class CommandList
-
-class Descriptor
-{
-	friend class DescriptorHeap;
-
-public:
-	Descriptor()
-	{}
-	~Descriptor()
-	{
-		Destroy();
-	}
-
-	void Destroy()
-	{}
-
-	// getter
-	D3D12_CPU_DESCRIPTOR_HANDLE	GetCpuHandle(uint32_t no = 0)
-	{
-		assert(no < numDescs_);
-		D3D12_CPU_DESCRIPTOR_HANDLE ret = cpuHandle_;
-		ret.ptr += descSize_ * no;
-		return ret;
-	}
-	D3D12_GPU_DESCRIPTOR_HANDLE	GetGpuHandle(uint32_t no = 0)
-	{
-		assert(no < numDescs_);
-		D3D12_GPU_DESCRIPTOR_HANDLE ret = gpuHandle_;
-		ret.ptr += descSize_ * no;
-		return ret;
-	}
-	uint32_t GetDescSize() const { return descSize_; }
-	uint32_t GetNumDescs() const { return numDescs_; }
-
-private:
-	D3D12_CPU_DESCRIPTOR_HANDLE	cpuHandle_{ 0 };
-	D3D12_GPU_DESCRIPTOR_HANDLE	gpuHandle_{ 0 };
-	uint32_t					descSize_{ 0 };
-	uint32_t					numDescs_{ 0 };
-};	// class Descriptor
-
-class DescriptorHeap
-{
-public:
-	DescriptorHeap()
-	{}
-	~DescriptorHeap()
-	{
-		Destroy();
-	}
-
-	bool Initialize(ID3D12Device* pDev, const D3D12_DESCRIPTOR_HEAP_DESC& desc)
-	{
-		auto hr = pDev->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pHeap_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		heapDesc_ = desc;
-		descSize_ = pDev->GetDescriptorHandleIncrementSize(desc.Type);
-
-		return true;
-	}
-
-	void Destroy()
-	{
-		SafeRelease(pHeap_);
-	}
-
-	Descriptor CreateDescriptor(uint32_t index, uint32_t num)
-	{
-		assert(heapDesc_.NumDescriptors >= index + num);
-
-		Descriptor ret;
-		ret.cpuHandle_ = pHeap_->GetCPUDescriptorHandleForHeapStart();
-		ret.gpuHandle_ = pHeap_->GetGPUDescriptorHandleForHeapStart();
-		ret.cpuHandle_.ptr += descSize_ * index;
-		ret.gpuHandle_.ptr += descSize_ * index;
-		ret.descSize_ = descSize_;
-		ret.numDescs_ = num;
-
-		return ret;
-	}
-
-	// getter
-	ID3D12DescriptorHeap* GetHeap() { return pHeap_; }
-
-private:
-	ID3D12DescriptorHeap*		pHeap_{ nullptr };
-	D3D12_DESCRIPTOR_HEAP_DESC	heapDesc_{};
-	uint32_t					descSize_{ 0 };
-};	// class DescriptorHeap
-
-class Swapchain
-{
-public:
-	static const uint32_t	kMaxBuffer = 2;
-
-public:
-	Swapchain()
-	{}
-	~Swapchain()
-	{
-		Destroy();
-	}
-
-	bool Initialize(IDXGIFactory4* pFactory, ID3D12Device* pDev, CommandQueue* pQueue, HWND hWnd, uint32_t width, uint32_t height, DXGI_FORMAT format)
-	{
-		{
-			DXGI_SWAP_CHAIN_DESC desc = {};
-			desc.BufferCount = 2;			// フレームバッファとバックバッファで2枚
-			desc.BufferDesc.Width = width;
-			desc.BufferDesc.Height = height;
-			desc.BufferDesc.Format = format;
-			desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-			desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-			desc.OutputWindow = hWnd;
-			desc.SampleDesc.Count = 1;
-			desc.Windowed = true;
-
-			IDXGISwapChain* pSwap;
-			auto hr = pFactory->CreateSwapChain(pQueue->GetQueueDep(), &desc, &pSwap);
-			if (FAILED(hr))
-			{
-				return false;
-			}
-
-			hr = pSwap->QueryInterface(IID_PPV_ARGS(&pSwapchain_));
-			if (FAILED(hr))
-			{
-				return false;
-			}
-
-			frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
-
-			pSwap->Release();
-		}
-
-		// スワップチェインをRenderTargetとして使用するためのDescriptorHeapを作成
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-			desc.NumDescriptors = kMaxBuffer;
-			desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;		// RenderTargetView
-			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;	// シェーダからアクセスしないのでNONEでOK
-
-			if (!descHeap_.Initialize(pDev, desc))
-			{
-				return false;
-			}
-
-			rtvDescs_ = descHeap_.CreateDescriptor(0, kMaxBuffer);
-		}
-
-		// スワップチェインのバッファを先に作成したDescriptorHeapに登録する
-		{
-			for (int i = 0; i < kMaxBuffer; i++)
-			{
-				auto hr = pSwapchain_->GetBuffer(i, IID_PPV_ARGS(&pRenderTargets_[i]));
-				if (FAILED(hr))
-				{
-					return false;
-				}
-
-				pDev->CreateRenderTargetView(pRenderTargets_[i], nullptr, rtvDescs_.GetCpuHandle(i));
-			}
-		}
-
-		return true;
-	}
-
-	void Destroy()
-	{
-		for (auto rtv : pRenderTargets_)
-		{
-			SafeRelease(rtv);
-		}
-		memset(pRenderTargets_, 0, sizeof(pRenderTargets_));
-		rtvDescs_.Destroy();
-		descHeap_.Destroy();
-		SafeRelease(pSwapchain_);
-	}
-
-	void Present()
-	{
-		pSwapchain_->Present(1, 0);
-		frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
-	}
-
-	// getter
-	ID3D12Resource* GetCurrentRenderTarget() { return pRenderTargets_[frameIndex_]; }
-	D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentDescHandle()
-	{
-		return rtvDescs_.GetCpuHandle(frameIndex_);
-	}
-	int32_t GetFrameIndex() const { return frameIndex_; }
-
-private:
-	IDXGISwapChain3*		pSwapchain_{ nullptr };
-	DescriptorHeap			descHeap_{};
-	Descriptor				rtvDescs_{};
-	ID3D12Resource*			pRenderTargets_[kMaxBuffer]{ nullptr };
-	int32_t					frameIndex_{ 0 };
-};	// class Swapchain
-
-class Device
-{
-public:
-	Device()
-	{}
-	~Device()
-	{
-		Destroy();
-	}
-
-	bool Initialize(HWND hWnd, uint32_t screenWidth, uint32_t screenHeight)
-	{
-		uint32_t factoryFlags = 0;
-#ifdef _DEBUG
-		// デバッグレイヤーの有効化
-		{
-			ID3D12Debug* debugController;
-			if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
-			{
-				debugController->EnableDebugLayer();
-				debugController->Release();
-			}
-		}
-
-		// ファクトリをデバッグモードで作成する
-		factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
-#endif
-		// ファクトリの生成
-		auto hr = CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&pFactory_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// アダプタを取得する
-		IDXGIAdapter1* pAdapter{ nullptr };
-		hr = pFactory_->EnumAdapters1(0, &pAdapter);
-		if (FAILED(hr))
-		{
-			// 取得できない場合はWarpアダプタを取得
-			SafeRelease(pAdapter);
-
-			hr = pFactory_->EnumWarpAdapter(IID_PPV_ARGS(&pAdapter));
-			if (FAILED(hr))
-			{
-				SafeRelease(pAdapter);
-				return false;
-			}
-		}
-		hr = pAdapter->QueryInterface(IID_PPV_ARGS(&pAdapter_));
-		SafeRelease(pAdapter);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// ディスプレイを取得する
-		IDXGIOutput* pOutput{ nullptr };
-		hr = pAdapter_->EnumOutputs(0, &pOutput);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		hr = pOutput->QueryInterface(IID_PPV_ARGS(&pOutput_));
-		SafeRelease(pOutput);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// デバイスの生成
-		hr = D3D12CreateDevice(pAdapter_, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&pDevice_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// Queueの作成
-		if (!graphicsQueue_.Initialize(pDevice_, D3D12_COMMAND_LIST_TYPE_DIRECT))
-		{
-			return false;
-		}
-		if (!computeQueue_.Initialize(pDevice_, D3D12_COMMAND_LIST_TYPE_COMPUTE))
-		{
-			return false;
-		}
-		if (!copyQueue_.Initialize(pDevice_, D3D12_COMMAND_LIST_TYPE_COPY))
-		{
-			return false;
-		}
-
-		// Swapchainの作成
-		if (!swapchain_.Initialize(pFactory_, pDevice_, &graphicsQueue_, hWnd, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM))
-		{
-			return false;
-		}
-
-		// Fenceの作成
-		hr = pDevice_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&pFence_));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-		fenceValue_ = 1;
-
-		fenceEvent_ = CreateEventEx(nullptr, FALSE, FALSE, EVENT_ALL_ACCESS);
-		if (fenceEvent_ == nullptr)
-		{
-			return false;
-		}
-
-		return true;
-	}
-
-	void Destroy()
-	{
-		SafeRelease(pFence_);
-
-		swapchain_.Destroy();
-
-		graphicsQueue_.Destroy();
-		computeQueue_.Destroy();
-		copyQueue_.Destroy();
-
-		SafeRelease(pDevice_);
-		SafeRelease(pOutput_);
-		SafeRelease(pAdapter_);
-		SafeRelease(pFactory_);
-	}
-
-	void Present()
-	{
-		swapchain_.Present();
-	}
-
-	void WaitDrawDone()
-	{
-		// 現在のFence値がコマンド終了後にFenceに書き込まれるようにする
-		UINT64 fvalue = fenceValue_;
-		graphicsQueue_.GetQueueDep()->Signal(pFence_, fvalue);
-		fenceValue_++;
-
-		// まだコマンドキューが終了していないことを確認する
-		// ここまででコマンドキューが終了してしまうとイベントが一切発火されなくなるのでチェックしている
-		if (pFence_->GetCompletedValue() < fvalue)
-		{
-			// このFenceにおいて、fvalue の値になったらイベントを発火させる
-			pFence_->SetEventOnCompletion(fvalue, fenceEvent_);
-			// イベントが発火するまで待つ
-			WaitForSingleObject(fenceEvent_, INFINITE);
-		}
-	}
-
-	// getter
-	ID3D12Device* GetDevice() { return pDevice_; }
-	CommandQueue& GetGraphicsQueue() { return graphicsQueue_; }
-	CommandQueue& GetComputeQueue() { return computeQueue_; }
-	CommandQueue& GetCopyQueue() { return copyQueue_; }
-	Swapchain&	  GetSwapchain() { return swapchain_; }
-	int32_t       GetFrameIndex() const { return swapchain_.GetFrameIndex(); }
-
-private:
-	IDXGIFactory4*	pFactory_{ nullptr };
-	IDXGIAdapter3*	pAdapter_{ nullptr };
-	IDXGIOutput4*	pOutput_{ nullptr };
-	ID3D12Device*	pDevice_{ nullptr };
-
-	CommandQueue	graphicsQueue_;
-	CommandQueue	computeQueue_;
-	CommandQueue	copyQueue_;
-
-	Swapchain		swapchain_;
-
-	ID3D12Fence*	pFence_{ nullptr };
-	uint32_t		fenceValue_{ 0 };
-	HANDLE			fenceEvent_{ nullptr };
-};	// class Device
-
-namespace
-{
-	//static const DXGI_FORMAT	kDepthBufferFormat = DXGI_FORMAT_R32G8X24_TYPELESS;
-	//static const DXGI_FORMAT	kDepthViewFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-	static const DXGI_FORMAT	kDepthBufferFormat = DXGI_FORMAT_R32_TYPELESS;
-	static const DXGI_FORMAT	kDepthViewFormat = DXGI_FORMAT_D32_FLOAT;
-
-	Device			g_Device_;
-	CommandList		g_mainCmdList_;
-	DescriptorHeap	g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
-
-	ID3D12Resource*	g_pDepthBuffer_ = nullptr;
-	Descriptor		g_DepthBufferDesc_;
-
-	static const uint32_t kMaxCBs = 4;
-	ID3D12Resource*	g_pCBScenes_[kMaxCBs] = { nullptr };
-	void*			g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
-	Descriptor		g_CBSceneDescs_[kMaxCBs];
-
-	ID3D12Resource*	g_pVB0_ = nullptr;
-	ID3D12Resource*	g_pVB1_ = nullptr;
-	ID3D12Resource*	g_pVB2_ = nullptr;
-	ID3D12Resource*	g_pIB_ = nullptr;
-	D3D12_VERTEX_BUFFER_VIEW g_VB0View_, g_VB1View_, g_VB2View_;
-	D3D12_INDEX_BUFFER_VIEW g_IBView_;
-
-	ID3D12Resource* g_pTexture_ = nullptr;
-	Descriptor		g_TextureDesc_;
-	Descriptor		g_SamplerDesc_;
-
-	File	g_VShader_, g_PShader_;
-
-	ID3D12RootSignature*	g_pRootSig_ = nullptr;
-
-	ID3D12PipelineState*	g_pPipelineWriteS_ = nullptr;
-	ID3D12PipelineState*	g_pPipelineUseS_ = nullptr;
-}
-
 bool InitializeAssets()
 {
-	ID3D12Device* pDev = g_Device_.GetDevice();
+	ID3D12Device* pDev = g_Device_.GetDeviceDep();
 
 	// 深度バッファを作成
 	{
@@ -640,14 +139,18 @@ bool InitializeAssets()
 			return false;
 		}
 
-		g_DepthBufferDesc_ = g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].CreateDescriptor(0, 1);
+		g_pDepthBufferDesc_ = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_DSV).CreateDescriptor();
+		if (!g_pDepthBufferDesc_)
+		{
+			return false;
+		}
 
 		D3D12_DEPTH_STENCIL_VIEW_DESC viewDesc{};
 		viewDesc.Format = kDepthViewFormat;
 		viewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 		viewDesc.Texture2D.MipSlice = 0;
 
-		pDev->CreateDepthStencilView(g_pDepthBuffer_, &viewDesc, g_DepthBufferDesc_.GetCpuHandle());
+		pDev->CreateDepthStencilView(g_pDepthBuffer_, &viewDesc, g_pDepthBufferDesc_->GetCpuHandle());
 	}
 
 	// 定数バッファを作成
@@ -680,12 +183,16 @@ bool InitializeAssets()
 				return false;
 			}
 
-			g_CBSceneDescs_[i] = g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].CreateDescriptor(i, 1);
+			g_pCBSceneDescs_[i] = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).CreateDescriptor();
+			if (!g_pCBSceneDescs_[i])
+			{
+				return false;
+			}
 
 			D3D12_CONSTANT_BUFFER_VIEW_DESC viewDesc{};
 			viewDesc.BufferLocation = g_pCBScenes_[i]->GetGPUVirtualAddress();
 			viewDesc.SizeInBytes = 256;
-			pDev->CreateConstantBufferView(&viewDesc, g_CBSceneDescs_[i].GetCpuHandle());
+			pDev->CreateConstantBufferView(&viewDesc, g_pCBSceneDescs_[i]->GetCpuHandle());
 
 			g_pCBScenes_[i]->Map(0, nullptr, &g_pCBSceneBuffers_[i]);
 		}
@@ -954,10 +461,14 @@ bool InitializeAssets()
 			g_mainCmdList_.Execute();
 			g_Device_.WaitDrawDone();
 
-			SafeRelease(pSrcImage);
+			sl12::SafeRelease(pSrcImage);
 		}
 
-		g_TextureDesc_ = g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].CreateDescriptor(10, 1);
+		g_pTextureDesc_ = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).CreateDescriptor();
+		if (!g_pTextureDesc_)
+		{
+			return false;
+		}
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
 		viewDesc.Format = image.GetMetadata().format;
@@ -967,18 +478,18 @@ bool InitializeAssets()
 		viewDesc.Texture2D.MostDetailedMip = 0;
 		viewDesc.Texture2D.PlaneSlice = 0;
 		viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-		pDev->CreateShaderResourceView(g_pTexture_, &viewDesc, g_TextureDesc_.GetCpuHandle());
+		pDev->CreateShaderResourceView(g_pTexture_, &viewDesc, g_pTextureDesc_->GetCpuHandle());
 	}
 	// サンプラ作成
 	{
-		g_SamplerDesc_ = g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER].CreateDescriptor(0, 1);
+		g_pSamplerDesc_ = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).CreateDescriptor();
 
 		D3D12_SAMPLER_DESC desc{};
 		desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
 		desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		pDev->CreateSampler(&desc, g_SamplerDesc_.GetCpuHandle());
+		pDev->CreateSampler(&desc, g_pSamplerDesc_->GetCpuHandle());
 	}
 
 	// シェーダロード
@@ -1041,14 +552,14 @@ bool InitializeAssets()
 		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
 		if (FAILED(hr))
 		{
-			SafeRelease(pSignature);
-			SafeRelease(pError);
+			sl12::SafeRelease(pSignature);
+			sl12::SafeRelease(pError);
 			return false;
 		}
 
 		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSig_));
-		SafeRelease(pSignature);
-		SafeRelease(pError);
+		sl12::SafeRelease(pSignature);
+		sl12::SafeRelease(pError);
 		if (FAILED(hr))
 		{
 			return false;
@@ -1151,32 +662,35 @@ bool InitializeAssets()
 
 void DestroyAssets()
 {
-	SafeRelease(g_pPipelineWriteS_);
-	SafeRelease(g_pPipelineUseS_);
+	sl12::SafeRelease(g_pPipelineWriteS_);
+	sl12::SafeRelease(g_pPipelineUseS_);
 
-	SafeRelease(g_pRootSig_);
+	sl12::SafeRelease(g_pRootSig_);
 
 	g_VShader_.Destroy();
 	g_PShader_.Destroy();
 
-	g_SamplerDesc_.Destroy();
-	g_TextureDesc_.Destroy();
-	SafeRelease(g_pTexture_);
+	sl12::SafeRelease(g_pSamplerDesc_);
+	sl12::SafeRelease(g_pTextureDesc_);
+	sl12::SafeRelease(g_pTexture_);
 
-	SafeRelease(g_pVB0_);
-	SafeRelease(g_pVB1_);
-	SafeRelease(g_pVB2_);
-	SafeRelease(g_pIB_);
+	sl12::SafeRelease(g_pVB0_);
+	sl12::SafeRelease(g_pVB1_);
+	sl12::SafeRelease(g_pVB2_);
+	sl12::SafeRelease(g_pIB_);
 
-	for (auto& v : g_CBSceneDescs_) v.Destroy();
+	for (auto& v : g_pCBSceneDescs_)
+	{
+		sl12::SafeRelease(v);
+	}
 	for (auto& v : g_pCBScenes_)
 	{
 		v->Unmap(0, nullptr);
-		SafeRelease(v);
+		sl12::SafeRelease(v);
 	}
 
-	g_DepthBufferDesc_.Destroy();
-	SafeRelease(g_pDepthBuffer_);
+	sl12::SafeRelease(g_pDepthBufferDesc_);
+	sl12::SafeRelease(g_pDepthBuffer_);
 }
 
 void RenderScene()
@@ -1185,7 +699,7 @@ void RenderScene()
 
 	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget();
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle();
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferDesc_.GetCpuHandle();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_pDepthBufferDesc_->GetCpuHandle();
 	ID3D12GraphicsCommandList* pCmdList = g_mainCmdList_.GetCommandList();
 
 	{
@@ -1202,7 +716,7 @@ void RenderScene()
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
 	pCmdList->ClearRenderTargetView(rtvHandle, kClearColor, 0, nullptr);
-	pCmdList->ClearDepthStencilView(g_DepthBufferDesc_.GetCpuHandle(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	pCmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
 	// レンダーターゲット設定
 	pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
@@ -1214,9 +728,9 @@ void RenderScene()
 	pCmdList->RSSetScissorRects(1, &scissor);
 
 	// Scene定数バッファを更新
-	int32_t frameIndex = g_Device_.GetFrameIndex();
-	Descriptor& cbSceneDesc0 = g_CBSceneDescs_[frameIndex];
-	Descriptor& cbSceneDesc1 = g_CBSceneDescs_[frameIndex + 2];
+	int32_t frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
+	sl12::Descriptor& cbSceneDesc0 = *g_pCBSceneDescs_[frameIndex];
+	sl12::Descriptor& cbSceneDesc1 = *g_pCBSceneDescs_[frameIndex + 2];
 	{
 		static float sAngle = 0.0f;
 		void* p0 = g_pCBSceneBuffers_[frameIndex];
@@ -1250,13 +764,13 @@ void RenderScene()
 
 		// DescriptorHeapを設定
 		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].GetHeap(),
-			g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER].GetHeap()
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
 		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc0.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_TextureDesc_.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_SamplerDesc_.GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(1, g_pTextureDesc_->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(2, g_pSamplerDesc_->GetGpuHandle());
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { g_VB0View_, g_VB1View_, g_VB2View_ };
@@ -1276,13 +790,13 @@ void RenderScene()
 
 		// DescriptorHeapを設定
 		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].GetHeap(),
-			g_DescHeaps_[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER].GetHeap()
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
 		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc1.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_TextureDesc_.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_SamplerDesc_.GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(1, g_pTextureDesc_->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(2, g_pSamplerDesc_->GetGpuHandle());
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { g_VB0View_, g_VB1View_, g_VB2View_ };
@@ -1311,25 +825,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
 	InitWindow(hInstance, nCmdShow);
 
-	auto ret = g_Device_.Initialize(g_hWnd_, kWindowWidth, kWindowHeight);
+	std::array<uint32_t, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> kDescNums
+	{ 100, 100, 20, 10 };
+	auto ret = g_Device_.Initialize(g_hWnd_, kWindowWidth, kWindowHeight, kDescNums);
 	assert(ret);
-	ret = g_mainCmdList_.Initialize(g_Device_.GetDevice(), &g_Device_.GetGraphicsQueue());
+	ret = g_mainCmdList_.Initialize(&g_Device_, &g_Device_.GetGraphicsQueue());
 	assert(ret);
-	{
-		std::array<uint32_t, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> kDescNums
-		{ 100, 100, 20, 10 };
-		std::array<D3D12_DESCRIPTOR_HEAP_FLAGS, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> kFlags
-		{ D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_FLAG_NONE };
-		for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i++)
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-			desc.NumDescriptors = kDescNums[i];
-			desc.Type = (D3D12_DESCRIPTOR_HEAP_TYPE)i;
-			desc.Flags = kFlags[i];
-			ret = g_DescHeaps_[i].Initialize(g_Device_.GetDevice(), desc);
-			assert(ret);
-		}
-	}
 	ret = InitializeAssets();
 	assert(ret);
 
@@ -1354,10 +855,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
 	g_Device_.WaitDrawDone();
 	DestroyAssets();
-	for (auto& dh : g_DescHeaps_)
-	{
-		dh.Destroy();
-	}
 	g_mainCmdList_.Destroy();
 	g_Device_.Destroy();
 
