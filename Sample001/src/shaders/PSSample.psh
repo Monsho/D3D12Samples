@@ -2,9 +2,14 @@ struct PSInput
 {
 	float4	position	: SV_POSITION;
 	float4	color		: COLOR;
+	float2	uv			: TEXCOORD0;
 };
+
+Texture2D<float4>	texColor	: register(t0);
+SamplerState		samLinear	: register(s0);
 
 float4 main(PSInput In) : SV_TARGET0
 {
-	return In.color;
+	//return In.color;
+	return texColor.Sample(samLinear, In.uv) * In.color;
 }
