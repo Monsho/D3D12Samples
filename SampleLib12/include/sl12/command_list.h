@@ -14,7 +14,9 @@ namespace sl12
 		CommandList()
 		{}
 		~CommandList()
-		{}
+		{
+			Destroy();
+		}
 
 		bool Initialize(Device* pDev, CommandQueue* pQueue);
 		void Destroy();
@@ -26,6 +28,7 @@ namespace sl12
 		void Execute();
 
 		// getter
+		CommandQueue* GetParentQueue() { return pParentQueue_; }
 		ID3D12CommandAllocator* GetCommandAllocator() { return pCmdAllocator_; }
 		ID3D12GraphicsCommandList* GetCommandList() { return pCmdList_; };
 

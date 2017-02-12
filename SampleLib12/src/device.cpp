@@ -144,6 +144,7 @@ namespace sl12
 	//----
 	void Device::Destroy()
 	{
+		//CloseHandle(fenceEvent_);
 		SafeRelease(pFence_);
 
 		SafeDelete(pSwapchain_);

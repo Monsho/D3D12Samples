@@ -8,7 +8,6 @@ namespace sl12
 	//----
 	void Descriptor::Destroy()
 	{
-		assert(pParentHeap_ == nullptr);
 	}
 
 	//----
@@ -17,7 +16,6 @@ namespace sl12
 		if (!pParentHeap_)
 		{
 			pParentHeap_->ReleaseDescriptor(this);
-			pParentHeap_ = nullptr;
 		}
 	}
 

@@ -4,6 +4,12 @@
 #include <sl12/command_list.h>
 #include <sl12/descriptor_heap.h>
 #include <sl12/descriptor.h>
+#include <sl12/texture.h>
+#include <sl12/texture_view.h>
+#include <sl12/sampler.h>
+#include <sl12/fence.h>
+#include <sl12/buffer.h>
+#include <sl12/buffer_view.h>
 #include <DirectXTex.h>
 
 #include "file.h"
@@ -23,25 +29,29 @@ namespace
 
 	sl12::Device		g_Device_;
 	sl12::CommandList	g_mainCmdList_;
+	sl12::CommandList	g_copyCmdList_;
 
-	ID3D12Resource*		g_pDepthBuffer_ = nullptr;
-	sl12::Descriptor*	g_pDepthBufferDesc_ = nullptr;
+	sl12::Texture			g_RenderTarget_;
+	sl12::RenderTargetView	g_RenderTargetView_;
+	sl12::TextureView		g_RenderTargetTexView_;
 
-	static const uint32_t kMaxCBs = 4;
-	ID3D12Resource*		g_pCBScenes_[kMaxCBs] = { nullptr };
-	void*				g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
-	sl12::Descriptor*	g_pCBSceneDescs_[kMaxCBs] = { nullptr };
+	sl12::Texture			g_DepthBuffer_;
+	sl12::DepthStencilView	g_DepthBufferView_;
 
-	ID3D12Resource*	g_pVB0_ = nullptr;
-	ID3D12Resource*	g_pVB1_ = nullptr;
-	ID3D12Resource*	g_pVB2_ = nullptr;
-	ID3D12Resource*	g_pIB_ = nullptr;
-	D3D12_VERTEX_BUFFER_VIEW g_VB0View_, g_VB1View_, g_VB2View_;
-	D3D12_INDEX_BUFFER_VIEW g_IBView_;
+	static const uint32_t		kMaxCBs = 4;
+	sl12::Buffer				g_CBScenes_[kMaxCBs];
+	void*						g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
+	sl12::ConstantBufferView	g_CBSceneViews_[kMaxCBs];
 
-	ID3D12Resource*		g_pTexture_ = nullptr;
-	sl12::Descriptor*	g_pTextureDesc_ = nullptr;
-	sl12::Descriptor*	g_pSamplerDesc_ = nullptr;
+	sl12::Buffer			g_vbuffers_[3];
+	sl12::VertexBufferView	g_vbufferViews_[3];
+
+	sl12::Buffer			g_ibuffer_;
+	sl12::IndexBufferView	g_ibufferView_;
+
+	sl12::Texture			g_texture_;
+	sl12::TextureView		g_textureView_;
+	sl12::Sampler			g_sampler_;
 
 	File	g_VShader_, g_PShader_;
 
@@ -104,53 +114,61 @@ bool InitializeAssets()
 {
 	ID3D12Device* pDev = g_Device_.GetDeviceDep();
 
+	// レンダーターゲットを作成
+	{
+		sl12::TextureDesc texDesc{
+			sl12::TextureDimension::Texture2D,
+			kWindowWidth,
+			kWindowHeight,
+			1,
+			1,
+			DXGI_FORMAT_R16G16B16A16_FLOAT,
+			1,
+			{0.0f, 0.6f, 0.0f, 1.0f}, 1.0f, 0,
+			true,
+			false,
+			false
+		};
+		if (!g_RenderTarget_.Initialize(&g_Device_, texDesc))
+		{
+			return false;
+		}
+
+		if (!g_RenderTargetView_.Initialize(&g_Device_, &g_RenderTarget_))
+		{
+			return false;
+		}
+
+		if (!g_RenderTargetTexView_.Initialize(&g_Device_, &g_RenderTarget_))
+		{
+			return false;
+		}
+	}
+
 	// 深度バッファを作成
 	{
-		D3D12_HEAP_PROPERTIES prop{};
-		prop.Type = D3D12_HEAP_TYPE_DEFAULT;
-		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-		prop.CreationNodeMask = 1;
-		prop.VisibleNodeMask = 1;
-
-		D3D12_RESOURCE_DESC desc{};
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		desc.Width = kWindowWidth;
-		desc.Height = kWindowHeight;
-		desc.DepthOrArraySize = 1;
-		desc.MipLevels = 1;
-		desc.Format = kDepthBufferFormat;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-		D3D12_RESOURCE_STATES initState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-		D3D12_HEAP_FLAGS flags = D3D12_HEAP_FLAG_NONE;
-
-		D3D12_CLEAR_VALUE clearValue{};
-		clearValue.Format = kDepthViewFormat;
-		clearValue.DepthStencil.Depth = 1.0f;
-		clearValue.DepthStencil.Stencil = 0;
-
-		auto hr = pDev->CreateCommittedResource(&prop, flags, &desc, initState, &clearValue, IID_PPV_ARGS(&g_pDepthBuffer_));
-		if (FAILED(hr))
+		sl12::TextureDesc texDesc{
+			sl12::TextureDimension::Texture2D,
+			kWindowWidth,
+			kWindowHeight,
+			1,
+			1,
+			kDepthViewFormat,
+			1,
+			{ 0.0f, 0.0f, 0.0f, 0.0f }, 1.0f, 0,
+			false,
+			true,
+			false
+		};
+		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
 		{
 			return false;
 		}
 
-		g_pDepthBufferDesc_ = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_DSV).CreateDescriptor();
-		if (!g_pDepthBufferDesc_)
+		if (!g_DepthBufferView_.Initialize(&g_Device_, &g_DepthBuffer_))
 		{
 			return false;
 		}
-
-		D3D12_DEPTH_STENCIL_VIEW_DESC viewDesc{};
-		viewDesc.Format = kDepthViewFormat;
-		viewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-		viewDesc.Texture2D.MipSlice = 0;
-
-		pDev->CreateDepthStencilView(g_pDepthBuffer_, &viewDesc, g_pDepthBufferDesc_->GetCpuHandle());
 	}
 
 	// 定数バッファを作成
@@ -175,26 +193,19 @@ bool InitializeAssets()
 		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-		for (int i = 0; i < _countof(g_pCBScenes_); i++)
+		for (int i = 0; i < _countof(g_CBScenes_); i++)
 		{
-			auto hr = pDev->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_pCBScenes_[i]));
-			if (FAILED(hr))
+			if (!g_CBScenes_[i].Initialize(&g_Device_, sizeof(DirectX::XMFLOAT4X4) * 3, 1, sl12::BufferUsage::ConstantBuffer, true))
 			{
 				return false;
 			}
 
-			g_pCBSceneDescs_[i] = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).CreateDescriptor();
-			if (!g_pCBSceneDescs_[i])
+			if (!g_CBSceneViews_[i].Initialize(&g_Device_, &g_CBScenes_[i]))
 			{
 				return false;
 			}
 
-			D3D12_CONSTANT_BUFFER_VIEW_DESC viewDesc{};
-			viewDesc.BufferLocation = g_pCBScenes_[i]->GetGPUVirtualAddress();
-			viewDesc.SizeInBytes = 256;
-			pDev->CreateConstantBufferView(&viewDesc, g_pCBSceneDescs_[i]->GetCpuHandle());
-
-			g_pCBScenes_[i]->Map(0, nullptr, &g_pCBSceneBuffers_[i]);
+			g_pCBSceneBuffers_[i] = g_CBScenes_[i].Map(&g_mainCmdList_);
 		}
 	}
 
@@ -203,95 +214,37 @@ bool InitializeAssets()
 		{
 			float positions[] = {
 				-1.0f,  1.0f, 0.0f,
-				 1.0f,  1.0f, 0.0f,
+				1.0f,  1.0f, 0.0f,
 				-1.0f, -1.0f, 0.0f,
-				 1.0f, -1.0f, 0.0f,
+				1.0f, -1.0f, 0.0f,
 			};
 
-			D3D12_HEAP_PROPERTIES prop{};
-			prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-			prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-			prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-			prop.CreationNodeMask = 1;
-			prop.VisibleNodeMask = 1;
-
-			D3D12_RESOURCE_DESC desc{};
-			desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-			desc.Alignment = 0;
-			desc.Width = sizeof(positions);
-			desc.Height = 1;
-			desc.DepthOrArraySize = 1;
-			desc.MipLevels = 1;
-			desc.Format = DXGI_FORMAT_UNKNOWN;
-			desc.SampleDesc.Count = 1;
-			desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-			desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-			auto hr = pDev->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_pVB0_));
-			if (FAILED(hr))
+			if (!g_vbuffers_[0].Initialize(&g_Device_, sizeof(positions), sizeof(float) * 3, sl12::BufferUsage::VertexBuffer, false))
+			{
+				return false;
+			}
+			if (!g_vbufferViews_[0].Initialize(&g_Device_, &g_vbuffers_[0]))
 			{
 				return false;
 			}
 
-			// バッファにコピー
-			UINT8* p;
-			hr = g_pVB0_->Map(0, nullptr, reinterpret_cast<void**>(&p));
-			if (FAILED(hr))
-			{
-				return false;
-			}
-			memcpy(p, positions, sizeof(positions));
-			g_pVB0_->Unmap(0, nullptr);
-
-			// Viewの初期化
-			g_VB0View_.BufferLocation = g_pVB0_->GetGPUVirtualAddress();
-			g_VB0View_.SizeInBytes = sizeof(positions);
-			g_VB0View_.StrideInBytes = sizeof(float) * 3;
+			g_vbuffers_[0].UpdateBuffer(&g_Device_, &g_copyCmdList_, positions, sizeof(positions));
 		}
 		{
 			uint32_t colors[] = {
 				0xff0000ff, 0xff00ff00, 0xffff0000, 0xffffffff
 			};
 
-			D3D12_HEAP_PROPERTIES prop{};
-			prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-			prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-			prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-			prop.CreationNodeMask = 1;
-			prop.VisibleNodeMask = 1;
-
-			D3D12_RESOURCE_DESC desc{};
-			desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-			desc.Alignment = 0;
-			desc.Width = sizeof(colors);
-			desc.Height = 1;
-			desc.DepthOrArraySize = 1;
-			desc.MipLevels = 1;
-			desc.Format = DXGI_FORMAT_UNKNOWN;
-			desc.SampleDesc.Count = 1;
-			desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-			desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-			auto hr = pDev->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_pVB1_));
-			if (FAILED(hr))
+			if (!g_vbuffers_[1].Initialize(&g_Device_, sizeof(colors), sizeof(sl12::u32), sl12::BufferUsage::VertexBuffer, false))
+			{
+				return false;
+			}
+			if (!g_vbufferViews_[1].Initialize(&g_Device_, &g_vbuffers_[1]))
 			{
 				return false;
 			}
 
-			// バッファにコピー
-			UINT8* p;
-			hr = g_pVB1_->Map(0, nullptr, reinterpret_cast<void**>(&p));
-			if (FAILED(hr))
-			{
-				return false;
-			}
-			memcpy(p, colors, sizeof(colors));
-			g_pVB1_->Unmap(0, nullptr);
-
-			// Viewの初期化
-			g_VB1View_.BufferLocation = g_pVB1_->GetGPUVirtualAddress();
-			g_VB1View_.SizeInBytes = sizeof(colors);
-			g_VB1View_.StrideInBytes = sizeof(uint32_t);
+			g_vbuffers_[1].UpdateBuffer(&g_Device_, &g_copyCmdList_, colors, sizeof(colors));
 		}
 		{
 			float uvs[] = {
@@ -301,45 +254,16 @@ bool InitializeAssets()
 				1.0f, 1.0f
 			};
 
-			D3D12_HEAP_PROPERTIES prop{};
-			prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-			prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-			prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-			prop.CreationNodeMask = 1;
-			prop.VisibleNodeMask = 1;
-
-			D3D12_RESOURCE_DESC desc{};
-			desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-			desc.Alignment = 0;
-			desc.Width = sizeof(uvs);
-			desc.Height = 1;
-			desc.DepthOrArraySize = 1;
-			desc.MipLevels = 1;
-			desc.Format = DXGI_FORMAT_UNKNOWN;
-			desc.SampleDesc.Count = 1;
-			desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-			desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-			auto hr = pDev->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_pVB2_));
-			if (FAILED(hr))
+			if (!g_vbuffers_[2].Initialize(&g_Device_, sizeof(uvs), sizeof(float) * 2, sl12::BufferUsage::VertexBuffer, false))
+			{
+				return false;
+			}
+			if (!g_vbufferViews_[2].Initialize(&g_Device_, &g_vbuffers_[2]))
 			{
 				return false;
 			}
 
-			// バッファにコピー
-			UINT8* p;
-			hr = g_pVB2_->Map(0, nullptr, reinterpret_cast<void**>(&p));
-			if (FAILED(hr))
-			{
-				return false;
-			}
-			memcpy(p, uvs, sizeof(uvs));
-			g_pVB2_->Unmap(0, nullptr);
-
-			// Viewの初期化
-			g_VB2View_.BufferLocation = g_pVB2_->GetGPUVirtualAddress();
-			g_VB2View_.SizeInBytes = sizeof(uvs);
-			g_VB2View_.StrideInBytes = sizeof(float) * 2;
+			g_vbuffers_[2].UpdateBuffer(&g_Device_, &g_copyCmdList_, uvs, sizeof(uvs));
 		}
 	}
 	// インデックスバッファを作成
@@ -348,148 +272,42 @@ bool InitializeAssets()
 			0, 1, 2, 1, 3, 2
 		};
 
-		D3D12_HEAP_PROPERTIES prop{};
-		prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-		prop.CreationNodeMask = 1;
-		prop.VisibleNodeMask = 1;
-
-		D3D12_RESOURCE_DESC desc{};
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		desc.Alignment = 0;
-		desc.Width = sizeof(indices);
-		desc.Height = 1;
-		desc.DepthOrArraySize = 1;
-		desc.MipLevels = 1;
-		desc.Format = DXGI_FORMAT_UNKNOWN;
-		desc.SampleDesc.Count = 1;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		auto hr = pDev->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&g_pIB_));
-		if (FAILED(hr))
+		if (!g_ibuffer_.Initialize(&g_Device_, sizeof(indices), sizeof(sl12::u32), sl12::BufferUsage::IndexBuffer, false))
+		{
+			return false;
+		}
+		if (!g_ibufferView_.Initialize(&g_Device_, &g_ibuffer_))
 		{
 			return false;
 		}
 
-		// バッファにコピー
-		UINT8* p;
-		hr = g_pIB_->Map(0, nullptr, reinterpret_cast<void**>(&p));
-		if (FAILED(hr))
-		{
-			return false;
-		}
-		memcpy(p, indices, sizeof(indices));
-		g_pIB_->Unmap(0, nullptr);
-
-		// Viewの初期化
-		g_IBView_.BufferLocation = g_pIB_->GetGPUVirtualAddress();
-		g_IBView_.SizeInBytes = sizeof(indices);
-		g_IBView_.Format = DXGI_FORMAT_R32_UINT;
+		g_ibuffer_.UpdateBuffer(&g_Device_, &g_copyCmdList_, indices, sizeof(indices));
 	}
 
 	// テクスチャロード
 	{
-		DirectX::ScratchImage image;
-		auto hr = DirectX::LoadFromTGAFile(L"data/icon.tga", nullptr, image);
-		if (FAILED(hr))
+		File texFile("data/icon.tga");
+
+		if (!g_texture_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), false))
 		{
 			return false;
 		}
-
-		hr = DirectX::CreateTexture(pDev, image.GetMetadata(), &g_pTexture_);
-		if (FAILED(hr))
+		if (!g_textureView_.Initialize(&g_Device_, &g_texture_))
 		{
 			return false;
 		}
-
-		{
-			ID3D12Resource* pSrcImage = nullptr;
-
-			D3D12_HEAP_PROPERTIES prop{};
-			prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-			prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-			prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-			prop.CreationNodeMask = 1;
-			prop.VisibleNodeMask = 1;
-
-			const DirectX::Image* pImage = image.GetImage(0, 0, 0);
-
-			D3D12_RESOURCE_DESC desc{};
-			desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-			desc.Alignment = 0;
-			desc.Width = pImage->rowPitch * pImage->height;
-			desc.Height = 1;
-			desc.DepthOrArraySize = 1;
-			desc.MipLevels = 1;
-			desc.Format = DXGI_FORMAT_UNKNOWN;
-			desc.SampleDesc.Count = 1;
-			desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-			desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-			auto hr = pDev->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&pSrcImage));
-			if (FAILED(hr))
-			{
-				return false;
-			}
-
-			D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
-			D3D12_RESOURCE_DESC texDesc = g_pTexture_->GetDesc();
-			UINT numRows;
-			UINT64 rowSize, totalSize;
-			pDev->GetCopyableFootprints(&texDesc, 0, 1, 0, &footprint, &numRows, &rowSize, &totalSize);
-
-			void* pData;
-			pSrcImage->Map(0, nullptr, &pData);
-			memcpy(pData, pImage->pixels, pImage->rowPitch * pImage->height);
-			pSrcImage->Unmap(0, nullptr);
-
-			g_mainCmdList_.Reset();
-
-			ID3D12GraphicsCommandList* pCmdList = g_mainCmdList_.GetCommandList();
-			D3D12_TEXTURE_COPY_LOCATION srcLoc, dstLoc;
-			srcLoc.pResource = pSrcImage;
-			srcLoc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-			srcLoc.PlacedFootprint = footprint;
-			dstLoc.pResource = g_pTexture_;
-			dstLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-			dstLoc.SubresourceIndex = 0;
-			pCmdList->CopyTextureRegion(&dstLoc, 0, 0, 0, &srcLoc, nullptr);
-
-			g_mainCmdList_.Close();
-			g_mainCmdList_.Execute();
-			g_Device_.WaitDrawDone();
-
-			sl12::SafeRelease(pSrcImage);
-		}
-
-		g_pTextureDesc_ = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).CreateDescriptor();
-		if (!g_pTextureDesc_)
-		{
-			return false;
-		}
-
-		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
-		viewDesc.Format = image.GetMetadata().format;
-		viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		viewDesc.Texture2D.MipLevels = (UINT)image.GetMetadata().mipLevels;
-		viewDesc.Texture2D.MostDetailedMip = 0;
-		viewDesc.Texture2D.PlaneSlice = 0;
-		viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-		pDev->CreateShaderResourceView(g_pTexture_, &viewDesc, g_pTextureDesc_->GetCpuHandle());
 	}
 	// サンプラ作成
 	{
-		g_pSamplerDesc_ = g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).CreateDescriptor();
-
 		D3D12_SAMPLER_DESC desc{};
 		desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
 		desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		pDev->CreateSampler(&desc, g_pSamplerDesc_->GetCpuHandle());
+		if (!g_sampler_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
 	}
 
 	// シェーダロード
@@ -610,7 +428,7 @@ bool InitializeAssets()
 		dsDesc.DepthEnable = true;
 		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		dsDesc.StencilEnable = true;
+		dsDesc.StencilEnable = false;
 		dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
 		dsDesc.FrontFace = stencilWDesc;
 		dsDesc.BackFace = stencilWDesc;
@@ -626,8 +444,8 @@ bool InitializeAssets()
 		desc.SampleMask = UINT_MAX;
 		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		desc.NumRenderTargets = 1;
-		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.DSVFormat = kDepthViewFormat;
+		desc.RTVFormats[0] = g_RenderTarget_.GetResourceDesc().Format;
+		desc.DSVFormat = g_DepthBuffer_.GetResourceDesc().Format;
 		desc.SampleDesc.Count = 1;
 
 		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineWriteS_));
@@ -644,11 +462,12 @@ bool InitializeAssets()
 		dsDesc.DepthEnable = false;
 		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		dsDesc.StencilEnable = true;
+		dsDesc.StencilEnable = false;
 		dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
 		dsDesc.FrontFace = stencilUDesc;
 		dsDesc.BackFace = stencilUDesc;
 		desc.DepthStencilState = dsDesc;
+		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 		hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineUseS_));
 		if (FAILED(hr))
@@ -670,27 +489,38 @@ void DestroyAssets()
 	g_VShader_.Destroy();
 	g_PShader_.Destroy();
 
-	sl12::SafeRelease(g_pSamplerDesc_);
-	sl12::SafeRelease(g_pTextureDesc_);
-	sl12::SafeRelease(g_pTexture_);
+	g_sampler_.Destroy();
+	g_textureView_.Destroy();
+	g_texture_.Destroy();
 
-	sl12::SafeRelease(g_pVB0_);
-	sl12::SafeRelease(g_pVB1_);
-	sl12::SafeRelease(g_pVB2_);
-	sl12::SafeRelease(g_pIB_);
-
-	for (auto& v : g_pCBSceneDescs_)
+	for (auto& v : g_vbufferViews_)
 	{
-		sl12::SafeRelease(v);
+		v.Destroy();
 	}
-	for (auto& v : g_pCBScenes_)
+	for (auto& v : g_vbuffers_)
 	{
-		v->Unmap(0, nullptr);
-		sl12::SafeRelease(v);
+		v.Destroy();
 	}
 
-	sl12::SafeRelease(g_pDepthBufferDesc_);
-	sl12::SafeRelease(g_pDepthBuffer_);
+	g_ibufferView_.Destroy();
+	g_ibuffer_.Destroy();
+
+	for (auto& v : g_CBSceneViews_)
+	{
+		v.Destroy();
+	}
+	for (auto& v : g_CBScenes_)
+	{
+		v.Unmap();
+		v.Destroy();
+	}
+
+	g_DepthBufferView_.Destroy();
+	g_DepthBuffer_.Destroy();
+
+	g_RenderTargetTexView_.Destroy();
+	g_RenderTargetView_.Destroy();
+	g_RenderTarget_.Destroy();
 }
 
 void RenderScene()
@@ -699,7 +529,8 @@ void RenderScene()
 
 	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget();
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle();
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_pDepthBufferDesc_->GetCpuHandle();
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvOffHandle = g_RenderTargetView_.GetDesc()->GetCpuHandle();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
 	ID3D12GraphicsCommandList* pCmdList = g_mainCmdList_.GetCommandList();
 
 	{
@@ -713,13 +544,13 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
+	g_RenderTarget_.TransitionBarrier(g_mainCmdList_, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
 	pCmdList->ClearRenderTargetView(rtvHandle, kClearColor, 0, nullptr);
-	pCmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-	// レンダーターゲット設定
-	pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
+	pCmdList->ClearRenderTargetView(rtvOffHandle, g_RenderTarget_.GetTextureDesc().clearColor, 0, nullptr);
+	pCmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, g_DepthBuffer_.GetTextureDesc().clearDepth, g_DepthBuffer_.GetTextureDesc().clearStencil, 0, nullptr);
 
 	// Viewport + Scissor設定
 	D3D12_VIEWPORT viewport{ 0.0f, 0.0f, (float)kWindowWidth, (float)kWindowHeight, 0.0f, 1.0f };
@@ -729,8 +560,8 @@ void RenderScene()
 
 	// Scene定数バッファを更新
 	int32_t frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
-	sl12::Descriptor& cbSceneDesc0 = *g_pCBSceneDescs_[frameIndex];
-	sl12::Descriptor& cbSceneDesc1 = *g_pCBSceneDescs_[frameIndex + 2];
+	sl12::Descriptor& cbSceneDesc0 = *g_CBSceneViews_[frameIndex].GetDesc();
+	sl12::Descriptor& cbSceneDesc1 = *g_CBSceneViews_[frameIndex + 2].GetDesc();
 	{
 		static float sAngle = 0.0f;
 		void* p0 = g_pCBSceneBuffers_[frameIndex];
@@ -748,13 +579,16 @@ void RenderScene()
 		void* p1 = g_pCBSceneBuffers_[frameIndex + 2];
 		memcpy(p1, p0, sizeof(DirectX::XMFLOAT4X4) * 3);
 		pMtxs = reinterpret_cast<DirectX::XMFLOAT4X4*>(p1);
-		mtxW = DirectX::XMMatrixTranslation(0.5f, 0.0f, 0.5f);
+		mtxW = DirectX::XMMatrixTranslation(0.5f, 0.0f, 0.5f) * DirectX::XMMatrixScaling(4.0f, 2.0f, 1.0f);
 		DirectX::XMStoreFloat4x4(pMtxs + 0, mtxW);
 
 		sAngle += 1.0f;
 	}
 
 	{
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &rtvOffHandle, false, &dsvHandle);
+
 		// PSO設定
 		pCmdList->SetPipelineState(g_pPipelineWriteS_);
 		pCmdList->OMSetStencilRef(0xf);
@@ -769,18 +603,23 @@ void RenderScene()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
 		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc0.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_pTextureDesc_->GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_pSamplerDesc_->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
 
 		// DrawCall
-		D3D12_VERTEX_BUFFER_VIEW views[] = { g_VB0View_, g_VB1View_, g_VB2View_ };
+		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
 		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		pCmdList->IASetVertexBuffers(0, _countof(views), views);
-		pCmdList->IASetIndexBuffer(&g_IBView_);
+		pCmdList->IASetIndexBuffer(&g_ibufferView_.GetView());
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
+	g_RenderTarget_.TransitionBarrier(g_mainCmdList_, D3D12_RESOURCE_STATE_GENERIC_READ);
+
 	{
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
+
 		// PSO設定
 		pCmdList->SetPipelineState(g_pPipelineUseS_);
 		pCmdList->OMSetStencilRef(0xf);
@@ -795,14 +634,15 @@ void RenderScene()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
 		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc1.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_pTextureDesc_->GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_pSamplerDesc_->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(1, g_RenderTargetTexView_.GetDesc()->GetGpuHandle());
+		//pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
 
 		// DrawCall
-		D3D12_VERTEX_BUFFER_VIEW views[] = { g_VB0View_, g_VB1View_, g_VB2View_ };
+		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
 		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		pCmdList->IASetVertexBuffers(0, _countof(views), views);
-		pCmdList->IASetIndexBuffer(&g_IBView_);
+		pCmdList->IASetIndexBuffer(&g_ibufferView_.GetView());
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
@@ -831,6 +671,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	assert(ret);
 	ret = g_mainCmdList_.Initialize(&g_Device_, &g_Device_.GetGraphicsQueue());
 	assert(ret);
+	ret = g_copyCmdList_.Initialize(&g_Device_, &g_Device_.GetCopyQueue());
+	assert(ret);
 	ret = InitializeAssets();
 	assert(ret);
 
@@ -855,6 +697,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
 	g_Device_.WaitDrawDone();
 	DestroyAssets();
+	g_copyCmdList_.Destroy();
 	g_mainCmdList_.Destroy();
 	g_Device_.Destroy();
 

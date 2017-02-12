@@ -71,7 +71,7 @@ namespace sl12
 	//----
 	void DescriptorHeap::ReleaseDescriptor(Descriptor* p)
 	{
-		assert((pDescriptors_ <= p) && (p <= pDescriptors + 2));
+		assert((pDescriptors_ <= p) && (p <= pDescriptors_ + 2));
 
 		Descriptor* next = pUnusedList_->pNext_;
 		pUnusedList_->pNext_ = next->pPrev_ = p;
