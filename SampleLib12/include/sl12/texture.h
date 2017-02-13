@@ -40,6 +40,8 @@ namespace sl12
 
 	class Texture
 	{
+		friend class CommandList;
+
 	public:
 		Texture()
 		{}
@@ -55,8 +57,6 @@ namespace sl12
 		bool UpdateImage(Device* pDev, CommandList* pCmdList, const DirectX::ScratchImage& image, ID3D12Resource** ppSrcImage);
 
 		void Destroy();
-
-		void TransitionBarrier(CommandList& cmdList, D3D12_RESOURCE_STATES nextState);
 
 		// getter
 		ID3D12Resource* GetResourceDep() { return pResource_; }

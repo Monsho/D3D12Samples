@@ -306,24 +306,6 @@ namespace sl12
 		SafeRelease(pResource_);
 	}
 
-	//----
-	void Texture::TransitionBarrier(CommandList& cmdList, D3D12_RESOURCE_STATES nextState)
-	{
-		if (currentState_ != nextState)
-		{
-			D3D12_RESOURCE_BARRIER barrier;
-			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-			barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-			barrier.Transition.pResource = pResource_;
-			barrier.Transition.StateBefore = currentState_;
-			barrier.Transition.StateAfter = nextState;
-			barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-			cmdList.GetCommandList()->ResourceBarrier(1, &barrier);
-
-			currentState_ = nextState;
-		}
-	}
-
 }	// namespace sl12
 
 //	EOF

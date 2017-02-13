@@ -22,6 +22,8 @@ namespace sl12
 
 	class Buffer
 	{
+		friend class CommandList;
+
 	public:
 		Buffer()
 		{}
@@ -52,6 +54,7 @@ namespace sl12
 		size_t					size_{ 0 };
 		size_t					stride_{ 0 };
 		BufferUsage::Type		bufferUsage_{ BufferUsage::Max };
+		D3D12_RESOURCE_STATES	currentState_{ D3D12_RESOURCE_STATE_COMMON };
 	};	// class Buffer
 
 }	// namespace sl12

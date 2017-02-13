@@ -527,6 +527,13 @@ void RenderScene()
 {
 	g_mainCmdList_.Reset();
 
+	g_mainCmdList_.TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	for (auto& v : g_vbuffers_)
+	{
+		g_mainCmdList_.TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	}
+	g_mainCmdList_.TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
 	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget();
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle();
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvOffHandle = g_RenderTargetView_.GetDesc()->GetCpuHandle();
@@ -544,7 +551,7 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
-	g_RenderTarget_.TransitionBarrier(g_mainCmdList_, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_mainCmdList_.TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
@@ -614,7 +621,7 @@ void RenderScene()
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
-	g_RenderTarget_.TransitionBarrier(g_mainCmdList_, D3D12_RESOURCE_STATE_GENERIC_READ);
+	g_mainCmdList_.TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	{
 		// レンダーターゲット設定

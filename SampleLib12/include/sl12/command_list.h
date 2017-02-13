@@ -7,6 +7,8 @@ namespace sl12
 {
 	class Device;
 	class CommandQueue;
+	class Texture;
+	class Buffer;
 
 	class CommandList
 	{
@@ -26,6 +28,9 @@ namespace sl12
 		void Close();
 
 		void Execute();
+
+		void TransitionBarrier(Texture* p, D3D12_RESOURCE_STATES nextState);
+		void TransitionBarrier(Buffer* p, D3D12_RESOURCE_STATES nextState);
 
 		// getter
 		CommandQueue* GetParentQueue() { return pParentQueue_; }
