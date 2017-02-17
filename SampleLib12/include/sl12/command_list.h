@@ -32,6 +32,9 @@ namespace sl12
 		void TransitionBarrier(Texture* p, D3D12_RESOURCE_STATES nextState);
 		void TransitionBarrier(Buffer* p, D3D12_RESOURCE_STATES nextState);
 
+		void UAVBarrier(Texture* p);
+		void UAVBarrier(Buffer* p);
+
 		// getter
 		CommandQueue* GetParentQueue() { return pParentQueue_; }
 		ID3D12CommandAllocator* GetCommandAllocator() { return pCmdAllocator_; }

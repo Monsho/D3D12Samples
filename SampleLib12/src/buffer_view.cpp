@@ -31,7 +31,7 @@ namespace sl12
 		}
 
 		D3D12_CONSTANT_BUFFER_VIEW_DESC viewDesc{};
-		viewDesc.BufferLocation = pBuffer->GetResource()->GetGPUVirtualAddress();
+		viewDesc.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
 		viewDesc.SizeInBytes = static_cast<u32>(pBuffer->GetResourceDesc().Width);
 		pDev->GetDeviceDep()->CreateConstantBufferView(&viewDesc, pDesc_->GetCpuHandle());
 
@@ -57,7 +57,7 @@ namespace sl12
 			return false;
 		}
 
-		view_.BufferLocation = pBuffer->GetResource()->GetGPUVirtualAddress();
+		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
 		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize());
 		view_.StrideInBytes = static_cast<u32>(pBuffer->GetStride());
 
@@ -81,7 +81,7 @@ namespace sl12
 			return false;
 		}
 
-		view_.BufferLocation = pBuffer->GetResource()->GetGPUVirtualAddress();
+		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
 		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize());
 		view_.Format = (pBuffer->GetStride() == 4) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
 

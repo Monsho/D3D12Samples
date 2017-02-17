@@ -41,7 +41,7 @@ namespace sl12
 		void Unmap();
 
 		// getter
-		ID3D12Resource* GetResource() { return pResource_; }
+		ID3D12Resource* GetResourceDep() { return pResource_; }
 		const D3D12_RESOURCE_DESC& GetResourceDesc() const { return resourceDesc_; }
 		size_t GetSize() const { return size_; }
 		size_t GetStride() const { return stride_; }

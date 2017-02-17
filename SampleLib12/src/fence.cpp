@@ -67,6 +67,13 @@ namespace sl12
 		}
 	}
 
+	//----
+	bool Fence::CheckSignal()
+	{
+		u64 completedValue = pFence_->GetCompletedValue();
+		return !(completedValue < waitValue_);
+	}
+
 }	// namespace sl12
 
 //	EOF

@@ -102,6 +102,36 @@ namespace sl12
 		}
 	}
 
+	//----
+	void CommandList::UAVBarrier(Texture* p)
+	{
+		if (!p)
+			return;
+
+		{
+			D3D12_RESOURCE_BARRIER barrier;
+			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+			barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			barrier.UAV.pResource = p->pResource_;
+			GetCommandList()->ResourceBarrier(1, &barrier);
+		}
+	}
+
+	//----
+	void CommandList::UAVBarrier(Buffer* p)
+	{
+		if (!p)
+			return;
+
+		{
+			D3D12_RESOURCE_BARRIER barrier;
+			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+			barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			barrier.UAV.pResource = p->pResource_;
+			GetCommandList()->ResourceBarrier(1, &barrier);
+		}
+	}
+
 }	// namespace sl12
 
 //	EOF

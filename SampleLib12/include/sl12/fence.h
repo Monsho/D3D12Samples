@@ -27,6 +27,8 @@ namespace sl12
 		void WaitSignal();
 		void WaitSignal(u32 value);
 
+		bool CheckSignal();
+
 	private:
 		ID3D12Fence*	pFence_{ nullptr };
 		HANDLE			hEvent_{ nullptr };

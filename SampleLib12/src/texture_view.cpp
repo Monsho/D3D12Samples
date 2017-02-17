@@ -2,6 +2,7 @@
 
 #include <sl12/device.h>
 #include <sl12/texture.h>
+#include <sl12/buffer.h>
 #include <sl12/descriptor.h>
 #include <sl12/descriptor_heap.h>
 
@@ -250,6 +251,115 @@ namespace sl12
 
 	//----
 	void DepthStencilView::Destroy()
+	{
+		SafeRelease(pDesc_);
+	}
+
+
+	//----
+	bool UnorderedAccessView::Initialize(Device* pDev, Texture* pTex, u32 mipSlice, u32 firstArray, u32 arraySize)
+	{
+		const D3D12_RESOURCE_DESC& resDesc = pTex->GetResourceDesc();
+		D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc{};
+		viewDesc.Format = resDesc.Format;
+		if (resDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D)
+		{
+			if (resDesc.DepthOrArraySize == 1)
+			{
+				viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1D;
+				viewDesc.Texture1D.MipSlice = mipSlice;
+			}
+			else
+			{
+				viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1DARRAY;
+				viewDesc.Texture1DArray.MipSlice = mipSlice;
+				viewDesc.Texture1DArray.FirstArraySlice = firstArray;
+				viewDesc.Texture1DArray.ArraySize = arraySize;
+			}
+		}
+		else if (resDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
+		{
+			if (resDesc.SampleDesc.Count == 1)
+			{
+				if (resDesc.DepthOrArraySize == 1)
+				{
+					viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+					viewDesc.Texture2D.MipSlice = mipSlice;
+					viewDesc.Texture2D.PlaneSlice = 0;
+				}
+				else
+				{
+					viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+					viewDesc.Texture2DArray.MipSlice = mipSlice;
+					viewDesc.Texture2DArray.FirstArraySlice = firstArray;
+					viewDesc.Texture2DArray.ArraySize = arraySize;
+				}
+			}
+			else
+			{
+				return false;
+			}
+		}
+		else if (resDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+		{
+			viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
+			viewDesc.Texture3D.MipSlice = mipSlice;
+			viewDesc.Texture3D.FirstWSlice = firstArray;
+			viewDesc.Texture3D.WSize = arraySize;
+		}
+		else
+		{
+			return false;
+		}
+
+		pDesc_ = pDev->GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).CreateDescriptor();
+		if (!pDesc_)
+		{
+			return false;
+		}
+
+		pDev->GetDeviceDep()->CreateUnorderedAccessView(pTex->GetResourceDep(), nullptr, &viewDesc, pDesc_->GetCpuHandle());
+
+		return true;
+	}
+
+	//----
+	bool UnorderedAccessView::Initialize(Device* pDev, Buffer* pBuff, u32 firstElement, u32 stride, u64 offset)
+	{
+		const D3D12_RESOURCE_DESC& resDesc = pBuff->GetResourceDesc();
+		D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc{};
+		viewDesc.Format = resDesc.Format;
+		viewDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		if (stride == 0)
+		{
+			viewDesc.Buffer.FirstElement = firstElement;
+			viewDesc.Buffer.NumElements = 0;
+			viewDesc.Buffer.StructureByteStride = stride;
+			viewDesc.Buffer.CounterOffsetInBytes = offset;
+			viewDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+		}
+		else
+		{
+			viewDesc.Buffer.FirstElement = firstElement;
+			viewDesc.Buffer.NumElements = static_cast<u32>((resDesc.Width / static_cast<u64>(stride)) - static_cast<u64>(firstElement));
+			viewDesc.Buffer.StructureByteStride = stride;
+			viewDesc.Buffer.CounterOffsetInBytes = offset;
+			viewDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+		}
+
+		pDesc_ = pDev->GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).CreateDescriptor();
+		if (!pDesc_)
+		{
+			return false;
+		}
+
+		pDev->GetDeviceDep()->CreateUnorderedAccessView(pBuff->GetResourceDep(), nullptr, &viewDesc, pDesc_->GetCpuHandle());
+
+		return true;
+	}
+
+	//----
+	void UnorderedAccessView::Destroy()
 	{
 		SafeRelease(pDesc_);
 	}
