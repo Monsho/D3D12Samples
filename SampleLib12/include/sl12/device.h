@@ -23,7 +23,7 @@ namespace sl12
 		bool Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs);
 		void Destroy();
 
-		void Present();
+		void Present(int syncInterval = 1);
 
 		void WaitDrawDone();
 

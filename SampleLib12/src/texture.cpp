@@ -60,7 +60,7 @@ namespace sl12
 		}
 		else
 		{
-			currentState_ = D3D12_RESOURCE_STATE_GENERIC_READ;
+			currentState_ = D3D12_RESOURCE_STATE_COPY_DEST;
 		}
 
 		auto hr = pDev->GetDeviceDep()->CreateCommittedResource(&prop, flags, &resourceDesc_, currentState_, pClearValue, IID_PPV_ARGS(&pResource_));
@@ -199,8 +199,47 @@ namespace sl12
 
 		Fence fence;
 		fence.Initialize(pDev);
-		fence.Signal(pCmdList->GetParentQueue(), 1);
-		fence.WaitSignal(1);
+		fence.Signal(pCmdList->GetParentQueue());
+		fence.WaitSignal();
+
+		fence.Destroy();
+		SafeRelease(pSrcImage);
+
+		return true;
+	}
+
+	//----
+	bool Texture::InitializeFromImageBin(Device* pDev, CommandList* pCmdList, const TextureDesc& desc, const void* pImageBin)
+	{
+		if (!pDev)
+		{
+			return false;
+		}
+		if (!pImageBin)
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!Initialize(pDev, desc))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		pCmdList->Reset();
+		if (!UpdateImage(pDev, pCmdList, pImageBin, &pSrcImage))
+		{
+			return false;
+		}
+		pCmdList->Close();
+		pCmdList->Execute();
+
+		Fence fence;
+		fence.Initialize(pDev);
+		fence.Signal(pCmdList->GetParentQueue());
+		fence.WaitSignal();
 
 		fence.Destroy();
 		SafeRelease(pSrcImage);
@@ -278,6 +317,90 @@ namespace sl12
 				const DirectX::Image* pImage = image.GetImage(m, 0, d);
 				memcpy(dstData.pData, pImage->pixels, pImage->rowPitch * pImage->height);
 			}
+		}
+
+		pSrcImage->Unmap(0, nullptr);
+
+		// コピー命令を発行
+		for (u32 i = 0; i < numSubresources; i++)
+		{
+			D3D12_TEXTURE_COPY_LOCATION src, dst;
+			src.pResource = pSrcImage;
+			src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+			src.PlacedFootprint = footprint[i];
+			dst.pResource = pResource_;
+			dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+			dst.SubresourceIndex = i;
+			pCmdList->GetCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+		}
+
+		*ppSrcImage = pSrcImage;
+
+		return true;
+	}
+
+	//----
+	bool Texture::UpdateImage(Device* pDev, CommandList* pCmdList, const void* pImageBin, ID3D12Resource** ppSrcImage)
+	{
+		// リソースのサイズ等を取得
+		u32 numSubresources = resourceDesc_.DepthOrArraySize * resourceDesc_.MipLevels;
+		std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprint(numSubresources);
+		std::vector<u32> numRows(numSubresources);
+		std::vector<u64> rowSize(numSubresources);
+		u64 totalSize;
+		pDev->GetDeviceDep()->GetCopyableFootprints(&resourceDesc_, 0, numSubresources, 0, footprint.data(), numRows.data(), rowSize.data(), &totalSize);
+
+		// アップロード用のオブジェクトを作成
+		D3D12_HEAP_PROPERTIES heapProp = {};
+		heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+		heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+		heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+		heapProp.CreationNodeMask = 1;
+		heapProp.VisibleNodeMask = 1;
+
+		D3D12_RESOURCE_DESC desc = {};
+		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		desc.Alignment = 0;
+		desc.Width = totalSize;
+		desc.Height = 1;
+		desc.DepthOrArraySize = 1;
+		desc.MipLevels = 1;
+		desc.Format = DXGI_FORMAT_UNKNOWN;
+		desc.SampleDesc.Count = 1;
+		desc.SampleDesc.Quality = 0;
+		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		ID3D12Resource* pSrcImage{ nullptr };
+		auto hr = pDev->GetDeviceDep()->CreateCommittedResource(
+			&heapProp,
+			D3D12_HEAP_FLAG_NONE,
+			&desc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&pSrcImage));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		// リソースをマップしてイメージ情報をコピー
+		u8* pData{ nullptr };
+		hr = pSrcImage->Map(0, NULL, reinterpret_cast<void**>(&pData));
+		if (FAILED(hr))
+		{
+			SafeRelease(pSrcImage);
+			return false;
+		}
+
+		{
+			if (rowSize[0] >(SIZE_T) -1)
+			{
+				SafeRelease(pSrcImage);
+				return false;
+			}
+			D3D12_MEMCPY_DEST dstData = { pData + footprint[0].Offset, footprint[0].Footprint.RowPitch, footprint[0].Footprint.RowPitch * numRows[0] };
+			memcpy(dstData.pData, pImageBin, footprint[0].Footprint.RowPitch * footprint[0].Footprint.Height);
 		}
 
 		pSrcImage->Unmap(0, nullptr);

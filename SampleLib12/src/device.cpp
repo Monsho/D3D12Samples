@@ -84,7 +84,7 @@ namespace sl12
 		{
 			return false;
 		}
-		if (!pGraphicsQueue_->Initialize(this, D3D12_COMMAND_LIST_TYPE_DIRECT))
+		if (!pGraphicsQueue_->Initialize(this, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_PRIORITY_HIGH))
 		{
 			return false;
 		}
@@ -92,7 +92,7 @@ namespace sl12
 		{
 			return false;
 		}
-		if (!pCopyQueue_->Initialize(this, D3D12_COMMAND_LIST_TYPE_COPY))
+		if (!pCopyQueue_->Initialize(this, D3D12_COMMAND_LIST_TYPE_COPY, D3D12_COMMAND_QUEUE_PRIORITY_HIGH))
 		{
 			return false;
 		}
@@ -162,11 +162,11 @@ namespace sl12
 	}
 
 	//----
-	void Device::Present()
+	void Device::Present(int syncInterval)
 	{
 		if (pSwapchain_)
 		{
-			pSwapchain_->Present();
+			pSwapchain_->Present(syncInterval);
 		}
 	}
 

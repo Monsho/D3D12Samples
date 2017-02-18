@@ -26,6 +26,7 @@ namespace sl12
 
 		void WaitSignal();
 		void WaitSignal(u32 value);
+		void WaitSignal(CommandQueue* pQueue);
 
 		bool CheckSignal();
 
@@ -34,7 +35,7 @@ namespace sl12
 		HANDLE			hEvent_{ nullptr };
 		u32				value_{ 0 };
 		u32				waitValue_{ 0 };
-	};	// class CommandList
+	};	// class Fence
 
 }	// namespace sl12
 

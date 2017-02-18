@@ -13,7 +13,7 @@ namespace sl12
 	{
 		{
 			DXGI_SWAP_CHAIN_DESC desc = {};
-			desc.BufferCount = 2;			// フレームバッファとバックバッファで2枚
+			desc.BufferCount = kMaxBuffer;			// フレームバッファとバックバッファで2枚
 			desc.BufferDesc.Width = width;
 			desc.BufferDesc.Height = height;
 			desc.BufferDesc.Format = format;
@@ -36,6 +36,7 @@ namespace sl12
 				return false;
 			}
 
+			pSwapchain_->SetMaximumFrameLatency(1000);
 			frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
 
 			pSwap->Release();
@@ -81,10 +82,17 @@ namespace sl12
 	}
 
 	//----
-	void Swapchain::Present()
+	void Swapchain::Present(int syncInterval)
 	{
-		pSwapchain_->Present(1, 0);
+		pSwapchain_->Present(syncInterval, 0);
 		frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
+	}
+
+	//----
+	D3D12_CPU_DESCRIPTOR_HANDLE Swapchain::GetDescHandle(int index)
+	{
+		assert(pRtvDescs_[index] != nullptr);
+		return pRtvDescs_[index]->GetCpuHandle();
 	}
 
 	//----

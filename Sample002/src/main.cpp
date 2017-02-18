@@ -10,7 +10,10 @@
 #include <sl12/fence.h>
 #include <sl12/buffer.h>
 #include <sl12/buffer_view.h>
+#include <sl12/shader.h>
+#include <sl12/gui.h>
 #include <DirectXTex.h>
+#include <windowsx.h>
 
 #include "file.h"
 
@@ -37,17 +40,15 @@ namespace
 	//static const DXGI_FORMAT	kDepthViewFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 	static const DXGI_FORMAT	kDepthBufferFormat = DXGI_FORMAT_R32_TYPELESS;
 	static const DXGI_FORMAT	kDepthViewFormat = DXGI_FORMAT_D32_FLOAT;
+	static const int kMaxFrameCount = sl12::Swapchain::kMaxBuffer;
+	static const int kMaxComputeCmdList = 10;
 
 	HWND	g_hWnd_;
 
 	sl12::Device		g_Device_;
-	sl12::CommandList	g_mainCmdList_;
-	sl12::CommandList	g_computeCmdList_;
+	sl12::CommandList	g_mainCmdLists_[kMaxFrameCount];
+	sl12::CommandList	g_computeCmdLists_[kMaxComputeCmdList];
 	sl12::CommandList	g_copyCmdList_;
-
-	sl12::Texture			g_RenderTarget_;
-	sl12::RenderTargetView	g_RenderTargetView_;
-	sl12::TextureView		g_RenderTargetTexView_;
 
 	sl12::Texture			g_DepthBuffer_;
 	sl12::DepthStencilView	g_DepthBufferView_;
@@ -57,10 +58,9 @@ namespace
 	sl12::UnorderedAccessView	g_FFTTargetUAVs_[_countof(g_FFTTargets_)];
 	sl12::Fence					g_FFTFence_;
 
-	static const uint32_t		kMaxCBs = 4;
-	sl12::Buffer				g_CBScenes_[kMaxCBs];
-	void*						g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
-	sl12::ConstantBufferView	g_CBSceneViews_[kMaxCBs];
+	sl12::Buffer				g_CBScenes_[kMaxFrameCount];
+	void*						g_pCBSceneBuffers_[kMaxFrameCount] = { nullptr };
+	sl12::ConstantBufferView	g_CBSceneViews_[kMaxFrameCount];
 
 	sl12::Buffer			g_vbuffers_[3];
 	sl12::VertexBufferView	g_vbufferViews_[3];
@@ -72,15 +72,49 @@ namespace
 	sl12::TextureView		g_textureView_;
 	sl12::Sampler			g_sampler_;
 
-	File	g_VShader_, g_PShader_;
-	File	g_FFTShaders_[FFTKind::Max];
+	sl12::Shader			g_VShader_, g_PShader_;
+	sl12::Shader			g_FFTViewShader_;
+	sl12::Shader			g_FFTShaders_[FFTKind::Max];
 
-	ID3D12RootSignature*	g_pRootSig_ = nullptr;
+	ID3D12RootSignature*	g_pRootSigTex_ = nullptr;
+	ID3D12RootSignature*	g_pRootSigFFT_ = nullptr;
 	ID3D12RootSignature*	g_pComputeRootSig_ = nullptr;
 
-	ID3D12PipelineState*	g_pPipelineWriteS_ = nullptr;
-	ID3D12PipelineState*	g_pPipelineUseS_ = nullptr;
+	ID3D12PipelineState*	g_pPipelineStateTex_ = nullptr;
+	ID3D12PipelineState*	g_pPipelineStateFFT_ = nullptr;
 	ID3D12PipelineState*	g_pFFTPipelineStates_[4] = { nullptr };
+
+	sl12::Gui	g_Gui_;
+	sl12::InputData	g_InputData_{};
+
+	struct FFTPipeType
+	{
+		enum Type
+		{
+			Graphics,
+			Sync_Compute,
+			ASync_Compute,
+
+			Max
+		};
+	};
+	struct FFTViewType
+	{
+		enum Type
+		{
+			Source,
+			FFT_Result,
+			IFFT_Result,
+
+			Max
+		};
+	};
+	bool				g_isFFTCalcing = false;	// FFTの計算中フラグ
+	bool				g_isFFTCalced = false;	// FFTの計算が終了しているか
+	FFTPipeType::Type	g_fftPipeType_ = FFTPipeType::ASync_Compute;
+	FFTViewType::Type	g_fftViewType_ = FFTViewType::Source;
+	int					g_FrameCountToCalced = 0;
+	int					g_SyncInterval = 1;
 
 }
 
@@ -92,6 +126,29 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 	{
 	case WM_DESTROY:
 		PostQuitMessage(0);
+		return 0;
+
+	case WM_LBUTTONDOWN:
+		g_InputData_.mouseButton |= sl12::MouseButton::Left;
+		return 0;
+	case WM_RBUTTONDOWN:
+		g_InputData_.mouseButton |= sl12::MouseButton::Right;
+		return 0;
+	case WM_MBUTTONDOWN:
+		g_InputData_.mouseButton |= sl12::MouseButton::Middle;
+		return 0;
+	case WM_LBUTTONUP:
+		g_InputData_.mouseButton &= ~sl12::MouseButton::Left;
+		return 0;
+	case WM_RBUTTONUP:
+		g_InputData_.mouseButton &= ~sl12::MouseButton::Right;
+		return 0;
+	case WM_MBUTTONUP:
+		g_InputData_.mouseButton &= ~sl12::MouseButton::Middle;
+		return 0;
+	case WM_MOUSEMOVE:
+		g_InputData_.mouseX = GET_X_LPARAM(lParam);
+		g_InputData_.mouseY = GET_Y_LPARAM(lParam);
 		return 0;
 	}
 
@@ -135,37 +192,6 @@ void InitWindow(HINSTANCE hInstance, int nCmdShow)
 bool InitializeAssets()
 {
 	ID3D12Device* pDev = g_Device_.GetDeviceDep();
-
-	// レンダーターゲットを作成
-	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			kWindowWidth,
-			kWindowHeight,
-			1,
-			1,
-			DXGI_FORMAT_R16G16B16A16_FLOAT,
-			1,
-			{0.0f, 0.6f, 0.0f, 1.0f}, 1.0f, 0,
-			true,
-			false,
-			false
-		};
-		if (!g_RenderTarget_.Initialize(&g_Device_, texDesc))
-		{
-			return false;
-		}
-
-		if (!g_RenderTargetView_.Initialize(&g_Device_, &g_RenderTarget_))
-		{
-			return false;
-		}
-
-		if (!g_RenderTargetTexView_.Initialize(&g_Device_, &g_RenderTarget_))
-		{
-			return false;
-		}
-	}
 
 	// 深度バッファを作成
 	{
@@ -263,7 +289,7 @@ bool InitializeAssets()
 				return false;
 			}
 
-			g_pCBSceneBuffers_[i] = g_CBScenes_[i].Map(&g_mainCmdList_);
+			g_pCBSceneBuffers_[i] = g_CBScenes_[i].Map(&g_mainCmdLists_[i]);
 		}
 	}
 
@@ -369,11 +395,15 @@ bool InitializeAssets()
 	}
 
 	// シェーダロード
-	if (!g_VShader_.ReadFile("data/VSSample.cso"))
+	if (!g_VShader_.Initialize(&g_Device_, sl12::ShaderType::Vertex, "data/VSSample.cso"))
 	{
 		return false;
 	}
-	if (!g_PShader_.ReadFile("data/PSSample.cso"))
+	if (!g_PShader_.Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/PSSample.cso"))
+	{
+		return false;
+	}
+	if (!g_FFTViewShader_.Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/PSFFTView.cso"))
 	{
 		return false;
 	}
@@ -386,7 +416,7 @@ bool InitializeAssets()
 	};
 	for (auto& v : g_FFTShaders_)
 	{
-		if (!v.ReadFile(kFFTShaderNames[i++]))
+		if (!v.Initialize(&g_Device_, sl12::ShaderType::Compute, kFFTShaderNames[i++]))
 		{
 			return false;
 		}
@@ -447,7 +477,46 @@ bool InitializeAssets()
 			return false;
 		}
 
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSig_));
+		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSigTex_));
+		sl12::SafeRelease(pSignature);
+		sl12::SafeRelease(pError);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
+	{
+		D3D12_DESCRIPTOR_RANGE ranges[]{
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+		};
+		D3D12_ROOT_PARAMETER rootParameters[]{
+			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX },
+			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL },
+			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL },
+			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[3], D3D12_SHADER_VISIBILITY_PIXEL },
+		};
+
+		D3D12_ROOT_SIGNATURE_DESC desc;
+		desc.NumParameters = _countof(rootParameters);
+		desc.pParameters = rootParameters;
+		desc.NumStaticSamplers = 0;
+		desc.pStaticSamplers = nullptr;
+		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+		ID3DBlob* pSignature{ nullptr };
+		ID3DBlob* pError{ nullptr };
+		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
+		if (FAILED(hr))
+		{
+			sl12::SafeRelease(pSignature);
+			sl12::SafeRelease(pError);
+			return false;
+		}
+
+		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSigFFT_));
 		sl12::SafeRelease(pSignature);
 		sl12::SafeRelease(pError);
 		if (FAILED(hr))
@@ -535,56 +604,37 @@ bool InitializeAssets()
 		blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
 		D3D12_DEPTH_STENCIL_DESC dsDesc{};
-		D3D12_DEPTH_STENCILOP_DESC stencilWDesc{};
-		stencilWDesc.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilWDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilWDesc.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
-		stencilWDesc.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 		dsDesc.DepthEnable = true;
 		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 		dsDesc.StencilEnable = false;
-		dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
-		dsDesc.FrontFace = stencilWDesc;
-		dsDesc.BackFace = stencilWDesc;
 
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
 		desc.InputLayout = { elementDescs, _countof(elementDescs) };
-		desc.pRootSignature = g_pRootSig_;
-		desc.VS = { reinterpret_cast<UINT8*>(g_VShader_.GetData()), g_VShader_.GetSize() };
-		desc.PS = { reinterpret_cast<UINT8*>(g_PShader_.GetData()), g_PShader_.GetSize() };
+		desc.pRootSignature = g_pRootSigTex_;
+		desc.VS = { g_VShader_.GetData(), g_VShader_.GetSize() };
+		desc.PS = { g_PShader_.GetData(), g_PShader_.GetSize() };
 		desc.RasterizerState = rasterDesc;
 		desc.BlendState = blendDesc;
 		desc.DepthStencilState = dsDesc;
 		desc.SampleMask = UINT_MAX;
 		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		desc.NumRenderTargets = 1;
-		desc.RTVFormats[0] = g_RenderTarget_.GetResourceDesc().Format;
+		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 		desc.DSVFormat = g_DepthBuffer_.GetResourceDesc().Format;
 		desc.SampleDesc.Count = 1;
 
-		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineWriteS_));
+		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateTex_));
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
-		D3D12_DEPTH_STENCILOP_DESC stencilUDesc{};
-		stencilUDesc.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilUDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilUDesc.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-		stencilUDesc.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
-		dsDesc.DepthEnable = false;
-		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		dsDesc.StencilEnable = false;
-		dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
-		dsDesc.FrontFace = stencilUDesc;
-		dsDesc.BackFace = stencilUDesc;
-		desc.DepthStencilState = dsDesc;
-		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		// FFT確認用
+		desc.pRootSignature = g_pRootSigFFT_;
+		desc.PS = { g_FFTViewShader_.GetData(), g_FFTViewShader_.GetSize() };
 
-		hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineUseS_));
+		hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateFFT_));
 		if (FAILED(hr))
 		{
 			return false;
@@ -595,7 +645,7 @@ bool InitializeAssets()
 		desc.pRootSignature = g_pComputeRootSig_;;
 		for (int i = 0; i < _countof(g_pFFTPipelineStates_); i++)
 		{
-			desc.CS = { reinterpret_cast<UINT8*>(g_FFTShaders_[i].GetData()), g_FFTShaders_[i].GetSize() };
+			desc.CS = { g_FFTShaders_[i].GetData(), g_FFTShaders_[i].GetSize() };
 			auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pFFTPipelineStates_[i]));
 			if (FAILED(hr))
 			{
@@ -604,20 +654,33 @@ bool InitializeAssets()
 		}
 	}
 
+	// GUIの初期化
+	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, g_DepthBuffer_.GetResourceDesc().Format))
+	{
+		return false;
+	}
+	if (!g_Gui_.CreateFontImage(&g_Device_, g_copyCmdList_))
+	{
+		return false;
+	}
+
 	return true;
 }
 
 void DestroyAssets()
 {
+	g_Gui_.Destroy();
+
 	for (auto& v : g_pFFTPipelineStates_)
 	{
 		sl12::SafeRelease(v);
 	}
-	sl12::SafeRelease(g_pPipelineWriteS_);
-	sl12::SafeRelease(g_pPipelineUseS_);
+	sl12::SafeRelease(g_pPipelineStateTex_);
+	sl12::SafeRelease(g_pPipelineStateFFT_);
 
 	sl12::SafeRelease(g_pComputeRootSig_);
-	sl12::SafeRelease(g_pRootSig_);
+	sl12::SafeRelease(g_pRootSigTex_);
+	sl12::SafeRelease(g_pRootSigFFT_);
 
 	for (auto& v : g_FFTShaders_)
 	{
@@ -668,10 +731,6 @@ void DestroyAssets()
 
 	g_DepthBufferView_.Destroy();
 	g_DepthBuffer_.Destroy();
-
-	g_RenderTargetTexView_.Destroy();
-	g_RenderTargetView_.Destroy();
-	g_RenderTarget_.Destroy();
 }
 
 void LoadFFTCommand(sl12::CommandList& cmdList, int numLoop)
@@ -744,20 +803,136 @@ void LoadFFTCommand(sl12::CommandList& cmdList, int numLoop)
 
 void RenderScene()
 {
-	g_mainCmdList_.Reset();
+	static int sFFTCalcLoop = 1000;
 
-	g_mainCmdList_.TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	sl12::s32 frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
+	sl12::s32 nextFrameIndex = (frameIndex + 1) % sl12::Swapchain::kMaxBuffer;
+
+	sl12::CommandList& mainCmdList = g_mainCmdLists_[frameIndex];
+
+	g_Gui_.BeginNewFrame(&mainCmdList, kWindowWidth, kWindowHeight, g_InputData_);
+
+	bool runCalcFFT = false;
+	if (!g_isFFTCalcing)
+	{
+		ImGui::DragInt("Loop", &sFFTCalcLoop, 1.0f, 1, 1000);
+		const char* kPipeNames[] = {
+			"Graphics",
+			"Sync Compute",
+			"ASync Compute",
+		};
+		int currentItem = (int)g_fftPipeType_;
+		if (ImGui::Combo("Pipe", &currentItem, kPipeNames, _countof(kPipeNames)))
+		{
+			g_fftPipeType_ = (FFTPipeType::Type)currentItem;
+		}
+
+		runCalcFFT = ImGui::Button("Calc FFT");
+
+		const char* kViewNames[] = {
+			"Source",
+			"FFT Result",
+			"IFFT Result",
+		};
+		currentItem = (int)g_fftViewType_;
+		if (ImGui::Combo("View", &currentItem, kViewNames, _countof(kViewNames)))
+		{
+			g_fftViewType_ = (FFTViewType::Type)currentItem;
+		}
+
+		bool isSyncInterval = g_SyncInterval == 1;
+		if (ImGui::Checkbox("Sync Interval", &isSyncInterval))
+		{
+			g_SyncInterval = isSyncInterval ? 1 : 0;
+		}
+
+		ImGui::Text("Frame Count To Calc : %d", g_FrameCountToCalced);
+	}
+	else
+	{
+		// FFTの計算終了チェック
+		// 非同期コンピュートの場合のみチェックを行う
+		if (g_FFTFence_.CheckSignal())
+		{
+			g_isFFTCalced = true;
+			g_isFFTCalcing = false;
+		}
+		else
+		{
+			g_FrameCountToCalced++;
+		}
+	}
+
+	// コンピュートキューでのFFT計算
+	if (runCalcFFT)
+	{
+		if (g_fftPipeType_ != FFTPipeType::Graphics)
+		{
+			// FFTを実行する
+			int loopPerCmdList = sFFTCalcLoop / _countof(g_computeCmdLists_);
+			int loopCount = 0;
+			int loop = 0;
+			for (; loop < _countof(g_computeCmdLists_) - 1; loop++)
+			{
+				g_computeCmdLists_[loop].Reset();
+				LoadFFTCommand(g_computeCmdLists_[loop], loopPerCmdList);
+				g_computeCmdLists_[loop].Close();
+				g_computeCmdLists_[loop].Execute();
+				loopCount += loopPerCmdList;
+			}
+			{
+				// ラストは残り全部
+				g_computeCmdLists_[loop].Reset();
+				LoadFFTCommand(g_computeCmdLists_[loop], sFFTCalcLoop - loopCount);
+				g_computeCmdLists_[loop].Close();
+				g_computeCmdLists_[loop].Execute();
+			}
+
+			// シグナル
+			g_FFTFence_.Signal(g_computeCmdLists_[0].GetParentQueue());
+
+			if (g_fftPipeType_ == FFTPipeType::ASync_Compute)
+			{
+				// 非同期コンピュートの場合はフェンスを立て、シグナルを待ってから描画可能になる
+				// 各種パラメータ
+				g_isFFTCalcing = true;
+				g_isFFTCalced = false;
+				g_FrameCountToCalced = 0;
+			}
+			else
+			{
+				// コンピュートパイプで動作させて同期する場合はグラフィクスパイプでフェンスのシグナルを待つ
+				g_FFTFence_.WaitSignal(mainCmdList.GetParentQueue());
+
+				// フェンスを待つので、次のフレームにはFFT計算は完了している
+				g_isFFTCalced = true;
+			}
+		}
+	}
+
+	// グラフィクスコマンドロードの開始
+	mainCmdList.Reset();
+
+	// FFT計算
+	if (runCalcFFT && (g_fftPipeType_ == FFTPipeType::Graphics))
+	{
+		// グラフィクスパイプで実行する場合はそのままグラフィクスキューのコマンドリストに積む
+		// シグナルや描画待ちはバリアだけでOK
+		LoadFFTCommand(mainCmdList, sFFTCalcLoop);
+		g_isFFTCalced = true;
+	}
+
+	mainCmdList.TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	for (auto& v : g_vbuffers_)
 	{
-		g_mainCmdList_.TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		mainCmdList.TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 	}
-	g_mainCmdList_.TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+	mainCmdList.TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
-	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget();
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle();
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvOffHandle = g_RenderTargetView_.GetDesc()->GetCpuHandle();
+	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetRenderTarget(nextFrameIndex);
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetDescHandle(nextFrameIndex);
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
-	ID3D12GraphicsCommandList* pCmdList = g_mainCmdList_.GetCommandList();
+	ID3D12GraphicsCommandList* pCmdList = mainCmdList.GetCommandList();
 
 	{
 		D3D12_RESOURCE_BARRIER barrier;
@@ -770,12 +945,9 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
-	g_mainCmdList_.TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
 	pCmdList->ClearRenderTargetView(rtvHandle, kClearColor, 0, nullptr);
-	pCmdList->ClearRenderTargetView(rtvOffHandle, g_RenderTarget_.GetTextureDesc().clearColor, 0, nullptr);
 	pCmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, g_DepthBuffer_.GetTextureDesc().clearDepth, g_DepthBuffer_.GetTextureDesc().clearStencil, 0, nullptr);
 
 	// Viewport + Scissor設定
@@ -785,14 +957,12 @@ void RenderScene()
 	pCmdList->RSSetScissorRects(1, &scissor);
 
 	// Scene定数バッファを更新
-	int32_t frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
-	sl12::Descriptor& cbSceneDesc0 = *g_CBSceneViews_[frameIndex].GetDesc();
-	sl12::Descriptor& cbSceneDesc1 = *g_CBSceneViews_[frameIndex + 2].GetDesc();
+	sl12::Descriptor& cbSceneDesc = *g_CBSceneViews_[frameIndex].GetDesc();
 	{
 		static float sAngle = 0.0f;
 		void* p0 = g_pCBSceneBuffers_[frameIndex];
 		DirectX::XMFLOAT4X4* pMtxs = reinterpret_cast<DirectX::XMFLOAT4X4*>(p0);
-		DirectX::XMMATRIX mtxW = DirectX::XMMatrixRotationY(sAngle * DirectX::XM_PI / 180.0f);
+		DirectX::XMMATRIX mtxW = DirectX::XMMatrixRotationY(sAngle * DirectX::XM_PI / 180.0f) * DirectX::XMMatrixScaling(4.0f, 4.0f, 1.0f);
 		DirectX::FXMVECTOR eye = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 5.0f, 10.0f));
 		DirectX::FXMVECTOR focus = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 		DirectX::FXMVECTOR up = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f));
@@ -802,69 +972,24 @@ void RenderScene()
 		DirectX::XMStoreFloat4x4(pMtxs + 1, mtxV);
 		DirectX::XMStoreFloat4x4(pMtxs + 2, mtxP);
 
-		void* p1 = g_pCBSceneBuffers_[frameIndex + 2];
-		memcpy(p1, p0, sizeof(DirectX::XMFLOAT4X4) * 3);
-		pMtxs = reinterpret_cast<DirectX::XMFLOAT4X4*>(p1);
-		mtxW = DirectX::XMMatrixRotationY(sAngle * DirectX::XM_PI / 180.0f) * DirectX::XMMatrixScaling(4.0f, 4.0f, 1.0f);
-		DirectX::XMStoreFloat4x4(pMtxs + 0, mtxW);
-
 		sAngle += 1.0f;
 	}
-
-	if (g_FFTFence_.CheckSignal())
-	{
-		// FFTを実行する
-		g_computeCmdList_.Reset();
-		LoadFFTCommand(g_computeCmdList_, 1);
-		g_computeCmdList_.Close();
-		g_computeCmdList_.Execute();
-		//LoadFFTCommand(g_mainCmdList_, 1);
-
-		g_FFTFence_.Signal(g_computeCmdList_.GetParentQueue());
-	}
-
-	if (0)
-	{
-		// レンダーターゲット設定
-		pCmdList->OMSetRenderTargets(1, &rtvOffHandle, false, &dsvHandle);
-
-		// PSO設定
-		pCmdList->SetPipelineState(g_pPipelineWriteS_);
-		pCmdList->OMSetStencilRef(0xf);
-
-		// ルートシグネチャを設定
-		pCmdList->SetGraphicsRootSignature(g_pRootSig_);
-
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc0.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
-
-		// DrawCall
-		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
-		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		pCmdList->IASetVertexBuffers(0, _countof(views), views);
-		pCmdList->IASetIndexBuffer(&g_ibufferView_.GetView());
-		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
-	}
-
-	g_mainCmdList_.TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	{
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
 
-		// PSO設定
-		pCmdList->SetPipelineState(g_pPipelineUseS_);
-		pCmdList->OMSetStencilRef(0xf);
-
-		// ルートシグネチャを設定
-		pCmdList->SetGraphicsRootSignature(g_pRootSig_);
+		// PSOとルートシグネチャを設定
+		if (g_fftViewType_ != FFTViewType::FFT_Result)
+		{
+			pCmdList->SetPipelineState(g_pPipelineStateTex_);
+			pCmdList->SetGraphicsRootSignature(g_pRootSigTex_);
+		}
+		else
+		{
+			pCmdList->SetPipelineState(g_pPipelineStateFFT_);
+			pCmdList->SetGraphicsRootSignature(g_pRootSigFFT_);
+		}
 
 		// DescriptorHeapを設定
 		ID3D12DescriptorHeap* pDescHeaps[] = {
@@ -872,11 +997,26 @@ void RenderScene()
 			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc1.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_FFTTargetSRVs_[4].GetDesc()->GetGpuHandle());
-		//pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
-		//pCmdList->SetGraphicsRootDescriptorTable(1, g_RenderTargetTexView_.GetDesc()->GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc.GetGpuHandle());
+		if (g_fftViewType_ == FFTViewType::Source)
+		{
+			// ソーステクスチャの描画
+			pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+		}
+		else if (g_fftViewType_ == FFTViewType::IFFT_Result)
+		{
+			// IFFTの結果の描画
+			pCmdList->SetGraphicsRootDescriptorTable(1, g_FFTTargetSRVs_[4].GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+		}
+		else
+		{
+			// FFTの結果の描画
+			pCmdList->SetGraphicsRootDescriptorTable(1, g_FFTTargetSRVs_[2].GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(2, g_FFTTargetSRVs_[3].GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(3, g_sampler_.GetDesc()->GetGpuHandle());
+		}
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
@@ -885,6 +1025,8 @@ void RenderScene()
 		pCmdList->IASetIndexBuffer(&g_ibufferView_.GetView());
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
+
+	ImGui::Render();
 
 	{
 		D3D12_RESOURCE_BARRIER barrier;
@@ -897,8 +1039,7 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
-	g_mainCmdList_.Close();
-	g_mainCmdList_.Execute();
+	mainCmdList.Close();
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
@@ -909,9 +1050,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	{ 100, 100, 20, 10 };
 	auto ret = g_Device_.Initialize(g_hWnd_, kWindowWidth, kWindowHeight, kDescNums);
 	assert(ret);
-	ret = g_mainCmdList_.Initialize(&g_Device_, &g_Device_.GetGraphicsQueue());
-	assert(ret);
-	ret = g_computeCmdList_.Initialize(&g_Device_, &g_Device_.GetComputeQueue());
+	for (auto& v : g_mainCmdLists_)
+	{
+		ret = v.Initialize(&g_Device_, &g_Device_.GetGraphicsQueue());
+		assert(ret);
+	}
+	for (auto& v : g_computeCmdLists_)
+	{
+		ret = v.Initialize(&g_Device_, &g_Device_.GetComputeQueue());
+		assert(ret);
+	}
 	assert(ret);
 	ret = g_copyCmdList_.Initialize(&g_Device_, &g_Device_.GetCopyQueue());
 	assert(ret);
@@ -933,15 +1081,24 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 		}
 
 		RenderScene();
-		g_Device_.Present();
+
+		// GPUによる描画待ち
+		int frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
 		g_Device_.WaitDrawDone();
+		g_Device_.Present(g_SyncInterval);
+
+		// 前回フレームのコマンドを次回フレームの頭で実行
+		// コマンドが実行中、次のフレーム用のコマンドがロードされる
+		g_mainCmdLists_[frameIndex].Execute();
 	}
 
 	g_Device_.WaitDrawDone();
 	DestroyAssets();
 	g_copyCmdList_.Destroy();
-	g_computeCmdList_.Destroy();
-	g_mainCmdList_.Destroy();
+	for (auto& v : g_mainCmdLists_)
+		v.Destroy();
+	for (auto& v : g_mainCmdLists_)
+		v.Destroy();
 	g_Device_.Destroy();
 
 	return static_cast<char>(msg.wParam);

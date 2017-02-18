@@ -12,7 +12,7 @@ namespace sl12
 	class Swapchain
 	{
 	public:
-		static const uint32_t	kMaxBuffer = 2;
+		static const u32	kMaxBuffer = 3;
 
 	public:
 		Swapchain()
@@ -25,9 +25,11 @@ namespace sl12
 		bool Initialize(Device* pDev, CommandQueue* pQueue, HWND hWnd, uint32_t width, uint32_t height, DXGI_FORMAT format);
 		void Destroy();
 
-		void Present();
+		void Present(int syncInterval);
 
 		// getter
+		ID3D12Resource* GetRenderTarget(int index) { return pRenderTargets_[index]; }
+		D3D12_CPU_DESCRIPTOR_HANDLE GetDescHandle(int index);
 		ID3D12Resource* GetCurrentRenderTarget() { return pRenderTargets_[frameIndex_]; }
 		D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentDescHandle();
 		int32_t GetFrameIndex() const { return frameIndex_; }

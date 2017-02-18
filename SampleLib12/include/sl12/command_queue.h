@@ -19,7 +19,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, D3D12_COMMAND_LIST_TYPE type);
+		bool Initialize(Device* pDev, D3D12_COMMAND_LIST_TYPE type, u32 priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL);
 		void Destroy();
 
 		ID3D12CommandQueue* GetQueueDep() { return pQueue_; }

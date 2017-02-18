@@ -68,6 +68,12 @@ namespace sl12
 	}
 
 	//----
+	void Fence::WaitSignal(CommandQueue* pQueue)
+	{
+		pQueue->GetQueueDep()->Wait(pFence_, waitValue_);
+	}
+
+	//----
 	bool Fence::CheckSignal()
 	{
 		u64 completedValue = pFence_->GetCompletedValue();

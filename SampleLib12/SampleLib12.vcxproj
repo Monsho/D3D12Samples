@@ -81,6 +81,12 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\External\imgui\imconfig.h" />
+    <ClInclude Include="..\External\imgui\imgui.h" />
+    <ClInclude Include="..\External\imgui\imgui_internal.h" />
+    <ClInclude Include="..\External\imgui\stb_rect_pack.h" />
+    <ClInclude Include="..\External\imgui\stb_textedit.h" />
+    <ClInclude Include="..\External\imgui\stb_truetype.h" />
     <ClInclude Include="include\sl12\buffer.h" />
     <ClInclude Include="include\sl12\buffer_view.h" />
     <ClInclude Include="include\sl12\command_list.h" />
@@ -89,13 +95,19 @@
     <ClInclude Include="include\sl12\descriptor_heap.h" />
     <ClInclude Include="include\sl12\device.h" />
     <ClInclude Include="include\sl12\fence.h" />
+    <ClInclude Include="include\sl12\file.h" />
+    <ClInclude Include="include\sl12\gui.h" />
     <ClInclude Include="include\sl12\sampler.h" />
+    <ClInclude Include="include\sl12\shader.h" />
     <ClInclude Include="include\sl12\swapchain.h" />
     <ClInclude Include="include\sl12\texture.h" />
     <ClInclude Include="include\sl12\texture_view.h" />
     <ClInclude Include="include\sl12\util.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\External\imgui\imgui.cpp" />
+    <ClCompile Include="..\External\imgui\imgui_demo.cpp" />
+    <ClCompile Include="..\External\imgui\imgui_draw.cpp" />
     <ClCompile Include="src\buffer.cpp" />
     <ClCompile Include="src\buffer_view.cpp" />
     <ClCompile Include="src\command_list.cpp" />
@@ -104,10 +116,42 @@
     <ClCompile Include="src\descriptor_heap.cpp" />
     <ClCompile Include="src\device.cpp" />
     <ClCompile Include="src\fence.cpp" />
+    <ClCompile Include="src\gui.cpp" />
     <ClCompile Include="src\sampler.cpp" />
+    <ClCompile Include="src\shader.cpp" />
     <ClCompile Include="src\swapchain.cpp" />
     <ClCompile Include="src\texture.cpp" />
     <ClCompile Include="src\texture_view.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="src\shader\PSGui.hlsl">
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">k%(Filename)</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)include\sl12\%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ObjectFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">k%(Filename)</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)include\sl12\%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="src\shader\VSGui.hlsl">
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">k%(Filename)</VariableName>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">k%(Filename)</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)include\sl12\%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ObjectFileOutput>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)include\sl12\%(Filename).h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+    </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

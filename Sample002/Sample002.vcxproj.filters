@@ -40,5 +40,8 @@
     <FxCompile Include="src\shaders\fft.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
+    <FxCompile Include="src\shaders\PSFFTView.psh">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>
