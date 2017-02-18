@@ -115,6 +115,7 @@ namespace
 	FFTViewType::Type	g_fftViewType_ = FFTViewType::Source;
 	int					g_FrameCountToCalced = 0;
 	int					g_SyncInterval = 1;
+	bool				g_useResourceBarrier_ = true;
 
 }
 
@@ -753,9 +754,12 @@ void LoadFFTCommand(sl12::CommandList& cmdList, int numLoop)
 		pCmdList->SetComputeRootDescriptorTable(3, g_FFTTargetUAVs_[1].GetDesc()->GetGpuHandle());
 		pCmdList->Dispatch(1, g_texture_.GetTextureDesc().height, 1);
 
-		// バリアを張る
-		cmdList.UAVBarrier(&g_FFTTargets_[0]);
-		cmdList.UAVBarrier(&g_FFTTargets_[1]);
+		if (g_useResourceBarrier_)
+		{
+			// バリアを張る
+			cmdList.UAVBarrier(&g_FFTTargets_[0]);
+			cmdList.UAVBarrier(&g_FFTTargets_[1]);
+		}
 
 		// collumn pass
 		pCmdList->SetPipelineState(g_pFFTPipelineStates_[1]);
@@ -767,9 +771,12 @@ void LoadFFTCommand(sl12::CommandList& cmdList, int numLoop)
 		pCmdList->SetComputeRootDescriptorTable(3, g_FFTTargetUAVs_[3].GetDesc()->GetGpuHandle());
 		pCmdList->Dispatch(1, g_texture_.GetTextureDesc().width, 1);
 
-		// バリアを張る
-		cmdList.UAVBarrier(&g_FFTTargets_[2]);
-		cmdList.UAVBarrier(&g_FFTTargets_[3]);
+		if (g_useResourceBarrier_)
+		{
+			// バリアを張る
+			cmdList.UAVBarrier(&g_FFTTargets_[2]);
+			cmdList.UAVBarrier(&g_FFTTargets_[3]);
+		}
 
 		// invert row pass
 		pCmdList->SetPipelineState(g_pFFTPipelineStates_[2]);
@@ -781,9 +788,12 @@ void LoadFFTCommand(sl12::CommandList& cmdList, int numLoop)
 		pCmdList->SetComputeRootDescriptorTable(3, g_FFTTargetUAVs_[1].GetDesc()->GetGpuHandle());
 		pCmdList->Dispatch(1, g_texture_.GetTextureDesc().height, 1);
 
-		// バリアを張る
-		cmdList.UAVBarrier(&g_FFTTargets_[0]);
-		cmdList.UAVBarrier(&g_FFTTargets_[1]);
+		if (g_useResourceBarrier_)
+		{
+			// バリアを張る
+			cmdList.UAVBarrier(&g_FFTTargets_[0]);
+			cmdList.UAVBarrier(&g_FFTTargets_[1]);
+		}
 
 		// invert collumn pass
 		pCmdList->SetPipelineState(g_pFFTPipelineStates_[3]);
@@ -795,9 +805,12 @@ void LoadFFTCommand(sl12::CommandList& cmdList, int numLoop)
 		pCmdList->SetComputeRootDescriptorTable(3, g_FFTTargetUAVs_[5].GetDesc()->GetGpuHandle());
 		pCmdList->Dispatch(1, g_texture_.GetTextureDesc().width, 1);
 
-		// バリアを張る
-		cmdList.UAVBarrier(&g_FFTTargets_[4]);
-		cmdList.UAVBarrier(&g_FFTTargets_[5]);
+		if (g_useResourceBarrier_)
+		{
+			// バリアを張る
+			cmdList.UAVBarrier(&g_FFTTargets_[4]);
+			cmdList.UAVBarrier(&g_FFTTargets_[5]);
+		}
 	}
 }
 
@@ -845,6 +858,8 @@ void RenderScene()
 		{
 			g_SyncInterval = isSyncInterval ? 1 : 0;
 		}
+
+		ImGui::Checkbox("Use Barrier", &g_useResourceBarrier_);
 
 		ImGui::Text("Frame Count To Calc : %d", g_FrameCountToCalced);
 	}
