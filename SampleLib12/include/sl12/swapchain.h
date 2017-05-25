@@ -30,8 +30,8 @@ namespace sl12
 		// getter
 		ID3D12Resource* GetRenderTarget(int index) { return pRenderTargets_[index]; }
 		D3D12_CPU_DESCRIPTOR_HANDLE GetDescHandle(int index);
-		ID3D12Resource* GetCurrentRenderTarget() { return pRenderTargets_[frameIndex_]; }
-		D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentDescHandle();
+		ID3D12Resource* GetCurrentRenderTarget(int offset = 0) { return pRenderTargets_[(frameIndex_ + offset) % kMaxBuffer]; }
+		D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentDescHandle(int offset = 0);
 		int32_t GetFrameIndex() const { return frameIndex_; }
 
 	private:

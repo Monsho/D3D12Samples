@@ -36,7 +36,6 @@ namespace sl12
 				return false;
 			}
 
-			pSwapchain_->SetMaximumFrameLatency(1000);
 			frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
 
 			pSwap->Release();
@@ -96,10 +95,11 @@ namespace sl12
 	}
 
 	//----
-	D3D12_CPU_DESCRIPTOR_HANDLE Swapchain::GetCurrentDescHandle()
+	D3D12_CPU_DESCRIPTOR_HANDLE Swapchain::GetCurrentDescHandle(int offset)
 	{
-		assert(pRtvDescs_[frameIndex_] != nullptr);
-		return pRtvDescs_[frameIndex_]->GetCpuHandle();
+		int index = (frameIndex_ + offset) % kMaxBuffer;
+		assert(pRtvDescs_[index] != nullptr);
+		return pRtvDescs_[index]->GetCpuHandle();
 	}
 
 }	// namespace sl12

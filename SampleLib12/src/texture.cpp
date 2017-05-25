@@ -39,6 +39,19 @@ namespace sl12
 		resourceDesc_.Flags |= desc.isDepthBuffer ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_NONE;
 		resourceDesc_.Flags |= desc.isUav ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE;
 
+		// 深度バッファの場合はリソースフォーマットをTYPELESSにしなければならない
+		switch (resourceDesc_.Format)
+		{
+		case DXGI_FORMAT_D32_FLOAT:
+			resourceDesc_.Format = DXGI_FORMAT_R32_TYPELESS; break;
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+			resourceDesc_.Format = DXGI_FORMAT_R32G8X24_TYPELESS; break;
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+			resourceDesc_.Format = DXGI_FORMAT_R24G8_TYPELESS; break;
+		case DXGI_FORMAT_D16_UNORM:
+			resourceDesc_.Format = DXGI_FORMAT_R16_TYPELESS; break;
+		}
+
 		D3D12_CLEAR_VALUE* pClearValue = nullptr;
 		D3D12_CLEAR_VALUE clearValue{};
 		if (desc.isRenderTarget)

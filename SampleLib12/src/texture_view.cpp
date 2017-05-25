@@ -14,8 +14,19 @@ namespace sl12
 	{
 		const D3D12_RESOURCE_DESC& resDesc = pTex->GetResourceDesc();
 		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
-		viewDesc.Format = resDesc.Format;
 		viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		viewDesc.Format = pTex->GetTextureDesc().format;
+		switch (viewDesc.Format)
+		{
+		case DXGI_FORMAT_D32_FLOAT:
+			viewDesc.Format = DXGI_FORMAT_R32_FLOAT; break;
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+			viewDesc.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS; break;
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+			viewDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS; break;
+		case DXGI_FORMAT_D16_UNORM:
+			viewDesc.Format = DXGI_FORMAT_R16_UNORM; break;
+		}
 		if (resDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D)
 		{
 			if (resDesc.DepthOrArraySize == 1)
@@ -186,7 +197,7 @@ namespace sl12
 	{
 		const D3D12_RESOURCE_DESC& resDesc = pTex->GetResourceDesc();
 		D3D12_DEPTH_STENCIL_VIEW_DESC viewDesc{};
-		viewDesc.Format = resDesc.Format;
+		viewDesc.Format = pTex->GetTextureDesc().format;
 		if (resDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D)
 		{
 			if (resDesc.DepthOrArraySize == 1)

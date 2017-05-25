@@ -25,5 +25,11 @@
     <FxCompile Include="src\shaders\VSSample.vsh">
       <Filter>src\shaders</Filter>
     </FxCompile>
+    <FxCompile Include="src\shaders\PSDispDepth.psh">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\VSScreen.vsh">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

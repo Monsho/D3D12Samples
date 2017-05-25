@@ -23,7 +23,7 @@ namespace sl12
 		}
 
 		// ファクトリをデバッグモードで作成する
-		factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+		//factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
 		// ファクトリの生成
 		auto hr = CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&pFactory_));

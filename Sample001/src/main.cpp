@@ -29,6 +29,8 @@ namespace
 
 	sl12::Device		g_Device_;
 	sl12::CommandList	g_mainCmdList_;
+	sl12::CommandList	g_mainCmdLists_[sl12::Swapchain::kMaxBuffer];
+	sl12::CommandList*	g_pNextCmdList_ = nullptr;
 	sl12::CommandList	g_copyCmdList_;
 
 	sl12::Texture			g_RenderTarget_;
@@ -37,8 +39,9 @@ namespace
 
 	sl12::Texture			g_DepthBuffer_;
 	sl12::DepthStencilView	g_DepthBufferView_;
+	sl12::TextureView		g_DepthBufferTexView_;
 
-	static const uint32_t		kMaxCBs = 4;
+	static const uint32_t		kMaxCBs = sl12::Swapchain::kMaxBuffer * 2;
 	sl12::Buffer				g_CBScenes_[kMaxCBs];
 	void*						g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
 	sl12::ConstantBufferView	g_CBSceneViews_[kMaxCBs];
@@ -54,6 +57,7 @@ namespace
 	sl12::Sampler			g_sampler_;
 
 	File	g_VShader_, g_PShader_;
+	File	g_VSScreenShader_, g_PSDispDepthShader_;
 
 	ID3D12RootSignature*	g_pRootSig_ = nullptr;
 
@@ -166,6 +170,11 @@ bool InitializeAssets()
 		}
 
 		if (!g_DepthBufferView_.Initialize(&g_Device_, &g_DepthBuffer_))
+		{
+			return false;
+		}
+
+		if (!g_DepthBufferTexView_.Initialize(&g_Device_, &g_DepthBuffer_))
 		{
 			return false;
 		}
@@ -319,6 +328,14 @@ bool InitializeAssets()
 	{
 		return false;
 	}
+	if (!g_VSScreenShader_.ReadFile("data/VSScreen.cso"))
+	{
+		return false;
+	}
+	if (!g_PSDispDepthShader_.ReadFile("data/PSDispDepth.cso"))
+	{
+		return false;
+	}
 
 	// ルートシグネチャを作成
 	{
@@ -444,8 +461,8 @@ bool InitializeAssets()
 		desc.SampleMask = UINT_MAX;
 		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		desc.NumRenderTargets = 1;
-		desc.RTVFormats[0] = g_RenderTarget_.GetResourceDesc().Format;
-		desc.DSVFormat = g_DepthBuffer_.GetResourceDesc().Format;
+		desc.RTVFormats[0] = g_RenderTarget_.GetTextureDesc().format;
+		desc.DSVFormat = g_DepthBuffer_.GetTextureDesc().format;
 		desc.SampleDesc.Count = 1;
 
 		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineWriteS_));
@@ -459,6 +476,9 @@ bool InitializeAssets()
 		stencilUDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 		stencilUDesc.StencilPassOp = D3D12_STENCIL_OP_KEEP;
 		stencilUDesc.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+		desc.InputLayout = { nullptr, 0 };
+		desc.VS = { reinterpret_cast<UINT8*>(g_VSScreenShader_.GetData()), g_VSScreenShader_.GetSize() };
+		desc.PS = { reinterpret_cast<UINT8*>(g_PSDispDepthShader_.GetData()), g_PSDispDepthShader_.GetSize() };
 		dsDesc.DepthEnable = false;
 		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
@@ -468,6 +488,7 @@ bool InitializeAssets()
 		dsDesc.BackFace = stencilUDesc;
 		desc.DepthStencilState = dsDesc;
 		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
 
 		hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineUseS_));
 		if (FAILED(hr))
@@ -515,6 +536,7 @@ void DestroyAssets()
 		v.Destroy();
 	}
 
+	g_DepthBufferTexView_.Destroy();
 	g_DepthBufferView_.Destroy();
 	g_DepthBuffer_.Destroy();
 
@@ -525,20 +547,26 @@ void DestroyAssets()
 
 void RenderScene()
 {
-	g_mainCmdList_.Reset();
+	if (g_pNextCmdList_)
+		g_pNextCmdList_->Execute();
 
-	g_mainCmdList_.TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	int32_t frameIndex = (g_Device_.GetSwapchain().GetFrameIndex() + 1) % sl12::Swapchain::kMaxBuffer;
+	g_pNextCmdList_ = &g_mainCmdLists_[frameIndex];
+
+	g_pNextCmdList_->Reset();
+
+	g_pNextCmdList_->TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	for (auto& v : g_vbuffers_)
 	{
-		g_mainCmdList_.TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 	}
-	g_mainCmdList_.TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+	g_pNextCmdList_->TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
-	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget();
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle();
+	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget(1);
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvOffHandle = g_RenderTargetView_.GetDesc()->GetCpuHandle();
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
-	ID3D12GraphicsCommandList* pCmdList = g_mainCmdList_.GetCommandList();
+	ID3D12GraphicsCommandList* pCmdList = g_pNextCmdList_->GetCommandList();
 
 	{
 		D3D12_RESOURCE_BARRIER barrier;
@@ -551,7 +579,8 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
-	g_mainCmdList_.TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_pNextCmdList_->TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
@@ -566,9 +595,8 @@ void RenderScene()
 	pCmdList->RSSetScissorRects(1, &scissor);
 
 	// Scene定数バッファを更新
-	int32_t frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
 	sl12::Descriptor& cbSceneDesc0 = *g_CBSceneViews_[frameIndex].GetDesc();
-	sl12::Descriptor& cbSceneDesc1 = *g_CBSceneViews_[frameIndex + 2].GetDesc();
+	sl12::Descriptor& cbSceneDesc1 = *g_CBSceneViews_[frameIndex + sl12::Swapchain::kMaxBuffer].GetDesc();
 	{
 		static float sAngle = 0.0f;
 		void* p0 = g_pCBSceneBuffers_[frameIndex];
@@ -578,12 +606,12 @@ void RenderScene()
 		DirectX::FXMVECTOR focus = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 		DirectX::FXMVECTOR up = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f));
 		DirectX::XMMATRIX mtxV = DirectX::XMMatrixLookAtRH(eye, focus, up);
-		DirectX::XMMATRIX mtxP = DirectX::XMMatrixPerspectiveFovRH(60.0f * DirectX::XM_PI / 180.0f, (float)kWindowWidth / (float)kWindowHeight, 0.1f, 100.0f);
+		DirectX::XMMATRIX mtxP = DirectX::XMMatrixPerspectiveFovRH(60.0f * DirectX::XM_PI / 180.0f, (float)kWindowWidth / (float)kWindowHeight, 1.0f, 100000.0f);
 		DirectX::XMStoreFloat4x4(pMtxs + 0, mtxW);
 		DirectX::XMStoreFloat4x4(pMtxs + 1, mtxV);
 		DirectX::XMStoreFloat4x4(pMtxs + 2, mtxP);
 
-		void* p1 = g_pCBSceneBuffers_[frameIndex + 2];
+		void* p1 = g_pCBSceneBuffers_[frameIndex + sl12::Swapchain::kMaxBuffer];
 		memcpy(p1, p0, sizeof(DirectX::XMFLOAT4X4) * 3);
 		pMtxs = reinterpret_cast<DirectX::XMFLOAT4X4*>(p1);
 		mtxW = DirectX::XMMatrixTranslation(0.5f, 0.0f, 0.5f) * DirectX::XMMatrixScaling(4.0f, 2.0f, 1.0f);
@@ -621,11 +649,13 @@ void RenderScene()
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
-	g_mainCmdList_.TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_GENERIC_READ);
+	g_pNextCmdList_->TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_GENERIC_READ);
+	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 	{
 		// レンダーターゲット設定
-		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
+		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
+		//pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
 
 		// PSO設定
 		pCmdList->SetPipelineState(g_pPipelineUseS_);
@@ -641,7 +671,8 @@ void RenderScene()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
 		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc1.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_RenderTargetTexView_.GetDesc()->GetGpuHandle());
+		pCmdList->SetGraphicsRootDescriptorTable(1, g_DepthBufferTexView_.GetDesc()->GetGpuHandle());
+		//pCmdList->SetGraphicsRootDescriptorTable(1, g_RenderTargetTexView_.GetDesc()->GetGpuHandle());
 		//pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
 		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
 
@@ -664,8 +695,7 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
-	g_mainCmdList_.Close();
-	g_mainCmdList_.Execute();
+	g_pNextCmdList_->Close();
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
@@ -678,6 +708,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	assert(ret);
 	ret = g_mainCmdList_.Initialize(&g_Device_, &g_Device_.GetGraphicsQueue());
 	assert(ret);
+	for (int i = 0; i < _countof(g_mainCmdLists_); ++i)
+	{
+		ret = g_mainCmdLists_[i].Initialize(&g_Device_, &g_Device_.GetGraphicsQueue());
+		assert(ret);
+	}
 	ret = g_copyCmdList_.Initialize(&g_Device_, &g_Device_.GetCopyQueue());
 	assert(ret);
 	ret = InitializeAssets();
@@ -705,6 +740,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	g_Device_.WaitDrawDone();
 	DestroyAssets();
 	g_copyCmdList_.Destroy();
+	for (int i = 0; i < _countof(g_mainCmdLists_); ++i)
+	{
+		g_mainCmdLists_[i].Destroy();
+	}
 	g_mainCmdList_.Destroy();
 	g_Device_.Destroy();
 
