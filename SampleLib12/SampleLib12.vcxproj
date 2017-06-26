@@ -91,6 +91,7 @@
     <ClInclude Include="include\sl12\buffer_view.h" />
     <ClInclude Include="include\sl12\command_list.h" />
     <ClInclude Include="include\sl12\command_queue.h" />
+    <ClInclude Include="include\sl12\default_states.h" />
     <ClInclude Include="include\sl12\descriptor.h" />
     <ClInclude Include="include\sl12\descriptor_heap.h" />
     <ClInclude Include="include\sl12\device.h" />
@@ -112,6 +113,7 @@
     <ClCompile Include="src\buffer_view.cpp" />
     <ClCompile Include="src\command_list.cpp" />
     <ClCompile Include="src\command_queue.cpp" />
+    <ClCompile Include="src\default_states.cpp" />
     <ClCompile Include="src\descriptor.cpp" />
     <ClCompile Include="src\descriptor_heap.cpp" />
     <ClCompile Include="src\device.cpp" />

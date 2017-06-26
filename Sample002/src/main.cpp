@@ -622,7 +622,7 @@ bool InitializeAssets()
 		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		desc.NumRenderTargets = 1;
 		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.DSVFormat = g_DepthBuffer_.GetResourceDesc().Format;
+		desc.DSVFormat = g_DepthBuffer_.GetTextureDesc().format;
 		desc.SampleDesc.Count = 1;
 
 		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateTex_));
@@ -656,7 +656,7 @@ bool InitializeAssets()
 	}
 
 	// GUIの初期化
-	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, g_DepthBuffer_.GetResourceDesc().Format))
+	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, g_DepthBuffer_.GetTextureDesc().format))
 	{
 		return false;
 	}
