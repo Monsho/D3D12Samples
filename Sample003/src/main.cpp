@@ -473,8 +473,10 @@ void RenderScene()
 		uint64_t* t = (uint64_t*)p;
 		uint64_t time = t[1] - t[0];
 		buffer->Unmap(0, nullptr);
+		uint64_t freq = g_Device_.GetGraphicsQueue().GetTimestampFrequency();
+		float ms = (float)time / ((float)freq / 1000.0f);
 
-		ImGui::Text("Time : %lld (clock)", time);
+		ImGui::Text("Time : %f (ms)", ms);
 	}
 
 	g_pNextCmdList_->Reset();
@@ -529,7 +531,7 @@ void RenderScene()
 		DirectX::XMMATRIX mtxVP = mtxV * mtxP;
 		DirectX::XMStoreFloat4x4(pMtxs, mtxVP);
 
-		//sAngle += 1.0f;
+		sAngle += 1.0f;
 	}
 
 	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 0);

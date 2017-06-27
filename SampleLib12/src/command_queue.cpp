@@ -27,6 +27,24 @@ namespace sl12
 	{
 		SafeRelease(pQueue_);
 	}
+
+	//----
+	uint64_t CommandQueue::GetTimestampFrequency() const
+	{
+		if (!pQueue_)
+		{
+			return 1;
+		}
+
+		uint64_t ret;
+		auto hr = pQueue_->GetTimestampFrequency(&ret);
+		if (FAILED(hr))
+		{
+			return 1;
+		}
+		return ret;
+	}
+
 }	// namespace sl12
 
 //	EOF

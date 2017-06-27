@@ -22,6 +22,8 @@ namespace sl12
 		bool Initialize(Device* pDev, D3D12_COMMAND_LIST_TYPE type, u32 priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL);
 		void Destroy();
 
+		uint64_t GetTimestampFrequency() const;
+
 		ID3D12CommandQueue* GetQueueDep() { return pQueue_; }
 
 	private:
