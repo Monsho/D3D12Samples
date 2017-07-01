@@ -222,7 +222,7 @@ namespace sl12
 		}
 		for (u32 i = 0; i < kMaxFrameCount; i++)
 		{
-			if (!pConstantBuffers_[i].Initialize(pDevice, sizeof(VertexUniform), 0, BufferUsage::ConstantBuffer, true))
+			if (!pConstantBuffers_[i].Initialize(pDevice, sizeof(VertexUniform), 0, BufferUsage::ConstantBuffer, true, false))
 			{
 				return false;
 			}
@@ -343,7 +343,7 @@ namespace sl12
 		if (vbuffer.GetSize() < vertex_size)
 		{
 			vbuffer.Destroy();
-			vbuffer.Initialize(pDevice, vertex_size, sizeof(ImDrawVert), BufferUsage::VertexBuffer, true);
+			vbuffer.Initialize(pDevice, vertex_size, sizeof(ImDrawVert), BufferUsage::VertexBuffer, true, false);
 
 			vbView.Destroy();
 			vbView.Initialize(pDevice, &vbuffer);
@@ -356,7 +356,7 @@ namespace sl12
 		if (ibuffer.GetSize() < index_size)
 		{
 			ibuffer.Destroy();
-			ibuffer.Initialize(pDevice, index_size, sizeof(ImDrawIdx), BufferUsage::IndexBuffer, true);
+			ibuffer.Initialize(pDevice, index_size, sizeof(ImDrawIdx), BufferUsage::IndexBuffer, true, false);
 
 			ibView.Destroy();
 			ibView.Initialize(pDevice, &ibuffer);

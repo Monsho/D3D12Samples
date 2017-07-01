@@ -15,6 +15,7 @@ namespace sl12
 			ConstantBuffer,
 			VertexBuffer,
 			IndexBuffer,
+			ShaderResource,
 
 			Max
 		};
@@ -32,7 +33,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic);
+		bool Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic, bool isUAV);
 		void Destroy();
 
 		void UpdateBuffer(Device* pDev, CommandList* pCmdList, void* pData, size_t size, size_t offset = 0);
@@ -46,6 +47,7 @@ namespace sl12
 		size_t GetSize() const { return size_; }
 		size_t GetStride() const { return stride_; }
 		BufferUsage::Type GetBufferUsage() const { return bufferUsage_; }
+		bool IsUAV() const { return isUAV_; }
 
 	private:
 		ID3D12Resource*			pResource_{ nullptr };
@@ -54,6 +56,7 @@ namespace sl12
 		size_t					size_{ 0 };
 		size_t					stride_{ 0 };
 		BufferUsage::Type		bufferUsage_{ BufferUsage::Max };
+		bool					isUAV_{ false };
 		D3D12_RESOURCE_STATES	currentState_{ D3D12_RESOURCE_STATE_COMMON };
 	};	// class Buffer
 

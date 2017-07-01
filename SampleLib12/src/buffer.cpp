@@ -8,12 +8,12 @@
 namespace sl12
 {
 	//----
-	bool Buffer::Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic)
+	bool Buffer::Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic, bool isUAV)
 	{
 		D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_UPLOAD;
 		if (!isDynamic)
 		{
-			if ((type == BufferUsage::VertexBuffer) || (type == BufferUsage::IndexBuffer))
+			if (type != BufferUsage::ConstantBuffer)
 			{
 				heapType = D3D12_HEAP_TYPE_DEFAULT;
 			}
@@ -24,6 +24,9 @@ namespace sl12
 		{
 			allocSize = (allocSize + 255) / 256 * 256;
 		}
+
+		// ByteAddressBufferの場合はR32_TYPELESSに設定する
+		DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
 
 		D3D12_HEAP_PROPERTIES prop{};
 		prop.Type = heapType;
@@ -39,11 +42,11 @@ namespace sl12
 		desc.Height = 1;
 		desc.DepthOrArraySize = 1;
 		desc.MipLevels = 1;
-		desc.Format = DXGI_FORMAT_UNKNOWN;
+		desc.Format = format;
 		desc.SampleDesc.Count = 1;
 		desc.SampleDesc.Quality = 0;
 		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		desc.Flags = isUAV ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE;
 
 		currentState_ = (heapType == D3D12_HEAP_TYPE_UPLOAD) ? D3D12_RESOURCE_STATE_GENERIC_READ : D3D12_RESOURCE_STATE_COPY_DEST;
 
@@ -58,6 +61,7 @@ namespace sl12
 		size_ = size;
 		stride_ = stride;
 		bufferUsage_ = type;
+		isUAV_ = isUAV;
 		return true;
 	}
 
@@ -92,7 +96,7 @@ namespace sl12
 		else
 		{
 			Buffer src;
-			if (!src.Initialize(pDev, size, stride_, bufferUsage_, true))
+			if (!src.Initialize(pDev, size, stride_, bufferUsage_, true, false))
 			{
 				return;
 			}

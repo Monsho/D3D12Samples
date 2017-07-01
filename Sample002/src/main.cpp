@@ -280,7 +280,7 @@ bool InitializeAssets()
 
 		for (int i = 0; i < _countof(g_CBScenes_); i++)
 		{
-			if (!g_CBScenes_[i].Initialize(&g_Device_, sizeof(DirectX::XMFLOAT4X4) * 3, 1, sl12::BufferUsage::ConstantBuffer, true))
+			if (!g_CBScenes_[i].Initialize(&g_Device_, sizeof(DirectX::XMFLOAT4X4) * 3, 1, sl12::BufferUsage::ConstantBuffer, true, false))
 			{
 				return false;
 			}
@@ -304,7 +304,7 @@ bool InitializeAssets()
 				1.0f, -1.0f, 0.0f,
 			};
 
-			if (!g_vbuffers_[0].Initialize(&g_Device_, sizeof(positions), sizeof(float) * 3, sl12::BufferUsage::VertexBuffer, false))
+			if (!g_vbuffers_[0].Initialize(&g_Device_, sizeof(positions), sizeof(float) * 3, sl12::BufferUsage::VertexBuffer, false, false))
 			{
 				return false;
 			}
@@ -320,7 +320,7 @@ bool InitializeAssets()
 				0xff0000ff, 0xff00ff00, 0xffff0000, 0xffffffff
 			};
 
-			if (!g_vbuffers_[1].Initialize(&g_Device_, sizeof(colors), sizeof(sl12::u32), sl12::BufferUsage::VertexBuffer, false))
+			if (!g_vbuffers_[1].Initialize(&g_Device_, sizeof(colors), sizeof(sl12::u32), sl12::BufferUsage::VertexBuffer, false, false))
 			{
 				return false;
 			}
@@ -339,7 +339,7 @@ bool InitializeAssets()
 				1.0f, 1.0f
 			};
 
-			if (!g_vbuffers_[2].Initialize(&g_Device_, sizeof(uvs), sizeof(float) * 2, sl12::BufferUsage::VertexBuffer, false))
+			if (!g_vbuffers_[2].Initialize(&g_Device_, sizeof(uvs), sizeof(float) * 2, sl12::BufferUsage::VertexBuffer, false, false))
 			{
 				return false;
 			}
@@ -357,7 +357,7 @@ bool InitializeAssets()
 			0, 1, 2, 1, 3, 2
 		};
 
-		if (!g_ibuffer_.Initialize(&g_Device_, sizeof(indices), sizeof(sl12::u32), sl12::BufferUsage::IndexBuffer, false))
+		if (!g_ibuffer_.Initialize(&g_Device_, sizeof(indices), sizeof(sl12::u32), sl12::BufferUsage::IndexBuffer, false, false))
 		{
 			return false;
 		}

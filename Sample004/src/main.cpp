@@ -16,6 +16,7 @@
 #include <windowsx.h>
 
 #include "file.h"
+#include "float16.h"
 
 
 namespace
@@ -30,12 +31,17 @@ namespace
 	struct CompressVertex
 	{
 		float		position[3];
-		uint32_t	color;
+		float16		normal[4];
 	};
 	struct NoCompressVertex
 	{
 		float		position[3];
-		float		color[4];
+		float		normal[3];
+	};
+	struct CbWorld
+	{
+		DirectX::XMFLOAT4X4		mtxWorld;
+		sl12::u32				vertexCount;
 	};
 
 	HWND	g_hWnd_;
@@ -54,15 +60,25 @@ namespace
 	void*						g_pCBSceneBuffers_[kMaxCBs] = { nullptr };
 	sl12::ConstantBufferView	g_CBSceneViews_[kMaxCBs];
 
-	sl12::Buffer			g_vbuffers_[2];
-	sl12::VertexBufferView	g_vbufferViews_[2];
+	sl12::Buffer				g_CBWorlds_[kMaxCBs];
+	void*						g_pCBWorldBuffers_[kMaxCBs] = { nullptr };
+	sl12::ConstantBufferView	g_CBWorldViews_[kMaxCBs];
 
-	File	g_VShader_, g_PShader_;
+	sl12::Buffer			g_src_vbuffers_[2];
+	sl12::Buffer			g_dst_vbuffers_[2];
+	sl12::VertexBufferView	g_vbufferViews_[2];
+	sl12::BufferView		g_src_vbSRVs_[2];
+	sl12::UnorderedAccessView	g_dst_vbUAVs_[2];
+
+	File	g_VShader_, g_PShader_, g_CShader_[2];
 
 	ID3D12RootSignature*	g_pRootSig_ = nullptr;
-
 	ID3D12PipelineState*	g_pCompressPipeline_ = nullptr;
 	ID3D12PipelineState*	g_pNoCompressPipeline_ = nullptr;
+
+	ID3D12RootSignature*	g_pWorldRootSig_ = nullptr;
+	ID3D12PipelineState*	g_pWorldCompressPipeline_ = nullptr;
+	ID3D12PipelineState*	g_pWorldNoCompressPipeline_ = nullptr;
 
 	ID3D12QueryHeap*		g_pTimestampQuery_[sl12::Swapchain::kMaxBuffer] = { nullptr };
 	ID3D12Resource*			g_pTimestampBuffer_[sl12::Swapchain::kMaxBuffer] = { nullptr };
@@ -189,6 +205,21 @@ bool InitializeAssets()
 
 			g_pCBSceneBuffers_[i] = g_CBScenes_[i].Map(&g_mainCmdList_);
 		}
+
+		for (int i = 0; i < _countof(g_CBWorlds_); i++)
+		{
+			if (!g_CBWorlds_[i].Initialize(&g_Device_, sizeof(CbWorld), 1, sl12::BufferUsage::ConstantBuffer, true, false))
+			{
+				return false;
+			}
+
+			if (!g_CBWorldViews_[i].Initialize(&g_Device_, &g_CBWorlds_[i]))
+			{
+				return false;
+			}
+
+			g_pCBWorldBuffers_[i] = g_CBWorlds_[i].Map(&g_mainCmdList_);
+		}
 	}
 
 	// 頂点バッファを作成
@@ -202,14 +233,20 @@ bool InitializeAssets()
 			p[1] = frandom(-20.0f, 20.0f);
 			p[2] = frandom(-20.0f, 20.0f);
 		};
-		auto colRandom = [&](float* c) {
-			c[0] = frandom(0.0f, 1.0f);
-			c[1] = frandom(0.0f, 1.0f);
-			c[2] = frandom(0.0f, 1.0f);
-			c[3] = 1.0f;
+		auto normRandom = [&](float* n) {
+			n[0] = frandom(-1.0f, 1.0f);
+			n[1] = frandom(-1.0f, 1.0f);
+			n[2] = frandom(-1.0f, 1.0f);
+			float div = 1.0f / sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+			n[0] *= div;
+			n[1] *= div;
+			n[2] *= div;
 		};
-		auto toU32Col = [](float* c) {
-			return ((uint32_t)(c[3] * 255.0f) << 24) | ((uint32_t)(c[2] * 255.0f) << 16) | ((uint32_t)(c[1] * 255.0f) << 8) | ((uint32_t)(c[0] * 255.0f) << 0);
+		auto toNormal16 = [](float16* no, float* ni) {
+			no[0] = ToFloat16(ni[0]);
+			no[1] = ToFloat16(ni[1]);
+			no[2] = ToFloat16(ni[2]);
+			no[3] = 0x0;
 		};
 
 		CompressVertex* pCV = new CompressVertex[kMaxTriangle * 3];
@@ -218,10 +255,12 @@ bool InitializeAssets()
 		{
 			uint32_t index = i * 3;
 			// カラー
-			colRandom(pNV[index].color);
-			memcpy(pNV[index + 1].color, pNV[index].color, sizeof(pNV[index].color));
-			memcpy(pNV[index + 2].color, pNV[index].color, sizeof(pNV[index].color));
-			pCV[index].color = pCV[index + 1].color = pCV[index + 2].color = toU32Col(pNV[index].color);
+			normRandom(pNV[index].normal);
+			memcpy(pNV[index + 1].normal, pNV[index].normal, sizeof(pNV[index].normal));
+			memcpy(pNV[index + 2].normal, pNV[index].normal, sizeof(pNV[index].normal));
+			toNormal16(pCV[index + 0].normal, pNV[index + 0].normal);
+			toNormal16(pCV[index + 1].normal, pNV[index + 1].normal);
+			toNormal16(pCV[index + 2].normal, pNV[index + 2].normal);
 			// 座標
 			float p[3];
 			posRandom(p);
@@ -236,25 +275,49 @@ bool InitializeAssets()
 			pNV[index + 2].position[2] = pCV[index + 2].position[2] = p[2];
 		}
 
-		if (!g_vbuffers_[0].Initialize(&g_Device_, sizeof(CompressVertex) * kMaxTriangle * 3, sizeof(CompressVertex), sl12::BufferUsage::VertexBuffer, false, false))
+		if (!g_src_vbuffers_[0].Initialize(&g_Device_, sizeof(CompressVertex) * kMaxTriangle * 3, sizeof(CompressVertex), sl12::BufferUsage::VertexBuffer, false, false))
 		{
 			return false;
 		}
-		if (!g_vbufferViews_[0].Initialize(&g_Device_, &g_vbuffers_[0]))
+		if (!g_dst_vbuffers_[0].Initialize(&g_Device_, sizeof(CompressVertex) * kMaxTriangle * 3, sizeof(CompressVertex), sl12::BufferUsage::VertexBuffer, false, true))
 		{
 			return false;
 		}
-		g_vbuffers_[0].UpdateBuffer(&g_Device_, &g_copyCmdList_, pCV, sizeof(CompressVertex) * kMaxTriangle * 3);
+		if (!g_vbufferViews_[0].Initialize(&g_Device_, &g_dst_vbuffers_[0]))
+		{
+			return false;
+		}
+		if (!g_src_vbSRVs_[0].Initialize(&g_Device_, &g_src_vbuffers_[0], 0, 0))
+		{
+			return false;
+		}
+		if (!g_dst_vbUAVs_[0].Initialize(&g_Device_, &g_dst_vbuffers_[0], 0, 0))
+		{
+			return false;
+		}
+		g_src_vbuffers_[0].UpdateBuffer(&g_Device_, &g_copyCmdList_, pCV, sizeof(CompressVertex) * kMaxTriangle * 3);
 
-		if (!g_vbuffers_[1].Initialize(&g_Device_, sizeof(NoCompressVertex) * kMaxTriangle * 3, sizeof(NoCompressVertex), sl12::BufferUsage::VertexBuffer, false, false))
+		if (!g_src_vbuffers_[1].Initialize(&g_Device_, sizeof(NoCompressVertex) * kMaxTriangle * 3, sizeof(NoCompressVertex), sl12::BufferUsage::VertexBuffer, false, false))
 		{
 			return false;
 		}
-		if (!g_vbufferViews_[1].Initialize(&g_Device_, &g_vbuffers_[1]))
+		if (!g_dst_vbuffers_[1].Initialize(&g_Device_, sizeof(NoCompressVertex) * kMaxTriangle * 3, sizeof(NoCompressVertex), sl12::BufferUsage::VertexBuffer, false, true))
 		{
 			return false;
 		}
-		g_vbuffers_[1].UpdateBuffer(&g_Device_, &g_copyCmdList_, pNV, sizeof(NoCompressVertex) * kMaxTriangle * 3);
+		if (!g_vbufferViews_[1].Initialize(&g_Device_, &g_dst_vbuffers_[1]))
+		{
+			return false;
+		}
+		if (!g_src_vbSRVs_[1].Initialize(&g_Device_, &g_src_vbuffers_[1], 0, 0))
+		{
+			return false;
+		}
+		if (!g_dst_vbUAVs_[1].Initialize(&g_Device_, &g_dst_vbuffers_[1], 0, 0))
+		{
+			return false;
+		}
+		g_src_vbuffers_[1].UpdateBuffer(&g_Device_, &g_copyCmdList_, pNV, sizeof(NoCompressVertex) * kMaxTriangle * 3);
 
 		delete[] pCV;
 		delete[] pNV;
@@ -266,6 +329,14 @@ bool InitializeAssets()
 		return false;
 	}
 	if (!g_PShader_.ReadFile("data/PSSample.cso"))
+	{
+		return false;
+	}
+	if (!g_CShader_[0].ReadFile("data/world_transform_fp16.cso"))
+	{
+		return false;
+	}
+	if (!g_CShader_[1].ReadFile("data/world_transform_fp32.cso"))
 	{
 		return false;
 	}
@@ -311,16 +382,74 @@ bool InitializeAssets()
 			return false;
 		}
 	}
+	{
+		D3D12_DESCRIPTOR_RANGE ranges[3];
+		D3D12_ROOT_PARAMETER rootParameters[3];
+
+		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+		ranges[0].NumDescriptors = 1;
+		ranges[0].BaseShaderRegister = 0;
+		ranges[0].RegisterSpace = 0;
+		ranges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		ranges[1].NumDescriptors = 1;
+		ranges[1].BaseShaderRegister = 0;
+		ranges[1].RegisterSpace = 0;
+		ranges[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+		ranges[2].NumDescriptors = 1;
+		ranges[2].BaseShaderRegister = 0;
+		ranges[2].RegisterSpace = 0;
+		ranges[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+		rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
+		rootParameters[0].DescriptorTable.pDescriptorRanges = &ranges[0];
+		rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+		rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
+		rootParameters[1].DescriptorTable.pDescriptorRanges = &ranges[1];
+		rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+		rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+		rootParameters[2].DescriptorTable.pDescriptorRanges = &ranges[2];
+		rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+		D3D12_ROOT_SIGNATURE_DESC desc;
+		desc.NumParameters = _countof(rootParameters);
+		desc.pParameters = rootParameters;
+		desc.NumStaticSamplers = 0;
+		desc.pStaticSamplers = nullptr;
+		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+		ID3DBlob* pSignature{ nullptr };
+		ID3DBlob* pError{ nullptr };
+		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
+		if (FAILED(hr))
+		{
+			sl12::SafeRelease(pSignature);
+			sl12::SafeRelease(pError);
+			return false;
+		}
+
+		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pWorldRootSig_));
+		sl12::SafeRelease(pSignature);
+		sl12::SafeRelease(pError);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
 
 	// PSOを作成
 	{
 		D3D12_INPUT_ELEMENT_DESC elementDescs0[] = {
 			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "NORMAL", 0, DXGI_FORMAT_R16G16B16A16_FLOAT, 0, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		};
 		D3D12_INPUT_ELEMENT_DESC elementDescs1[] = {
 			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		};
 
 		D3D12_RASTERIZER_DESC rasterDesc = sl12::DefaultRasterizerStateStandard();
@@ -362,13 +491,32 @@ bool InitializeAssets()
 			return false;
 		}
 	}
+	{
+		D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {};
+		desc.pRootSignature = g_pWorldRootSig_;
+		desc.CS = { reinterpret_cast<UINT8*>(g_CShader_[0].GetData()), g_CShader_[0].GetSize() };
+
+		auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pWorldCompressPipeline_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		desc.CS = { reinterpret_cast<UINT8*>(g_CShader_[1].GetData()), g_CShader_[1].GetSize() };
+
+		hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pWorldNoCompressPipeline_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
 
 	// タイムスタンプクエリとバッファ
 	for (int i = 0; i < sl12::Swapchain::kMaxBuffer; ++i)
 	{
 		D3D12_QUERY_HEAP_DESC qd{};
 		qd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
-		qd.Count = 2;
+		qd.Count = 4;
 		qd.NodeMask = 1;
 
 		auto hr = pDev->CreateQueryHeap(&qd, IID_PPV_ARGS(&g_pTimestampQuery_[i]));
@@ -387,7 +535,7 @@ bool InitializeAssets()
 		D3D12_RESOURCE_DESC rd{};
 		rd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		rd.Alignment = 0;
-		rd.Width = sizeof(uint64_t) * 2;
+		rd.Width = sizeof(uint64_t) * 4;
 		rd.Height = 1;
 		rd.DepthOrArraySize = 1;
 		rd.MipLevels = 1;
@@ -424,16 +572,29 @@ void DestroyAssets()
 	for (auto& v : g_pTimestampBuffer_) sl12::SafeRelease(v);
 	for (auto& v : g_pTimestampQuery_) sl12::SafeRelease(v);
 
+	sl12::SafeRelease(g_pWorldNoCompressPipeline_);
+	sl12::SafeRelease(g_pWorldCompressPipeline_);
+	sl12::SafeRelease(g_pWorldRootSig_);
+
 	sl12::SafeRelease(g_pNoCompressPipeline_);
 	sl12::SafeRelease(g_pCompressPipeline_);
-
 	sl12::SafeRelease(g_pRootSig_);
 
 	g_VShader_.Destroy();
 	g_PShader_.Destroy();
 
+	for (auto& v : g_dst_vbUAVs_) v.Destroy();
+	for (auto& v : g_src_vbSRVs_) v.Destroy();
 	for (auto& v : g_vbufferViews_) v.Destroy();
-	for (auto& v : g_vbuffers_) v.Destroy();
+	for (auto& v : g_dst_vbuffers_) v.Destroy();
+	for (auto& v : g_src_vbuffers_) v.Destroy();
+
+	for (auto& v : g_CBWorldViews_) v.Destroy();
+	for (auto& v : g_CBWorlds_)
+	{
+		v.Unmap();
+		v.Destroy();
+	}
 
 	for (auto& v : g_CBSceneViews_) v.Destroy();
 	for (auto& v : g_CBScenes_)
@@ -464,26 +625,33 @@ void RenderScene()
 			g_IsNoCompressVertex = !g_IsNoCompressVertex;
 		}
 
-		ImGui::Text(g_IsNoCompressVertex ? "Float32 Color" : "U32 Color");
+		ImGui::Text(g_IsNoCompressVertex ? "Float32 Normal" : "Float16 Normal");
 
 		auto buffer = g_pTimestampBuffer_[prevFrameIndex];
 		void* p = nullptr;
-		D3D12_RANGE range{0, sizeof(uint64_t) * 2};
+		D3D12_RANGE range{0, sizeof(uint64_t) * 4};
 		buffer->Map(0, &range, &p);
 		uint64_t* t = (uint64_t*)p;
-		uint64_t time = t[1] - t[0];
+		uint64_t cs_time = t[1] - t[0];
+		uint64_t gr_time = t[3] - t[2];
 		buffer->Unmap(0, nullptr);
 		uint64_t freq = g_Device_.GetGraphicsQueue().GetTimestampFrequency();
-		float ms = (float)time / ((float)freq / 1000.0f);
+		float cs_ms = (float)cs_time / ((float)freq / 1000.0f);
+		float gr_ms = (float)gr_time / ((float)freq / 1000.0f);
 
-		ImGui::Text("Time : %f (ms)", ms);
+		ImGui::Text("Dispatch : %f (ms)", cs_ms);
+		ImGui::Text("Draw : %f (ms)", gr_ms);
 	}
 
 	g_pNextCmdList_->Reset();
 
-	for (auto& v : g_vbuffers_)
+	for (auto& v : g_src_vbuffers_)
 	{
-		g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	}
+	for (auto& v : g_dst_vbuffers_)
+	{
+		g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	}
 
 	ID3D12Resource* rtRes = g_Device_.GetSwapchain().GetCurrentRenderTarget(1);
@@ -503,6 +671,55 @@ void RenderScene()
 	}
 
 	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	// World定数バッファを更新
+	sl12::Descriptor& cbWorldDesc = *g_CBWorldViews_[frameIndex].GetDesc();
+	{
+		static float sAngle = 0.0f;
+		void* p0 = g_pCBWorldBuffers_[frameIndex];
+		CbWorld* pWorld = reinterpret_cast<CbWorld*>(p0);
+		DirectX::XMMATRIX mtxW = DirectX::XMMatrixRotationY(sAngle * DirectX::XM_PI / 180.0f);
+		DirectX::XMStoreFloat4x4(&pWorld->mtxWorld, mtxW);
+		pWorld->vertexCount = kMaxTriangle * 3;
+
+		//sAngle += 1.0f;
+	}
+
+	// コンピュートシェーダを起動
+	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 0);
+	{
+		if (!g_IsNoCompressVertex)
+		{
+			pCmdList->SetPipelineState(g_pWorldCompressPipeline_);
+		}
+		else
+		{
+			pCmdList->SetPipelineState(g_pWorldNoCompressPipeline_);
+		}
+		pCmdList->SetComputeRootSignature(g_pWorldRootSig_);
+
+		// DescriptorHeapを設定
+		int index = !g_IsNoCompressVertex ? 0 : 1;
+		ID3D12DescriptorHeap* pDescHeaps[] = {
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
+		};
+		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
+		pCmdList->SetComputeRootDescriptorTable(0, cbWorldDesc.GetGpuHandle());
+		pCmdList->SetComputeRootDescriptorTable(1, g_src_vbSRVs_[index].GetDesc()->GetGpuHandle());
+		pCmdList->SetComputeRootDescriptorTable(2, g_dst_vbUAVs_[index].GetDesc()->GetGpuHandle());
+
+		// ディスパッチ
+		sl12::u32 vertexCount = kMaxTriangle * 3;
+		sl12::u32 plusOne = (vertexCount % 1024) ? 1 : 0;
+		pCmdList->Dispatch(vertexCount / 1024 + plusOne, 1, 1);
+	}
+	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 1);
+
+	for (auto& v : g_dst_vbuffers_)
+	{
+		g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	}
 
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
@@ -531,10 +748,10 @@ void RenderScene()
 		DirectX::XMMATRIX mtxVP = mtxV * mtxP;
 		DirectX::XMStoreFloat4x4(pMtxs, mtxVP);
 
-		sAngle += 1.0f;
+		//sAngle += 1.0f;
 	}
 
-	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 0);
+	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 2);
 	{
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
@@ -574,7 +791,7 @@ void RenderScene()
 		}
 		pCmdList->DrawInstanced(kMaxTriangle * 3, 1, 0, 0);
 	}
-	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 1);
+	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 3);
 
 	ImGui::Render();
 
@@ -589,7 +806,7 @@ void RenderScene()
 		pCmdList->ResourceBarrier(1, &barrier);
 	}
 
-	pCmdList->ResolveQueryData(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, g_pTimestampBuffer_[frameIndex], 0);
+	pCmdList->ResolveQueryData(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 0, 4, g_pTimestampBuffer_[frameIndex], 0);
 
 	g_pNextCmdList_->Close();
 }

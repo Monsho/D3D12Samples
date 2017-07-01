@@ -339,18 +339,19 @@ namespace sl12
 	{
 		const D3D12_RESOURCE_DESC& resDesc = pBuff->GetResourceDesc();
 		D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc{};
-		viewDesc.Format = resDesc.Format;
 		viewDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 		if (stride == 0)
 		{
+			viewDesc.Format = DXGI_FORMAT_R32_TYPELESS;
 			viewDesc.Buffer.FirstElement = firstElement;
-			viewDesc.Buffer.NumElements = 0;
-			viewDesc.Buffer.StructureByteStride = stride;
+			viewDesc.Buffer.NumElements = static_cast<u32>(resDesc.Width / 4);
+			viewDesc.Buffer.StructureByteStride = 0;
 			viewDesc.Buffer.CounterOffsetInBytes = offset;
 			viewDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
 		}
 		else
 		{
+			viewDesc.Format = DXGI_FORMAT_UNKNOWN;
 			viewDesc.Buffer.FirstElement = firstElement;
 			viewDesc.Buffer.NumElements = static_cast<u32>((resDesc.Width / static_cast<u64>(stride)) - static_cast<u64>(firstElement));
 			viewDesc.Buffer.StructureByteStride = stride;

@@ -74,6 +74,28 @@ namespace sl12
 		D3D12_INDEX_BUFFER_VIEW	view_{};
 	};	// class IndexBufferView
 
+
+	//----------------------------------------------------------------------------
+	class BufferView
+	{
+	public:
+		BufferView()
+		{}
+		~BufferView()
+		{
+			Destroy();
+		}
+
+		bool Initialize(Device* pDev, Buffer* pBuffer, u32 firstElement, u32 stride);
+		void Destroy();
+
+		// getter
+		Descriptor* GetDesc() { return pDesc_; }
+
+	private:
+		Descriptor*	pDesc_{ nullptr };
+	};	// class BufferView
+
 }	// namespace sl12
 
 //	EOF
