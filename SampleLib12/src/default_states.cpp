@@ -6,84 +6,84 @@ namespace sl12
 	//-----------------------------
 	// ブレンドなしのRTブレンド記述子
 	//-----------------------------
-	D3D12_RENDER_TARGET_BLEND_DESC DefaultRenderTargetBlendNone()
+	RenderTargetBlendDesc DefaultRenderTargetBlendNone()
 	{
-		D3D12_RENDER_TARGET_BLEND_DESC ret{};
-		ret.BlendEnable = false;
-		ret.LogicOpEnable = false;
-		ret.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		RenderTargetBlendDesc ret{};
+		ret.isBlendEnable = false;
+		ret.isLogicBlendEnable = false;
+		ret.writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 		return ret;
 	}
 
 	//-----------------------------
 	// アルファブレンドのRTブレンド記述子
 	//-----------------------------
-	D3D12_RENDER_TARGET_BLEND_DESC DefaultRenderTargetBlendAlpha()
+	RenderTargetBlendDesc DefaultRenderTargetBlendAlpha()
 	{
-		D3D12_RENDER_TARGET_BLEND_DESC ret{};
-		ret.BlendEnable = true;
-		ret.LogicOpEnable = false;
-		ret.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-		ret.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-		ret.BlendOp = D3D12_BLEND_OP_ADD;
-		ret.SrcBlendAlpha = D3D12_BLEND_ONE;
-		ret.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-		ret.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		ret.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		RenderTargetBlendDesc ret{};
+		ret.isBlendEnable = true;
+		ret.isLogicBlendEnable = false;
+		ret.srcBlendColor = D3D12_BLEND_SRC_ALPHA;
+		ret.dstBlendColor = D3D12_BLEND_INV_SRC_ALPHA;
+		ret.blendOpColor = D3D12_BLEND_OP_ADD;
+		ret.srcBlendAlpha = D3D12_BLEND_ONE;
+		ret.dstBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+		ret.blendOpAlpha = D3D12_BLEND_OP_ADD;
+		ret.writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 		return ret;
 	}
 
 	//-----------------------------
 	// アルファ加算ブレンドのRTブレンド記述子
 	//-----------------------------
-	D3D12_RENDER_TARGET_BLEND_DESC DefaultRenderTargetBlendAdd()
+	RenderTargetBlendDesc DefaultRenderTargetBlendAdd()
 	{
-		D3D12_RENDER_TARGET_BLEND_DESC ret{};
-		ret.BlendEnable = true;
-		ret.LogicOpEnable = false;
-		ret.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-		ret.DestBlend = D3D12_BLEND_ONE;
-		ret.BlendOp = D3D12_BLEND_OP_ADD;
-		ret.SrcBlendAlpha = D3D12_BLEND_ONE;
-		ret.DestBlendAlpha = D3D12_BLEND_ONE;
-		ret.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		ret.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		RenderTargetBlendDesc ret{};
+		ret.isBlendEnable = true;
+		ret.isLogicBlendEnable = false;
+		ret.srcBlendColor = D3D12_BLEND_SRC_ALPHA;
+		ret.dstBlendColor = D3D12_BLEND_ONE;
+		ret.blendOpColor = D3D12_BLEND_OP_ADD;
+		ret.srcBlendAlpha = D3D12_BLEND_ONE;
+		ret.dstBlendAlpha = D3D12_BLEND_ONE;
+		ret.blendOpAlpha = D3D12_BLEND_OP_ADD;
+		ret.writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 		return ret;
 	}
 
 	//-----------------------------
 	// アルファ減算ブレンドのRTブレンド記述子
 	//-----------------------------
-	D3D12_RENDER_TARGET_BLEND_DESC DefaultRenderTargetBlendSub()
+	RenderTargetBlendDesc DefaultRenderTargetBlendSub()
 	{
-		D3D12_RENDER_TARGET_BLEND_DESC ret{};
-		ret.BlendEnable = true;
-		ret.LogicOpEnable = false;
-		ret.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-		ret.DestBlend = D3D12_BLEND_ONE;
-		ret.BlendOp = D3D12_BLEND_OP_SUBTRACT;
-		ret.SrcBlendAlpha = D3D12_BLEND_ONE;
-		ret.DestBlendAlpha = D3D12_BLEND_ONE;
-		ret.BlendOpAlpha = D3D12_BLEND_OP_SUBTRACT;
-		ret.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		RenderTargetBlendDesc ret{};
+		ret.isBlendEnable = true;
+		ret.isLogicBlendEnable = false;
+		ret.srcBlendColor = D3D12_BLEND_SRC_ALPHA;
+		ret.dstBlendColor = D3D12_BLEND_ONE;
+		ret.blendOpColor = D3D12_BLEND_OP_SUBTRACT;
+		ret.srcBlendAlpha = D3D12_BLEND_ONE;
+		ret.dstBlendAlpha = D3D12_BLEND_ONE;
+		ret.blendOpAlpha = D3D12_BLEND_OP_SUBTRACT;
+		ret.writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 		return ret;
 	}
 
 	//-----------------------------
 	// 乗算ブレンドのRTブレンド記述子
 	//-----------------------------
-	D3D12_RENDER_TARGET_BLEND_DESC DefaultRenderTargetBlendMul()
+	RenderTargetBlendDesc DefaultRenderTargetBlendMul()
 	{
-		D3D12_RENDER_TARGET_BLEND_DESC ret{};
-		ret.BlendEnable = true;
-		ret.LogicOpEnable = false;
-		ret.SrcBlend = D3D12_BLEND_DEST_COLOR;
-		ret.DestBlend = D3D12_BLEND_ZERO;
-		ret.BlendOp = D3D12_BLEND_OP_ADD;
-		ret.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
-		ret.DestBlendAlpha = D3D12_BLEND_ZERO;
-		ret.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		ret.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		RenderTargetBlendDesc ret{};
+		ret.isBlendEnable = true;
+		ret.isLogicBlendEnable = false;
+		ret.srcBlendColor = D3D12_BLEND_DEST_COLOR;
+		ret.dstBlendColor = D3D12_BLEND_ZERO;
+		ret.blendOpColor = D3D12_BLEND_OP_ADD;
+		ret.srcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+		ret.dstBlendAlpha = D3D12_BLEND_ZERO;
+		ret.blendOpAlpha = D3D12_BLEND_OP_ADD;
+		ret.writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 		return ret;
 	}
 
@@ -91,36 +91,36 @@ namespace sl12
 	//-----------------------------
 	// 深度比較なし・書き込みなし
 	//-----------------------------
-	D3D12_DEPTH_STENCIL_DESC DefaultDepthStateDisableDisable()
+	DepthStencilDesc DefaultDepthStateDisableDisable()
 	{
-		D3D12_DEPTH_STENCIL_DESC ret{};
-		ret.DepthEnable = false;
-		ret.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-		ret.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+		DepthStencilDesc ret{};
+		ret.isDepthEnable = false;
+		ret.isDepthWriteEnable = false;
+		ret.depthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 		return ret;
 	}
 
 	//-----------------------------
 	// 深度比較あり・書き込みなし
 	//-----------------------------
-	D3D12_DEPTH_STENCIL_DESC DefaultDepthStateEnableDisable()
+	DepthStencilDesc DefaultDepthStateEnableDisable()
 	{
-		D3D12_DEPTH_STENCIL_DESC ret{};
-		ret.DepthEnable = true;
-		ret.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-		ret.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		DepthStencilDesc ret{};
+		ret.isDepthEnable = true;
+		ret.isDepthWriteEnable = false;
+		ret.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 		return ret;
 	}
 
 	//-----------------------------
 	// 深度比較あり・書き込みあり
 	//-----------------------------
-	D3D12_DEPTH_STENCIL_DESC DefaultDepthStateEnableEnable()
+	DepthStencilDesc DefaultDepthStateEnableEnable()
 	{
-		D3D12_DEPTH_STENCIL_DESC ret{};
-		ret.DepthEnable = true;
-		ret.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		ret.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		DepthStencilDesc ret{};
+		ret.isDepthEnable = true;
+		ret.isDepthWriteEnable = true;
+		ret.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 		return ret;
 	}
 
@@ -128,20 +128,19 @@ namespace sl12
 	//-----------------------------
 	// 標準のラスタライザ
 	//-----------------------------
-	D3D12_RASTERIZER_DESC DefaultRasterizerStateStandard(int depth_bias, float depth_clamp, float slope_bias)
+	RasterizerDesc DefaultRasterizerStateStandard(int depth_bias, float depth_clamp, float slope_bias)
 	{
-		D3D12_RASTERIZER_DESC ret{};
-		ret.FillMode = D3D12_FILL_MODE_SOLID;
-		ret.CullMode = D3D12_CULL_MODE_FRONT;
-		ret.FrontCounterClockwise = false;
-		ret.DepthBias = depth_bias;
-		ret.DepthBiasClamp = depth_clamp;
-		ret.SlopeScaledDepthBias = slope_bias;
-		ret.DepthClipEnable = true;
-		ret.MultisampleEnable = false;
-		ret.AntialiasedLineEnable = false;
-		ret.ForcedSampleCount = 0;
-		ret.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+		RasterizerDesc ret{};
+		ret.fillMode = D3D12_FILL_MODE_SOLID;
+		ret.cullMode = D3D12_CULL_MODE_FRONT;
+		ret.isFrontCCW = false;
+		ret.depthBias = depth_bias;
+		ret.depthBiasClamp = depth_clamp;
+		ret.slopeScaledDepthBias = slope_bias;
+		ret.isDepthClipEnable = true;
+		ret.isMultisampleEnable = false;
+		ret.isAntialiasedLineEnable = false;
+		ret.isConservativeRasterEnable = false;
 		return ret;
 	}
 }	// namespace sl12

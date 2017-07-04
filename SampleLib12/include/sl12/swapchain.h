@@ -2,6 +2,9 @@
 
 #include <sl12/util.h>
 
+#include <sl12/texture.h>
+#include <sl12/texture_view.h>
+
 
 namespace sl12
 {
@@ -28,16 +31,19 @@ namespace sl12
 		void Present(int syncInterval);
 
 		// getter
-		ID3D12Resource* GetRenderTarget(int index) { return pRenderTargets_[index]; }
+		IDXGISwapChain3* GetSwapchain() { return pSwapchain_; }
+		Texture* GetTexture(int index) { return &textures_[index]; }
+		Texture* GetCurrentTexture(int offset = 0) { return &textures_[(frameIndex_ + offset) % kMaxBuffer]; }
+		RenderTargetView* GetRenderTargetView(int index) { return &views_[index]; }
+		RenderTargetView* GetCurrentRenderTargetView(int offset = 0) { return &views_[(frameIndex_ + offset) % kMaxBuffer]; }
 		D3D12_CPU_DESCRIPTOR_HANDLE GetDescHandle(int index);
-		ID3D12Resource* GetCurrentRenderTarget(int offset = 0) { return pRenderTargets_[(frameIndex_ + offset) % kMaxBuffer]; }
 		D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentDescHandle(int offset = 0);
 		int32_t GetFrameIndex() const { return frameIndex_; }
 
 	private:
 		IDXGISwapChain3*		pSwapchain_{ nullptr };
-		Descriptor*				pRtvDescs_[kMaxBuffer]{ nullptr };
-		ID3D12Resource*			pRenderTargets_[kMaxBuffer]{ nullptr };
+		Texture					textures_[kMaxBuffer];
+		RenderTargetView		views_[kMaxBuffer];
 		int32_t					frameIndex_{ 0 };
 	};	// class Swapchain
 

@@ -181,6 +181,7 @@ namespace sl12
 		}
 
 		pDev->GetDeviceDep()->CreateRenderTargetView(pTex->GetResourceDep(), &viewDesc, pDesc_->GetCpuHandle());
+		format_ = viewDesc.Format;
 
 		return true;
 	}
@@ -256,6 +257,7 @@ namespace sl12
 		}
 
 		pDev->GetDeviceDep()->CreateDepthStencilView(pTex->GetResourceDep(), &viewDesc, pDesc_->GetCpuHandle());
+		format_ = viewDesc.Format;
 
 		return true;
 	}

@@ -3,6 +3,7 @@
 #include <sl12/device.h>
 #include <sl12/command_list.h>
 #include <sl12/fence.h>
+#include <sl12/swapchain.h>
 
 
 namespace sl12
@@ -256,6 +257,41 @@ namespace sl12
 
 		fence.Destroy();
 		SafeRelease(pSrcImage);
+
+		return true;
+	}
+
+	//----
+	bool Texture::InitializeFromSwapchain(Device* pDev, Swapchain* pSwapchain, int bufferIndex)
+	{
+		if (!pDev)
+		{
+			return false;
+		}
+		if (!pSwapchain)
+		{
+			return false;
+		}
+
+		auto hr = pSwapchain->GetSwapchain()->GetBuffer(bufferIndex, IID_PPV_ARGS(&pResource_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		resourceDesc_ = pResource_->GetDesc();
+
+		memset(&textureDesc_, 0, sizeof(textureDesc_));
+		textureDesc_.dimension = TextureDimension::Texture2D;
+		textureDesc_.width = static_cast<u32>(resourceDesc_.Width);
+		textureDesc_.height = resourceDesc_.Height;
+		textureDesc_.depth = resourceDesc_.DepthOrArraySize;
+		textureDesc_.mipLevels = resourceDesc_.MipLevels;
+		textureDesc_.format = resourceDesc_.Format;
+		textureDesc_.sampleCount = resourceDesc_.SampleDesc.Count;
+		textureDesc_.isRenderTarget = true;
+
+		currentState_ = D3D12_RESOURCE_STATE_PRESENT;
 
 		return true;
 	}

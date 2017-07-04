@@ -41,24 +41,17 @@ namespace sl12
 			pSwap->Release();
 		}
 
-		// RTV用のDescriptorを作成する
-		DescriptorHeap& rtvHeap = pDev->GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		for (auto& p : pRtvDescs_)
+		// テクスチャを初期化する
+		for (u32 i = 0; i < kMaxBuffer; i++)
 		{
-			p = rtvHeap.CreateDescriptor();
-		}
-
-		// スワップチェインのバッファを先に作成したDescriptorHeapに登録する
-		{
-			for (int i = 0; i < kMaxBuffer; i++)
+			if (!textures_[i].InitializeFromSwapchain(pDev, this, i))
 			{
-				auto hr = pSwapchain_->GetBuffer(i, IID_PPV_ARGS(&pRenderTargets_[i]));
-				if (FAILED(hr))
-				{
-					return false;
-				}
+				return false;
+			}
 
-				pDev->GetDeviceDep()->CreateRenderTargetView(pRenderTargets_[i], nullptr, pRtvDescs_[i]->GetCpuHandle());
+			if (!views_[i].Initialize(pDev, &textures_[i]))
+			{
+				return false;
 			}
 		}
 
@@ -68,15 +61,8 @@ namespace sl12
 	//----
 	void Swapchain::Destroy()
 	{
-		for (auto& p : pRtvDescs_)
-		{
-			SafeRelease(p);
-		}
-		for (auto& rtv : pRenderTargets_)
-		{
-			SafeRelease(rtv);
-		}
-		memset(pRenderTargets_, 0, sizeof(pRenderTargets_));
+		for (auto& v : views_) v.Destroy();
+		for (auto& v : textures_) v.Destroy();
 		SafeRelease(pSwapchain_);
 	}
 
@@ -90,16 +76,14 @@ namespace sl12
 	//----
 	D3D12_CPU_DESCRIPTOR_HANDLE Swapchain::GetDescHandle(int index)
 	{
-		assert(pRtvDescs_[index] != nullptr);
-		return pRtvDescs_[index]->GetCpuHandle();
+		return views_[index].GetDesc()->GetCpuHandle();
 	}
 
 	//----
 	D3D12_CPU_DESCRIPTOR_HANDLE Swapchain::GetCurrentDescHandle(int offset)
 	{
 		int index = (frameIndex_ + offset) % kMaxBuffer;
-		assert(pRtvDescs_[index] != nullptr);
-		return pRtvDescs_[index]->GetCpuHandle();
+		return GetDescHandle(index);
 	}
 
 }	// namespace sl12

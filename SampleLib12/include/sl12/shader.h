@@ -14,9 +14,9 @@ namespace sl12
 			Vertex,
 			Pixel,
 			Geometry,
-			Compute,
-			Hull,
 			Domain,
+			Hull,
+			Compute,
 
 			Max
 		};

@@ -49,9 +49,11 @@ namespace sl12
 
 		// getter
 		Descriptor* GetDesc() { return pDesc_; }
+		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
 		Descriptor*	pDesc_{ nullptr };
+		DXGI_FORMAT	format_{ DXGI_FORMAT_UNKNOWN };
 	};	// class RenderTargetView
 	
 
@@ -71,9 +73,11 @@ namespace sl12
 
 		// getter
 		Descriptor* GetDesc() { return pDesc_; }
+		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
 		Descriptor*	pDesc_{ nullptr };
+		DXGI_FORMAT	format_{ DXGI_FORMAT_UNKNOWN };
 	};	// class DepthStencilView
 
 
