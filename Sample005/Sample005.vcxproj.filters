@@ -43,7 +43,7 @@
     <FxCompile Include="src\shaders\PSFFTView.psh">
       <Filter>src\shaders</Filter>
     </FxCompile>
-    <FxCompile Include="src\shaders\CSFFTMul.hlsl">
+    <FxCompile Include="src\shaders\CSFFTFilter.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
   </ItemGroup>

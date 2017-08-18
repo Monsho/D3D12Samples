@@ -61,6 +61,26 @@ namespace
 		}
 	};	// struct TextureSet
 
+	struct ConstantSet
+	{
+		sl12::Buffer				cb_;
+		sl12::ConstantBufferView	cbv_;
+		void*						ptr_;
+
+		void Destroy()
+		{
+			cbv_.Destroy();
+			cb_.Destroy();
+		}
+	};	// struct ConstantSet
+
+	struct FilterCb
+	{
+		float	distance_scale[2];
+		float	radius;
+		float	inverse;
+	};	// struct FilterCb
+
 	static const wchar_t* kWindowTitle = L"D3D12Sample";
 	static const int kWindowWidth = 1920;
 	static const int kWindowHeight = 1080;
@@ -82,9 +102,8 @@ namespace
 	sl12::DepthStencilView	g_DepthBufferView_;
 
 	TextureSet					g_srcTexture_;
-	TextureSet					g_filterTexture_;
 	FFTTarget					g_srcTarget_;
-	FFTTarget					g_filterTarget_;
+	ConstantSet					g_FilterCb_[kMaxFrameCount];
 
 	sl12::Fence					g_FFTFence_;
 
@@ -103,17 +122,17 @@ namespace
 	sl12::Shader			g_VShader_, g_PShader_;
 	sl12::Shader			g_FFTViewShader_;
 	sl12::Shader			g_FFTShaders_[FFTKind::Max];
-	sl12::Shader			g_FFTMulShader_;
+	sl12::Shader			g_FFTFilterShader_;
 
 	ID3D12RootSignature*	g_pRootSigTex_ = nullptr;
 	ID3D12RootSignature*	g_pRootSigFFT_ = nullptr;
 	ID3D12RootSignature*	g_pComputeRootSig_ = nullptr;
-	ID3D12RootSignature*	g_pComputeMulRootSig_ = nullptr;
+	ID3D12RootSignature*	g_pComputeFilterRootSig_ = nullptr;
 
 	ID3D12PipelineState*	g_pPipelineStateTex_ = nullptr;
 	ID3D12PipelineState*	g_pPipelineStateFFT_ = nullptr;
 	ID3D12PipelineState*	g_pFFTPipelineStates_[4] = { nullptr };
-	ID3D12PipelineState*	g_pPipelineStateMullFFT_ = nullptr;
+	ID3D12PipelineState*	g_pPipelineStateFilterFFT_ = nullptr;
 
 	sl12::Gui	g_Gui_;
 	sl12::InputData	g_InputData_{};
@@ -124,6 +143,7 @@ namespace
 		{
 			Source,
 			FFT_Result,
+			Filter_Result,
 			IFFT_Result,
 
 			Max
@@ -296,41 +316,19 @@ bool InitializeAssets()
 	}
 
 	// 定数バッファを作成
+	for (int i = 0; i < _countof(g_CBScenes_); i++)
 	{
-		D3D12_HEAP_PROPERTIES prop{};
-		prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-		prop.CreationNodeMask = 1;
-		prop.VisibleNodeMask = 1;
-
-		D3D12_RESOURCE_DESC desc{};
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		desc.Alignment = 0;
-		desc.Width = 256;
-		desc.Height = 1;
-		desc.DepthOrArraySize = 1;
-		desc.MipLevels = 1;
-		desc.Format = DXGI_FORMAT_UNKNOWN;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		for (int i = 0; i < _countof(g_CBScenes_); i++)
+		if (!g_CBScenes_[i].Initialize(&g_Device_, sizeof(DirectX::XMFLOAT4X4) * 3, 1, sl12::BufferUsage::ConstantBuffer, true, false))
 		{
-			if (!g_CBScenes_[i].Initialize(&g_Device_, sizeof(DirectX::XMFLOAT4X4) * 3, 1, sl12::BufferUsage::ConstantBuffer, true, false))
-			{
-				return false;
-			}
-
-			if (!g_CBSceneViews_[i].Initialize(&g_Device_, &g_CBScenes_[i]))
-			{
-				return false;
-			}
-
-			g_pCBSceneBuffers_[i] = g_CBScenes_[i].Map(&g_mainCmdLists_[i]);
+			return false;
 		}
+
+		if (!g_CBSceneViews_[i].Initialize(&g_Device_, &g_CBScenes_[i]))
+		{
+			return false;
+		}
+
+		g_pCBSceneBuffers_[i] = g_CBScenes_[i].Map(&g_mainCmdLists_[i]);
 	}
 
 	// 頂点バッファを作成
@@ -413,17 +411,9 @@ bool InitializeAssets()
 	{
 		return false;
 	}
-	if (!LoadTexture(&g_filterTexture_, "data/kernel04.tga"))
-	{
-		return false;
-	}
 
 	// FFTターゲット初期化
 	if (!InitializeFFTTarget(&g_srcTarget_, g_srcTexture_.tex_.GetTextureDesc().width, g_srcTexture_.tex_.GetTextureDesc().height))
-	{
-		return false;
-	}
-	if (!InitializeFFTTarget(&g_filterTarget_, g_filterTexture_.tex_.GetTextureDesc().width, g_filterTexture_.tex_.GetTextureDesc().height))
 	{
 		return false;
 	}
@@ -439,6 +429,22 @@ bool InitializeAssets()
 		{
 			return false;
 		}
+	}
+
+	// フィルタ用定数バッファ生成
+	for (int i = 0; i < _countof(g_FilterCb_); i++)
+	{
+		if (!g_FilterCb_[i].cb_.Initialize(&g_Device_, sizeof(FilterCb), 1, sl12::BufferUsage::ConstantBuffer, true, false))
+		{
+			return false;
+		}
+
+		if (!g_FilterCb_[i].cbv_.Initialize(&g_Device_, &g_FilterCb_[i].cb_))
+		{
+			return false;
+		}
+
+		g_FilterCb_[i].ptr_ = g_FilterCb_[i].cb_.Map(&g_mainCmdLists_[i]);
 	}
 
 	// シェーダロード
@@ -468,7 +474,7 @@ bool InitializeAssets()
 			return false;
 		}
 	}
-	if (!g_FFTMulShader_.Initialize(&g_Device_, sl12::ShaderType::Compute, "data/CSFFTMul.cso"))
+	if (!g_FFTFilterShader_.Initialize(&g_Device_, sl12::ShaderType::Compute, "data/CSFFTFilter.cso"))
 	{
 		return false;
 	}
@@ -619,17 +625,17 @@ bool InitializeAssets()
 		}
 	}
 	{
-		D3D12_DESCRIPTOR_RANGE ranges[6];
-		D3D12_ROOT_PARAMETER rootParameters[6];
+		D3D12_DESCRIPTOR_RANGE ranges[] = {
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+		};
 
+		D3D12_ROOT_PARAMETER rootParameters[_countof(ranges)];
 		for (int i = 0; i < _countof(ranges); i++)
 		{
-			ranges[i].RangeType = (i < 4) ? D3D12_DESCRIPTOR_RANGE_TYPE_SRV : D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-			ranges[i].NumDescriptors = 1;
-			ranges[i].BaseShaderRegister = i % 4;
-			ranges[i].RegisterSpace = 0;
-			ranges[i].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
 			rootParameters[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 			rootParameters[i].DescriptorTable.NumDescriptorRanges = 1;
 			rootParameters[i].DescriptorTable.pDescriptorRanges = &ranges[i];
@@ -653,7 +659,7 @@ bool InitializeAssets()
 			return false;
 		}
 
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pComputeMulRootSig_));
+		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pComputeFilterRootSig_));
 		sl12::SafeRelease(pSignature);
 		sl12::SafeRelease(pError);
 		if (FAILED(hr))
@@ -749,9 +755,9 @@ bool InitializeAssets()
 	}
 	{
 		D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
-		desc.pRootSignature = g_pComputeMulRootSig_;
-		desc.CS = { g_FFTMulShader_.GetData(), g_FFTMulShader_.GetSize() };
-		auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateMullFFT_));
+		desc.pRootSignature = g_pComputeFilterRootSig_;
+		desc.CS = { g_FFTFilterShader_.GetData(), g_FFTFilterShader_.GetSize() };
+		auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateFilterFFT_));
 		if (FAILED(hr))
 		{
 			return false;
@@ -775,7 +781,7 @@ void DestroyAssets()
 {
 	g_Gui_.Destroy();
 
-	sl12::SafeRelease(g_pPipelineStateMullFFT_);
+	sl12::SafeRelease(g_pPipelineStateFilterFFT_);
 	for (auto& v : g_pFFTPipelineStates_)
 	{
 		sl12::SafeRelease(v);
@@ -783,15 +789,14 @@ void DestroyAssets()
 	sl12::SafeRelease(g_pPipelineStateTex_);
 	sl12::SafeRelease(g_pPipelineStateFFT_);
 
-	sl12::SafeRelease(g_pComputeMulRootSig_);
+	sl12::SafeRelease(g_pComputeFilterRootSig_);
 	sl12::SafeRelease(g_pComputeRootSig_);
 	sl12::SafeRelease(g_pRootSigTex_);
 	sl12::SafeRelease(g_pRootSigFFT_);
 
+	for (auto&& v : g_FilterCb_) v.Destroy();
 	g_srcTarget_.Destroy();
-	g_filterTarget_.Destroy();
 	g_srcTexture_.Destroy();
-	g_filterTexture_.Destroy();
 
 	for (auto& v : g_FFTShaders_)
 	{
@@ -868,7 +873,7 @@ void MakeFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, TextureSet* pTex)
 	cmdList.UAVBarrier(&pTarget->tex_[3]);
 }
 
-void MakeMulFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, FFTTarget* pFilter, TextureSet* pFilterTex)
+void MakeFilterFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, ConstantSet* pConst)
 {
 	ID3D12GraphicsCommandList* pCmdList = cmdList.GetCommandList();
 
@@ -882,15 +887,13 @@ void MakeMulFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, FFTTarget* pFilt
 	auto desc = pTarget->tex_[0].GetTextureDesc();
 
 	// row pass
-	pCmdList->SetPipelineState(g_pPipelineStateMullFFT_);
-	pCmdList->SetComputeRootSignature(g_pComputeMulRootSig_);
-	pCmdList->SetComputeRootDescriptorTable(0, pTarget->srv_[2].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(1, pTarget->srv_[3].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(2, pFilterTex->srv_.GetDesc()->GetGpuHandle());
-	//pCmdList->SetComputeRootDescriptorTable(2, pFilter->srv_[2].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(3, pFilter->srv_[3].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(4, pTarget->uav_[6].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(5, pTarget->uav_[7].GetDesc()->GetGpuHandle());
+	pCmdList->SetPipelineState(g_pPipelineStateFilterFFT_);
+	pCmdList->SetComputeRootSignature(g_pComputeFilterRootSig_);
+	pCmdList->SetComputeRootDescriptorTable(0, pConst->cbv_.GetDesc()->GetGpuHandle());
+	pCmdList->SetComputeRootDescriptorTable(1, pTarget->srv_[2].GetDesc()->GetGpuHandle());
+	pCmdList->SetComputeRootDescriptorTable(2, pTarget->srv_[3].GetDesc()->GetGpuHandle());
+	pCmdList->SetComputeRootDescriptorTable(3, pTarget->uav_[6].GetDesc()->GetGpuHandle());
+	pCmdList->SetComputeRootDescriptorTable(4, pTarget->uav_[7].GetDesc()->GetGpuHandle());
 	pCmdList->Dispatch(desc.width / 32, desc.height / 32, 1);
 
 	// バリアを張る
@@ -947,10 +950,12 @@ void RenderScene()
 
 	g_Gui_.BeginNewFrame(&mainCmdList, kWindowWidth, kWindowHeight, g_InputData_);
 
+	static FilterCb filter_cb = { 1.0f, 1.0f, 0.1f, 0.0f };
 	{
 		const char* kViewNames[] = {
 			"Source",
 			"FFT Result",
+			"Filter Result",
 			"IFFT Result",
 		};
 		auto currentItem = (int)g_fftViewType_;
@@ -959,22 +964,27 @@ void RenderScene()
 			g_fftViewType_ = (FFTViewType::Type)currentItem;
 		}
 
-		bool isSyncInterval = g_SyncInterval == 1;
-		if (ImGui::Checkbox("Sync Interval", &isSyncInterval))
+		ImGui::DragFloat2("Distance Scale", filter_cb.distance_scale, 0.1f, 0.0f, 128.0f);
+		ImGui::DragFloat("Radius", &filter_cb.radius, 0.01f, 0.01f, 1.0f);
+		bool isInverseFlag = filter_cb.inverse != 0.0f;
+		if (ImGui::Checkbox("Inverse", &isInverseFlag))
 		{
-			g_SyncInterval = isSyncInterval ? 1 : 0;
+			filter_cb.inverse = isInverseFlag ? 1.0f : 0.0f;
 		}
 	}
+
+	// フィルタ用定数バッファを更新する
+	auto&& cb_set = g_FilterCb_[frameIndex];
+	memcpy(cb_set.ptr_, &filter_cb, sizeof(FilterCb));
 
 	// グラフィクスコマンドロードの開始
 	mainCmdList.Reset();
 
 	// ソーステクスチャとカーネルテクスチャのFFT計算
 	MakeFFT(mainCmdList, &g_srcTarget_, &g_srcTexture_);
-	MakeFFT(mainCmdList, &g_filterTarget_, &g_filterTexture_);
 
 	// FFTの乗算
-	MakeMulFFT(mainCmdList, &g_srcTarget_, &g_filterTarget_, &g_filterTexture_);
+	MakeFilterFFT(mainCmdList, &g_srcTarget_, &cb_set);
 
 	// ソースのIFFT計算
 	MakeIFFT(mainCmdList, &g_srcTarget_, &g_srcTexture_);
@@ -1027,7 +1037,7 @@ void RenderScene()
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
 
 		// PSOとルートシグネチャを設定
-		if (g_fftViewType_ != FFTViewType::FFT_Result)
+		if ((g_fftViewType_ != FFTViewType::FFT_Result) && (g_fftViewType_ != FFTViewType::Filter_Result))
 		{
 			pCmdList->SetPipelineState(g_pPipelineStateTex_);
 			pCmdList->SetGraphicsRootSignature(g_pRootSigTex_);
@@ -1045,24 +1055,26 @@ void RenderScene()
 		};
 		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
 		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc.GetGpuHandle());
-		if (g_fftViewType_ == FFTViewType::Source)
+		switch (g_fftViewType_)
 		{
-			// ソーステクスチャの描画
+		case FFTViewType::Source:
 			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTexture_.srv_.GetDesc()->GetGpuHandle());
 			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
-		}
-		else if (g_fftViewType_ == FFTViewType::IFFT_Result)
-		{
-			// IFFTの結果の描画
-			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[4].GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
-		}
-		else
-		{
-			// FFTの結果の描画
+			break;
+		case FFTViewType::FFT_Result:
 			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[2].GetDesc()->GetGpuHandle());
 			pCmdList->SetGraphicsRootDescriptorTable(2, g_srcTarget_.srv_[3].GetDesc()->GetGpuHandle());
 			pCmdList->SetGraphicsRootDescriptorTable(3, g_sampler_.GetDesc()->GetGpuHandle());
+			break;
+		case FFTViewType::Filter_Result:
+			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[6].GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(2, g_srcTarget_.srv_[7].GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(3, g_sampler_.GetDesc()->GetGpuHandle());
+			break;
+		case FFTViewType::IFFT_Result:
+			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[4].GetDesc()->GetGpuHandle());
+			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+			break;
 		}
 
 		// DrawCall
