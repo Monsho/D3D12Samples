@@ -79,9 +79,9 @@ namespace sl12
 		InputLayoutDesc			inputLayout{};
 		D3D_PRIMITIVE_TOPOLOGY	primTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 		u32						numRTVs = 0;
-		RenderTargetView*		pRTVs[8]{};
-		DepthStencilView*		pDSV = nullptr;
-		u32						multisampleCount;
+		DXGI_FORMAT				rtvFormats[8]{ DXGI_FORMAT_UNKNOWN };
+		DXGI_FORMAT				dsvFormat = DXGI_FORMAT_UNKNOWN;
+		u32						multisampleCount = 1;
 	};	// struct GraphicsPipelineStateDesc
 
 	struct ComputePipelineStateDesc

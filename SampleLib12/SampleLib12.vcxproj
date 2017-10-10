@@ -98,6 +98,8 @@
     <ClInclude Include="include\sl12\fence.h" />
     <ClInclude Include="include\sl12\file.h" />
     <ClInclude Include="include\sl12\gui.h" />
+    <ClInclude Include="include\sl12\mesh.h" />
+    <ClInclude Include="include\sl12\mesh_format.h" />
     <ClInclude Include="include\sl12\pipeline_state.h" />
     <ClInclude Include="include\sl12\root_signature.h" />
     <ClInclude Include="include\sl12\sampler.h" />
@@ -105,6 +107,7 @@
     <ClInclude Include="include\sl12\swapchain.h" />
     <ClInclude Include="include\sl12\texture.h" />
     <ClInclude Include="include\sl12\texture_view.h" />
+    <ClInclude Include="include\sl12\types.h" />
     <ClInclude Include="include\sl12\util.h" />
   </ItemGroup>
   <ItemGroup>
@@ -121,6 +124,7 @@
     <ClCompile Include="src\device.cpp" />
     <ClCompile Include="src\fence.cpp" />
     <ClCompile Include="src\gui.cpp" />
+    <ClCompile Include="src\mesh.cpp" />
     <ClCompile Include="src\pipeline_state.cpp" />
     <ClCompile Include="src\root_signature.cpp" />
     <ClCompile Include="src\sampler.cpp" />

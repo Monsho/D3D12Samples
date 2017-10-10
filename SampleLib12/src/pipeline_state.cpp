@@ -120,16 +120,9 @@ namespace sl12
 		psoDesc.NumRenderTargets = desc.numRTVs;
 		for (u32 i = 0; i < desc.numRTVs; i++)
 		{
-			if (!desc.pRTVs[i])
-			{
-				return false;
-			}
-			psoDesc.RTVFormats[i] = desc.pRTVs[i]->GetFormat();
+			psoDesc.RTVFormats[i] = desc.rtvFormats[i];
 		}
-		if (desc.pDSV)
-		{
-			psoDesc.DSVFormat = desc.pDSV->GetFormat();
-		}
+		psoDesc.DSVFormat = desc.dsvFormat;
 		psoDesc.SampleDesc.Count = desc.multisampleCount;
 
 		auto hr = pDev->GetDeviceDep()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pPipelineState_));

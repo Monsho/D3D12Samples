@@ -415,8 +415,8 @@ bool InitializeAssets()
 		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
 		desc.numRTVs = 1;
-		desc.pRTVs[0] = g_Device_.GetSwapchain().GetRenderTargetView(0);
-		desc.pDSV = &g_DepthBufferView_;
+		desc.rtvFormats[0] = g_Device_.GetSwapchain().GetRenderTargetView(0)->GetFormat();
+		desc.dsvFormat = g_DepthBufferView_.GetFormat();
 		desc.multisampleCount = 1;
 
 		if (!g_compressPipeline_.Initialize(&g_Device_, desc))

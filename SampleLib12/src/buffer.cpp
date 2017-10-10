@@ -72,7 +72,7 @@ namespace sl12
 	}
 
 	//----
-	void Buffer::UpdateBuffer(Device* pDev, CommandList* pCmdList, void* pData, size_t size, size_t offset)
+	void Buffer::UpdateBuffer(Device* pDev, CommandList* pCmdList, const void* pData, size_t size, size_t offset)
 	{
 		if (!pDev || !pCmdList)
 		{
