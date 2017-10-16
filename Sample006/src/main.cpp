@@ -147,6 +147,39 @@ void InitWindow(HINSTANCE hInstance, int nCmdShow)
 	ShowWindow(g_hWnd_, nCmdShow);
 }
 
+#include <thread>
+std::thread g_Thread;
+
+void Process()
+{
+	// TEST: リソース作成・開放を大量に行う
+	sl12::Buffer testCB[20];
+	sl12::ConstantBufferView testCBV[20];
+	while (true)
+	{
+		int num = (rand() % 10) + 10;
+		for (int i = 0; i < num; ++i)
+		{
+			bool success = testCB[i].Initialize(&g_Device_, 256, 256, sl12::BufferUsage::ConstantBuffer, true, false);
+			assert(success);
+
+			//testCBV[i].Initialize(&g_Device_, &testCB[i]);
+
+			//auto p = testCB[i].Map(&g_copyCmdList_);
+			//memset(p, 0, 256);
+			//testCB[i].Unmap();
+		}
+
+		for (int i = 0; i < num; ++i)
+		{
+			//testCBV[i].Destroy();
+			testCB[i].Destroy();
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+}
+
 bool InitializeAssets()
 {
 	ID3D12Device* pDev = g_Device_.GetDeviceDep();
@@ -291,6 +324,8 @@ bool InitializeAssets()
 	{
 		return false;
 	}
+
+	g_Thread = std::thread(Process);
 
 	return true;
 }
