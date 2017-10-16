@@ -13,7 +13,7 @@ namespace sl12
 	//----
 	void Descriptor::Release()
 	{
-		if (!pParentHeap_)
+		if (pParentHeap_)
 		{
 			pParentHeap_->ReleaseDescriptor(this);
 		}

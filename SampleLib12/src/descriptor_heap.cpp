@@ -16,8 +16,8 @@ namespace sl12
 		}
 
 		pDescriptors_ = new Descriptor[desc.NumDescriptors + 2];
-		pUsedList_ = pDescriptors_;
-		pUsedList_->pPrev_ = pUsedList_->pNext_ = pUsedList_;
+		//pUsedList_ = pDescriptors_;
+		//pUsedList_->pPrev_ = pUsedList_->pNext_ = pUsedList_;
 		pUnusedList_ = pDescriptors_ + 1;
 		pUnusedList_->pPrev_ = pUnusedList_->pNext_ = pUnusedList_;
 
@@ -41,13 +41,15 @@ namespace sl12
 			p->pNext_ = next;
 		}
 
+		take_num_ = 0;
+
 		return true;
 	}
 
 	//----
 	void DescriptorHeap::Destroy()
 	{
-		assert(pUsedList_->pNext_ == pUsedList_);
+		//assert(pUsedList_->pNext_ == pUsedList_);
 		delete[] pDescriptors_;
 		SafeRelease(pHeap_);
 	}
@@ -64,6 +66,7 @@ namespace sl12
 		ret->pPrev_->pNext_ = ret->pNext_;
 		ret->pNext_->pPrev_ = ret->pPrev_;
 		ret->pNext_ = ret->pPrev_ = ret;
+		take_num_++;
 
 		return ret;
 	}
@@ -71,12 +74,13 @@ namespace sl12
 	//----
 	void DescriptorHeap::ReleaseDescriptor(Descriptor* p)
 	{
-		assert((pDescriptors_ <= p) && (p <= pDescriptors_ + 2));
+		assert((pDescriptors_ <= p) && (p <= pDescriptors_ + heapDesc_.NumDescriptors + 2));
 
 		Descriptor* next = pUnusedList_->pNext_;
 		pUnusedList_->pNext_ = next->pPrev_ = p;
 		p->pPrev_ = pUnusedList_;
 		p->pNext_ = next;
+		take_num_--;
 	}
 
 }	// namespace sl12

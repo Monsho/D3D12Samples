@@ -30,10 +30,11 @@ namespace sl12
 	private:
 		ID3D12DescriptorHeap*		pHeap_{ nullptr };
 		Descriptor*					pDescriptors_{ nullptr };
-		Descriptor*					pUsedList_{ nullptr };
+		//Descriptor*					pUsedList_{ nullptr };
 		Descriptor*					pUnusedList_{ nullptr };
 		D3D12_DESCRIPTOR_HEAP_DESC	heapDesc_{};
 		uint32_t					descSize_{ 0 };
+		uint32_t					take_num_{ 0 };
 	};	// class DescriptorHeap
 
 }	// namespace sl12
