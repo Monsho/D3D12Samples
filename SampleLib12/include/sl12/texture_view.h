@@ -22,7 +22,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, Texture* pTex);
+		bool Initialize(Device* pDev, Texture* pTex, u32 firstMip = 0, u32 mipCount = 0, u32 firstArray = 0, u32 arraySize = 0);
 		void Destroy();
 
 		// getter

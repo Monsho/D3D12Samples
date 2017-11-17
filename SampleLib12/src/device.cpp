@@ -33,6 +33,7 @@ namespace sl12
 		}
 
 		// アダプタを取得する
+		bool isWarp = false;
 		IDXGIAdapter1* pAdapter{ nullptr };
 		hr = pFactory_->EnumAdapters1(0, &pAdapter);
 		if (FAILED(hr))
@@ -46,6 +47,7 @@ namespace sl12
 				SafeRelease(pAdapter);
 				return false;
 			}
+			isWarp = true;
 		}
 		hr = pAdapter->QueryInterface(IID_PPV_ARGS(&pAdapter_));
 		SafeRelease(pAdapter);
@@ -54,19 +56,22 @@ namespace sl12
 			return false;
 		}
 
-		// ディスプレイを取得する
-		IDXGIOutput* pOutput{ nullptr };
-		hr = pAdapter_->EnumOutputs(0, &pOutput);
-		if (FAILED(hr))
+		if (!isWarp)
 		{
-			return false;
-		}
+			// ディスプレイを取得する
+			IDXGIOutput* pOutput{ nullptr };
+			hr = pAdapter_->EnumOutputs(0, &pOutput);
+			if (FAILED(hr))
+			{
+				return false;
+			}
 
-		hr = pOutput->QueryInterface(IID_PPV_ARGS(&pOutput_));
-		SafeRelease(pOutput);
-		if (FAILED(hr))
-		{
-			return false;
+			hr = pOutput->QueryInterface(IID_PPV_ARGS(&pOutput_));
+			SafeRelease(pOutput);
+			if (FAILED(hr))
+			{
+				return false;
+			}
 		}
 
 		// デバイスの生成

@@ -10,9 +10,28 @@
 namespace sl12
 {
 	//----
-	bool TextureView::Initialize(Device* pDev, Texture* pTex)
+	bool TextureView::Initialize(Device* pDev, Texture* pTex, u32 firstMip, u32 mipCount, u32 firstArray, u32 arraySize)
 	{
 		const D3D12_RESOURCE_DESC& resDesc = pTex->GetResourceDesc();
+		if (firstMip >= resDesc.MipLevels)
+		{
+			firstMip = resDesc.MipLevels - 1;
+			mipCount = 1;
+		}
+		else if ((mipCount == 0) || (mipCount > resDesc.MipLevels - firstMip))
+		{
+			mipCount = resDesc.MipLevels - firstMip;
+		}
+		if (firstArray >= resDesc.DepthOrArraySize)
+		{
+			firstArray = resDesc.DepthOrArraySize - 1;
+			arraySize = 1;
+		}
+		else if ((arraySize == 0) || (arraySize > resDesc.DepthOrArraySize - firstArray))
+		{
+			arraySize = resDesc.DepthOrArraySize - firstArray;
+		}
+
 		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
 		viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		viewDesc.Format = pTex->GetTextureDesc().format;
@@ -32,18 +51,18 @@ namespace sl12
 			if (resDesc.DepthOrArraySize == 1)
 			{
 				viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
-				viewDesc.Texture1D.MipLevels = resDesc.MipLevels;
-				viewDesc.Texture1D.MostDetailedMip = 0;
+				viewDesc.Texture1D.MipLevels = mipCount;
+				viewDesc.Texture1D.MostDetailedMip = firstMip;
 				viewDesc.Texture1D.ResourceMinLODClamp = 0.0f;
 			}
 			else
 			{
 				viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
-				viewDesc.Texture1DArray.MipLevels = resDesc.MipLevels;
-				viewDesc.Texture1DArray.MostDetailedMip = 0;
+				viewDesc.Texture1DArray.MipLevels = mipCount;
+				viewDesc.Texture1DArray.MostDetailedMip = firstMip;
 				viewDesc.Texture1DArray.ResourceMinLODClamp = 0.0f;
-				viewDesc.Texture1DArray.FirstArraySlice = 0;
-				viewDesc.Texture1DArray.ArraySize = resDesc.DepthOrArraySize;
+				viewDesc.Texture1DArray.FirstArraySlice = firstArray;
+				viewDesc.Texture1DArray.ArraySize = arraySize;
 			}
 		}
 		else if (resDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
@@ -53,20 +72,20 @@ namespace sl12
 				if (resDesc.DepthOrArraySize == 1)
 				{
 					viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-					viewDesc.Texture2D.MipLevels = resDesc.MipLevels;
-					viewDesc.Texture2D.MostDetailedMip = 0;
+					viewDesc.Texture2D.MipLevels = mipCount;
+					viewDesc.Texture2D.MostDetailedMip = firstMip;
 					viewDesc.Texture2D.PlaneSlice = 0;
 					viewDesc.Texture2D.ResourceMinLODClamp = 0.0f;
 				}
 				else
 				{
 					viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
-					viewDesc.Texture2DArray.MipLevels = resDesc.MipLevels;
-					viewDesc.Texture2DArray.MostDetailedMip = 0;
+					viewDesc.Texture2DArray.MipLevels = mipCount;
+					viewDesc.Texture2DArray.MostDetailedMip = firstMip;
 					viewDesc.Texture2DArray.PlaneSlice = 0;
 					viewDesc.Texture2DArray.ResourceMinLODClamp = 0.0f;
-					viewDesc.Texture2DArray.FirstArraySlice = 0;
-					viewDesc.Texture2DArray.ArraySize = resDesc.DepthOrArraySize;
+					viewDesc.Texture2DArray.FirstArraySlice = firstArray;
+					viewDesc.Texture2DArray.ArraySize = arraySize;
 				}
 			}
 			else
@@ -78,16 +97,16 @@ namespace sl12
 				else
 				{
 					viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY;
-					viewDesc.Texture2DMSArray.FirstArraySlice = 0;
-					viewDesc.Texture2DMSArray.ArraySize = resDesc.DepthOrArraySize;
+					viewDesc.Texture2DMSArray.FirstArraySlice = firstArray;
+					viewDesc.Texture2DMSArray.ArraySize = arraySize;
 				}
 			}
 		}
 		else
 		{
 			viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
-			viewDesc.Texture3D.MipLevels = resDesc.MipLevels;
-			viewDesc.Texture3D.MostDetailedMip = 0;
+			viewDesc.Texture3D.MipLevels = mipCount;
+			viewDesc.Texture3D.MostDetailedMip = firstMip;
 			viewDesc.Texture3D.ResourceMinLODClamp = 0.0f;
 		}
 
