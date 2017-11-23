@@ -16,6 +16,7 @@
 #include <sl12/root_signature.h>
 #include <sl12/pipeline_state.h>
 #include <sl12/file.h>
+#include <sl12/root_signature_manager.h>
 
 #include "render_resource_manager.h"
 
@@ -72,6 +73,8 @@ namespace
 	sl12::Sampler			g_sampler_;
 
 	sl12::Shader			g_VShader_, g_PShader_;
+
+	sl12::RootSignatureManager	g_rootSigMan_;
 
 	sl12::RootSignature			g_rootSigMesh_;
 	sl12::GraphicsPipelineState	g_psoMesh_;
@@ -239,6 +242,21 @@ bool InitializeAssets()
 	if (!g_PShader_.Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/PSMesh.cso"))
 	{
 		return false;
+	}
+
+	// ルートシグネチャマネージャの初期化
+	if (!g_rootSigMan_.Initialize(&g_Device_))
+	{
+		return false;
+	}
+
+	// TEST: ルートシグネチャマネージャ
+	{
+		sl12::RootSignatureCreateDesc desc;
+		desc.pVS = &g_VShader_;
+		desc.pPS = &g_PShader_;
+
+		auto handle = g_rootSigMan_.CreateRootSignature(desc);
 	}
 
 	// ルートシグネチャを作成

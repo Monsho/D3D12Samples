@@ -91,6 +91,7 @@
     <ClInclude Include="include\sl12\buffer_view.h" />
     <ClInclude Include="include\sl12\command_list.h" />
     <ClInclude Include="include\sl12\command_queue.h" />
+    <ClInclude Include="include\sl12\crc.h" />
     <ClInclude Include="include\sl12\default_states.h" />
     <ClInclude Include="include\sl12\descriptor.h" />
     <ClInclude Include="include\sl12\descriptor_heap.h" />
@@ -102,6 +103,7 @@
     <ClInclude Include="include\sl12\mesh_format.h" />
     <ClInclude Include="include\sl12\pipeline_state.h" />
     <ClInclude Include="include\sl12\root_signature.h" />
+    <ClInclude Include="include\sl12\root_signature_manager.h" />
     <ClInclude Include="include\sl12\sampler.h" />
     <ClInclude Include="include\sl12\shader.h" />
     <ClInclude Include="include\sl12\swapchain.h" />
@@ -127,6 +129,7 @@
     <ClCompile Include="src\mesh.cpp" />
     <ClCompile Include="src\pipeline_state.cpp" />
     <ClCompile Include="src\root_signature.cpp" />
+    <ClCompile Include="src\root_signature_manager.cpp" />
     <ClCompile Include="src\sampler.cpp" />
     <ClCompile Include="src\shader.cpp" />
     <ClCompile Include="src\swapchain.cpp" />
