@@ -56,6 +56,7 @@ bool RenderResource::Initialize(sl12::Device& device, const RenderResourceDesc& 
 		td.format = desc.format;
 		td.mipLevels = desc.mipLevels;
 		td.sampleCount = desc.sampleCount;
+		td.clearDepth = 1.0f;
 		td.isRenderTarget = isRtv;
 		td.isDepthBuffer = isDsv;
 		td.isUav = desc.uavCount > 0;

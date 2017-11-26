@@ -23,6 +23,27 @@
     <FxCompile Include="src\shaders\VSMesh.vsh">
       <Filter>src\shaders</Filter>
     </FxCompile>
+    <FxCompile Include="src\shaders\base_pass.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\base_pass.vv.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\lighting.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\post_process.vv.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\linear_depth.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\blur_x.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\blur_y.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\render_path.h">
@@ -31,5 +52,16 @@
     <ClInclude Include="src\render_resource_manager.h">
       <Filter>src</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\shaders\const_buffer.hlsli">
+      <Filter>src\shaders</Filter>
+    </None>
+    <None Include="src\shaders\base_pass.hlsli">
+      <Filter>src\shaders</Filter>
+    </None>
+    <None Include="src\shaders\blur.hlsli">
+      <Filter>src\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

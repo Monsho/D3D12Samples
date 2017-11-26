@@ -138,6 +138,30 @@ public:
 		return !uavs_.empty();
 	}
 
+	//! @name 取得関数
+	//! @{
+	sl12::Texture* GetTexture()
+	{
+		return &texture_;
+	}
+	sl12::RenderTargetView* GetRtv(int index = 0)
+	{
+		return &rtvs_[index];
+	}
+	sl12::DepthStencilView* GetDsv(int index = 0)
+	{
+		return &dsvs_[index];
+	}
+	sl12::TextureView* GetSrv(int index = 0)
+	{
+		return &srvs_[index];
+	}
+	sl12::UnorderedAccessView* GetUav(int index = 0)
+	{
+		return &uavs_[index];
+	}
+	//! @}
+
 private:
 	RenderResourceDesc						desc_;
 
@@ -319,6 +343,15 @@ public:
 	void Destroy();
 
 	void MakeResources(std::vector<ResourceProducerBase*>& producers);
+
+	/**
+	 * @brief IDから描画リソースを取得する
+	*/
+	RenderResource* GetRenderResourceFromID(ResourceID id)
+	{
+		auto it = resource_map_.find(id);
+		return (it != resource_map_.end()) ? it->second : nullptr;
+	}
 
 private:
 	void AllReset();

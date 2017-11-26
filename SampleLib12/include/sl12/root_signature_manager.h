@@ -1,8 +1,12 @@
 ﻿#pragma once
 
 #include <sl12/util.h>
+#include <sl12/command_list.h>
 #include <sl12/root_signature.h>
 #include <sl12/shader.h>
+#include <sl12/buffer_view.h>
+#include <sl12/texture_view.h>
+#include <sl12/sampler.h>
 #include <atomic>
 #include <map>
 #include <vector>
@@ -52,6 +56,9 @@ namespace sl12
 		friend class RootSignatureManager;
 
 	public:
+		RootSignatureHandle()
+			: pManager_(nullptr), crc_(0), pInstance_(nullptr)
+		{}
 		RootSignatureHandle(RootSignatureHandle& h)
 			: pManager_(h.pManager_), crc_(h.crc_), pInstance_(h.pInstance_)
 		{
@@ -65,12 +72,36 @@ namespace sl12
 			Invalid();
 		}
 
+		RootSignatureHandle& operator=(RootSignatureHandle& h)
+		{
+			pManager_ = h.pManager_;
+			crc_ = h.crc_;
+			pInstance_ = h.pInstance_;
+			if (pInstance_)
+			{
+				pInstance_->referenceCounter_++;
+			}
+			return *this;
+		}
+
 		bool IsValid() const
 		{
 			return pInstance_ != nullptr;
 		}
 
 		void Invalid();
+
+		bool SetDescriptor(CommandList& cmdList, const char* name, ConstantBufferView& cbv);
+		bool SetDescriptor(CommandList& cmdList, const char* name, TextureView& srv);
+		bool SetDescriptor(CommandList& cmdList, const char* name, BufferView& srv);
+		bool SetDescriptor(CommandList& cmdList, const char* name, Sampler& sam);
+		bool SetDescriptor(CommandList& cmdList, const char* name, UnorderedAccessView& uav);
+
+		RootSignature* GetRootSignature()
+		{
+			assert(IsValid());
+			return &pInstance_->rootSig_;
+		}
 
 	private:
 		RootSignatureHandle(RootSignatureManager* man, u32 crc, RootSignatureInstance* ins)

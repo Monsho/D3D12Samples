@@ -2,6 +2,7 @@
 
 #include <d3dcompiler.h>
 #include <sl12/crc.h>
+#include <sl12/descriptor.h>
 
 
 namespace sl12
@@ -17,6 +18,101 @@ namespace sl12
 			pManager_ = nullptr;
 			pInstance_ = nullptr;
 		}
+	}
+
+	//-------------------------------------------------
+	// CBVデスクリプタを設定する
+	//-------------------------------------------------
+	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, ConstantBufferView& cbv)
+	{
+		assert(IsValid());
+
+		auto it = pInstance_->slotMap_.find(name);
+		if (it != pInstance_->slotMap_.end())
+		{
+			for (auto index : it->second)
+			{
+				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, cbv.GetDesc()->GetGpuHandle());
+			}
+			return true;
+		}
+		return false;
+	}
+
+	//-------------------------------------------------
+	// テクスチャSRVデスクリプタを設定する
+	//-------------------------------------------------
+	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, TextureView& srv)
+	{
+		assert(IsValid());
+
+		auto it = pInstance_->slotMap_.find(name);
+		if (it != pInstance_->slotMap_.end())
+		{
+			for (auto index : it->second)
+			{
+				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+			}
+			return true;
+		}
+		return false;
+	}
+
+	//-------------------------------------------------
+	// バッファSRVデスクリプタを設定する
+	//-------------------------------------------------
+	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, BufferView& srv)
+	{
+		assert(IsValid());
+
+		auto it = pInstance_->slotMap_.find(name);
+		if (it != pInstance_->slotMap_.end())
+		{
+			for (auto index : it->second)
+			{
+				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+			}
+			return true;
+		}
+		return false;
+	}
+
+	//-------------------------------------------------
+	// サンプラーデスクリプタを設定する
+	//-------------------------------------------------
+	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, Sampler& sam)
+	{
+		assert(IsValid());
+
+		auto it = pInstance_->slotMap_.find(name);
+		if (it != pInstance_->slotMap_.end())
+		{
+			for (auto index : it->second)
+			{
+				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, sam.GetDesc()->GetGpuHandle());
+			}
+			return true;
+		}
+		return false;
+	}
+
+	//-------------------------------------------------
+	// UAVデスクリプタを設定する
+	//-------------------------------------------------
+	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, UnorderedAccessView& uav)
+	{
+		assert(IsValid());
+
+		auto it = pInstance_->slotMap_.find(name);
+		if (it != pInstance_->slotMap_.end())
+		{
+			for (auto index : it->second)
+			{
+				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, uav.GetDesc()->GetGpuHandle());
+			}
+			return true;
+		}
+		return false;
 	}
 
 
@@ -145,7 +241,7 @@ namespace sl12
 						param.type = paramType;
 						param.shaderVisibility = shaderVisibility;
 						param.registerIndex = bd.BindPoint;
-						findIt->second.push_back(rootParams.size());
+						findIt->second.push_back((int)rootParams.size());
 						rootParams.push_back(param);
 					}
 				}
@@ -158,7 +254,7 @@ namespace sl12
 					param.registerIndex = bd.BindPoint;
 
 					std::vector<int> indices;
-					indices.push_back(rootParams.size());
+					indices.push_back((int)rootParams.size());
 					paramMap[bd.Name] = indices;
 					rootParams.push_back(param);
 				}
@@ -206,7 +302,7 @@ namespace sl12
 		pNewInstance->slotMap_ = paramMap;
 
 		RootSignatureDesc rsDesc;
-		rsDesc.numParameters = rootParams.size();
+		rsDesc.numParameters = (u32)rootParams.size();
 		rsDesc.pParameters = rootParams.data();
 		if (!pNewInstance->rootSig_.Initialize(pDevice_, rsDesc))
 		{

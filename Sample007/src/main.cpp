@@ -35,6 +35,17 @@ namespace
 		DirectX::XMFLOAT4		frustumCorner;
 	};	// struct SceneCB
 
+	struct MeshCB
+	{
+		DirectX::XMFLOAT4X4		mtxLocalToWorld;
+	};	// struct MeshCB
+
+	struct BlurCB
+	{
+		DirectX::XMFLOAT4		gaussWeights;
+		DirectX::XMFLOAT2		deltaUV;
+	};	// struct BlurCB
+
 	struct ConstantSet
 	{
 		sl12::Buffer				cb_;
@@ -47,6 +58,22 @@ namespace
 			cb_.Destroy();
 		}
 	};	// struct ConstantSet
+
+	struct ShaderKind
+	{
+		enum
+		{
+			BasePassV,
+			BasePassP,
+			PostProcessV,
+			LinearDepthP,
+			LightingP,
+			BlurXP,
+			BlurYP,
+
+			Max
+		};
+	};	// struct ShaderKind
 
 	static const wchar_t* kWindowTitle = L"D3D12Sample";
 	static const int kWindowWidth = 1920;
@@ -69,12 +96,28 @@ namespace
 	sl12::DepthStencilView	g_DepthBufferView_;
 
 	ConstantSet				g_SceneCBs_[kMaxFrameCount];
+	ConstantSet				g_MeshCB_;
+	ConstantSet				g_BlurCB_;
 
 	sl12::Sampler			g_sampler_;
+	sl12::Sampler			g_samLinearClamp_;
 
 	sl12::Shader			g_VShader_, g_PShader_;
 
+	sl12::Shader			g_Shaders_[ShaderKind::Max];
+
 	sl12::RootSignatureManager	g_rootSigMan_;
+	sl12::RootSignatureHandle	g_basePassSig_;
+	sl12::RootSignatureHandle	g_linearDepthSig_;
+	sl12::RootSignatureHandle	g_lightingSig_;
+	sl12::RootSignatureHandle	g_blurXPassSig_;
+	sl12::RootSignatureHandle	g_blurYPassSig_;
+
+	sl12::GraphicsPipelineState	g_basePassPso_;
+	sl12::GraphicsPipelineState	g_linearDepthPso_;
+	sl12::GraphicsPipelineState	g_lightingPso_;
+	sl12::GraphicsPipelineState	g_blurXPassPso_;
+	sl12::GraphicsPipelineState	g_blurYPassPso_;
 
 	sl12::RootSignature			g_rootSigMesh_;
 	sl12::GraphicsPipelineState	g_psoMesh_;
@@ -220,6 +263,53 @@ bool InitializeAssets()
 
 		g_SceneCBs_[i].ptr_ = g_SceneCBs_[i].cb_.Map(&g_mainCmdLists_[i]);
 	}
+	{
+		if (!g_MeshCB_.cb_.Initialize(&g_Device_, sizeof(MeshCB), 1, sl12::BufferUsage::ConstantBuffer, true, false))
+		{
+			return false;
+		}
+
+		if (!g_MeshCB_.cbv_.Initialize(&g_Device_, &g_MeshCB_.cb_))
+		{
+			return false;
+		}
+
+		auto p = reinterpret_cast<MeshCB*>(g_MeshCB_.cb_.Map(nullptr));
+		DirectX::XMMATRIX mtx = DirectX::XMMatrixIdentity();
+		DirectX::XMStoreFloat4x4(&p->mtxLocalToWorld, mtx);
+		g_MeshCB_.cb_.Unmap();
+	}
+	{
+		if (!g_BlurCB_.cb_.Initialize(&g_Device_, sizeof(BlurCB), 1, sl12::BufferUsage::ConstantBuffer, true, false))
+		{
+			return false;
+		}
+
+		if (!g_BlurCB_.cbv_.Initialize(&g_Device_, &g_BlurCB_.cb_))
+		{
+			return false;
+		}
+
+		auto p = reinterpret_cast<BlurCB*>(g_BlurCB_.cb_.Map(nullptr));
+		float variance = 5.0f * 5.0f;
+		p->deltaUV.x = 1.0f / (float)kWindowWidth;
+		p->deltaUV.y = 1.0f / (float)kWindowHeight;
+
+		float sum = 0.0f;
+		p->gaussWeights.x = expf(-0.5f * 0.0f * 0.0f / variance);
+		p->gaussWeights.y = expf(-0.5f * 1.0f * 1.0f / variance);
+		p->gaussWeights.z = expf(-0.5f * 2.0f * 2.0f / variance);
+		p->gaussWeights.w = expf(-0.5f * 3.0f * 3.0f / variance);
+		sum = p->gaussWeights.x;
+		sum += p->gaussWeights.y * 2.0f;
+		sum += p->gaussWeights.z * 2.0f;
+		sum += p->gaussWeights.w * 2.0f;
+		p->gaussWeights.x /= sum;
+		p->gaussWeights.y /= sum;
+		p->gaussWeights.z /= sum;
+		p->gaussWeights.w /= sum;
+		g_BlurCB_.cb_.Unmap();
+	}
 
 	// サンプラ作成
 	{
@@ -229,6 +319,15 @@ bool InitializeAssets()
 		desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 		if (!g_sampler_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
+
+		desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+		desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		if (!g_samLinearClamp_.Initialize(&g_Device_, desc))
 		{
 			return false;
 		}
@@ -243,6 +342,34 @@ bool InitializeAssets()
 	{
 		return false;
 	}
+	if (!g_Shaders_[ShaderKind::BasePassV].Initialize(&g_Device_, sl12::ShaderType::Vertex, "data/base_pass.vv.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::BasePassP].Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/base_pass.p.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::PostProcessV].Initialize(&g_Device_, sl12::ShaderType::Vertex, "data/post_process.vv.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::LinearDepthP].Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/linear_depth.p.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::LightingP].Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/lighting.p.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::BlurXP].Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/blur_x.p.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::BlurYP].Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/blur_y.p.cso"))
+	{
+		return false;
+	}
 
 	// ルートシグネチャマネージャの初期化
 	if (!g_rootSigMan_.Initialize(&g_Device_))
@@ -250,13 +377,172 @@ bool InitializeAssets()
 		return false;
 	}
 
-	// TEST: ルートシグネチャマネージャ
+	// ルートシグネチャを生成
 	{
 		sl12::RootSignatureCreateDesc desc;
-		desc.pVS = &g_VShader_;
-		desc.pPS = &g_PShader_;
 
-		auto handle = g_rootSigMan_.CreateRootSignature(desc);
+		desc.pVS = &g_Shaders_[ShaderKind::BasePassV];
+		desc.pPS = &g_Shaders_[ShaderKind::BasePassP];
+		g_basePassSig_ = g_rootSigMan_.CreateRootSignature(desc);
+
+		desc.pVS = &g_Shaders_[ShaderKind::PostProcessV];
+		desc.pPS = &g_Shaders_[ShaderKind::LinearDepthP];
+		g_linearDepthSig_ = g_rootSigMan_.CreateRootSignature(desc);
+
+		desc.pPS = &g_Shaders_[ShaderKind::LightingP];
+		g_lightingSig_ = g_rootSigMan_.CreateRootSignature(desc);
+
+		desc.pPS = &g_Shaders_[ShaderKind::BlurXP];
+		g_blurXPassSig_ = g_rootSigMan_.CreateRootSignature(desc);
+
+		desc.pPS = &g_Shaders_[ShaderKind::BlurYP];
+		g_blurYPassSig_ = g_rootSigMan_.CreateRootSignature(desc);
+	}
+
+	// PSOを生成
+	{
+		sl12::GraphicsPipelineStateDesc desc;
+		desc.pRootSignature = g_basePassSig_.GetRootSignature();
+		desc.pVS = &g_Shaders_[ShaderKind::BasePassV];
+		desc.pPS = &g_Shaders_[ShaderKind::BasePassP];
+
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_BACK;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.isDepthClipEnable = true;
+		desc.rasterizer.isFrontCCW = true;
+
+		desc.depthStencil.isDepthEnable = true;
+		desc.depthStencil.isDepthWriteEnable = true;
+		desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+		D3D12_INPUT_ELEMENT_DESC inputElem[] = {
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		};
+		desc.inputLayout.numElements = _countof(inputElem);
+		desc.inputLayout.pElements = inputElem;
+
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.dsvFormat = DXGI_FORMAT_D32_FLOAT;
+		desc.multisampleCount = 1;
+
+		if (!g_basePassPso_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
+	}
+	{
+		sl12::GraphicsPipelineStateDesc desc;
+		desc.pRootSignature = g_linearDepthSig_.GetRootSignature();
+		desc.pVS = &g_Shaders_[ShaderKind::PostProcessV];
+		desc.pPS = &g_Shaders_[ShaderKind::LinearDepthP];
+
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.isDepthClipEnable = false;
+		desc.rasterizer.isFrontCCW = true;
+
+		desc.depthStencil.isDepthEnable = false;
+		desc.depthStencil.isDepthWriteEnable = false;
+
+		desc.inputLayout.numElements = 0;
+		desc.inputLayout.pElements = nullptr;
+
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R32_FLOAT;
+		desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
+		desc.multisampleCount = 1;
+
+		if (!g_linearDepthPso_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
+	}
+	{
+		sl12::GraphicsPipelineStateDesc desc;
+		desc.pRootSignature = g_lightingSig_.GetRootSignature();
+		desc.pVS = &g_Shaders_[ShaderKind::PostProcessV];
+		desc.pPS = &g_Shaders_[ShaderKind::LightingP];
+
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.isDepthClipEnable = false;
+		desc.rasterizer.isFrontCCW = true;
+
+		desc.depthStencil.isDepthEnable = false;
+		desc.depthStencil.isDepthWriteEnable = false;
+
+		desc.inputLayout.numElements = 0;
+		desc.inputLayout.pElements = nullptr;
+
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
+		desc.multisampleCount = 1;
+
+		if (!g_lightingPso_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
+	}
+	{
+		sl12::GraphicsPipelineStateDesc desc;
+		desc.pRootSignature = g_blurXPassSig_.GetRootSignature();
+		desc.pVS = &g_Shaders_[ShaderKind::PostProcessV];
+		desc.pPS = &g_Shaders_[ShaderKind::BlurXP];
+
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.isDepthClipEnable = false;
+		desc.rasterizer.isFrontCCW = true;
+
+		desc.depthStencil.isDepthEnable = false;
+		desc.depthStencil.isDepthWriteEnable = false;
+
+		desc.inputLayout.numElements = 0;
+		desc.inputLayout.pElements = nullptr;
+
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
+		desc.multisampleCount = 1;
+
+		if (!g_blurXPassPso_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
+
+		desc.pRootSignature = g_blurYPassSig_.GetRootSignature();
+		desc.pPS = &g_Shaders_[ShaderKind::BlurYP];
+		desc.rtvFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		if (!g_blurYPassPso_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
 	}
 
 	// ルートシグネチャを作成
@@ -348,11 +634,27 @@ void DestroyAssets()
 	g_psoMesh_.Destroy();
 	g_rootSigMesh_.Destroy();
 
+	g_basePassPso_.Destroy();
+	g_linearDepthPso_.Destroy();
+	g_lightingPso_.Destroy();
+	g_blurXPassPso_.Destroy();
+	g_blurYPassPso_.Destroy();
+
+	g_basePassSig_.Invalid();
+	g_linearDepthSig_.Invalid();
+	g_lightingSig_.Invalid();
+	g_blurXPassSig_.Invalid();
+	g_blurYPassSig_.Invalid();
+	g_rootSigMan_.Destroy();
+
 	g_VShader_.Destroy();
 	g_PShader_.Destroy();
 
+	g_samLinearClamp_.Destroy();
 	g_sampler_.Destroy();
 
+	g_BlurCB_.Destroy();
+	g_MeshCB_.Destroy();
 	for (auto&&v : g_SceneCBs_) v.Destroy();
 
 	g_DepthBufferView_.Destroy();
@@ -470,6 +772,212 @@ void RenderScene()
 		//sAngle += 1.0f;
 	}
 
+	// BasePass
+	{
+		auto thisProd = g_rrProducers_[0];
+		RenderResource* pOutputs[] = {
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]),		// GBuffer0
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[1]),		// GBuffer1
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[2]),		// GBuffer2
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[3]),		// Depth
+		};
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvs[3]
+		{
+			pOutputs[0]->GetRtv()->GetDesc()->GetCpuHandle(),
+			pOutputs[1]->GetRtv()->GetDesc()->GetCpuHandle(),
+			pOutputs[2]->GetRtv()->GetDesc()->GetCpuHandle(),
+		};
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDesc()->GetCpuHandle();
+
+		// バリア
+		for (auto&& p : pOutputs)
+		{
+			if (p->IsRtv())
+			{
+				mainCmdList.TransitionBarrier(p->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+			}
+			else if (p->IsDsv())
+			{
+				mainCmdList.TransitionBarrier(p->GetTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+			}
+		}
+
+		// 画面クリア
+		pCmdList->ClearRenderTargetView(rtvs[0], pOutputs[0]->GetTexture()->GetTextureDesc().clearColor, 0, nullptr);
+		pCmdList->ClearRenderTargetView(rtvs[1], pOutputs[1]->GetTexture()->GetTextureDesc().clearColor, 0, nullptr);
+		pCmdList->ClearRenderTargetView(rtvs[2], pOutputs[2]->GetTexture()->GetTextureDesc().clearColor, 0, nullptr);
+		pCmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(_countof(rtvs), rtvs, false, &dsv);
+
+		// DescriptorHeapを設定
+		ID3D12DescriptorHeap* pDescHeaps[] = {
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
+			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
+		};
+		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
+
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_basePassPso_.GetPSO());
+		pCmdList->SetGraphicsRootSignature(g_basePassSig_.GetRootSignature()->GetRootSignature());
+
+		// デスクリプタテーブル設定
+		g_basePassSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
+		g_basePassSig_.SetDescriptor(mainCmdList, "CbMesh", g_MeshCB_.cbv_);
+
+		// DrawCall
+		auto submeshCount = g_mesh_.GetSubmeshCount();
+		for (sl12::s32 i = 0; i < submeshCount; ++i)
+		{
+			sl12::DrawSubmeshInfo info = g_mesh_.GetDrawSubmeshInfo(i);
+
+			D3D12_VERTEX_BUFFER_VIEW views[] = {
+				info.pShape->GetPositionView()->GetView(),
+				info.pShape->GetNormalView()->GetView(),
+				info.pShape->GetTexcoordView()->GetView(),
+			};
+			pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			pCmdList->IASetVertexBuffers(0, _countof(views), views);
+			pCmdList->IASetIndexBuffer(&info.pSubmesh->GetIndexBufferView()->GetView());
+			pCmdList->DrawIndexedInstanced(info.numIndices, 1, 0, 0, 0);
+		}
+	}
+
+	// LinearDepthPass
+	{
+		auto thisProd = g_rrProducers_[1];
+		RenderResource* pInput = g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]);
+		RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+
+		// バリア
+		mainCmdList.TransitionBarrier(pInput->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pOutput->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_linearDepthPso_.GetPSO());
+		pCmdList->SetGraphicsRootSignature(g_linearDepthSig_.GetRootSignature()->GetRootSignature());
+
+		// デスクリプタテーブル設定
+		g_linearDepthSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
+		g_linearDepthSig_.SetDescriptor(mainCmdList, "texDepth", *pInput->GetSrv());
+
+		// DrawCall
+		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pCmdList->IASetVertexBuffers(0, 0, nullptr);
+		pCmdList->IASetIndexBuffer(nullptr);
+		pCmdList->DrawInstanced(3, 1, 0, 0);
+	}
+
+	// LightingPass
+	{
+		auto thisProd = g_rrProducers_[2];
+		RenderResource* pInputs[] = {
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]),		// GBuffer0
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[1]),		// GBuffer1
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[2]),		// GBuffer2
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[3]),		// LinearDepth
+		};
+		RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+
+		// バリア
+		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[2]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[3]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pOutput->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_lightingPso_.GetPSO());
+		pCmdList->SetGraphicsRootSignature(g_lightingSig_.GetRootSignature()->GetRootSignature());
+
+		// デスクリプタテーブル設定
+		g_lightingSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
+		g_lightingSig_.SetDescriptor(mainCmdList, "texGBuffer0", *pInputs[0]->GetSrv());
+		g_lightingSig_.SetDescriptor(mainCmdList, "texGBuffer1", *pInputs[1]->GetSrv());
+		g_lightingSig_.SetDescriptor(mainCmdList, "texGBuffer2", *pInputs[2]->GetSrv());
+		g_lightingSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[3]->GetSrv());
+
+		// DrawCall
+		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pCmdList->IASetVertexBuffers(0, 0, nullptr);
+		pCmdList->IASetIndexBuffer(nullptr);
+		pCmdList->DrawInstanced(3, 1, 0, 0);
+	}
+
+	// BlurPass
+	{
+		auto thisProd = g_rrProducers_[3];
+		RenderResource* pInputs[] = {
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]),		// LightResult
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[1]),		// LinearDepth
+		};
+		RenderResource* pTemp = g_rrManager_.GetRenderResourceFromID(thisProd->GetTempIds()[0]);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDesc()->GetCpuHandle();
+
+		// バリア
+		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pTemp->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+		//// X軸方向
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &tempRtv, false, nullptr);
+
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_blurXPassPso_.GetPSO());
+		pCmdList->SetGraphicsRootSignature(g_blurXPassSig_.GetRootSignature()->GetRootSignature());
+
+		// デスクリプタテーブル設定
+		g_blurXPassSig_.SetDescriptor(mainCmdList, "CbGaussBlur", g_BlurCB_.cbv_);
+		g_blurXPassSig_.SetDescriptor(mainCmdList, "texSource", *pInputs[0]->GetSrv());
+		g_blurXPassSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[1]->GetSrv());
+		g_blurXPassSig_.SetDescriptor(mainCmdList, "samLinearClamp", g_samLinearClamp_);
+
+		// DrawCall
+		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pCmdList->IASetVertexBuffers(0, 0, nullptr);
+		pCmdList->IASetIndexBuffer(nullptr);
+		pCmdList->DrawInstanced(3, 1, 0, 0);
+
+
+		//// Y軸方向
+		// バリア
+		mainCmdList.TransitionBarrier(pTemp->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
+
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_blurYPassPso_.GetPSO());
+		pCmdList->SetGraphicsRootSignature(g_blurYPassSig_.GetRootSignature()->GetRootSignature());
+
+		// デスクリプタテーブル設定
+		g_blurYPassSig_.SetDescriptor(mainCmdList, "CbGaussBlur", g_BlurCB_.cbv_);
+		g_blurYPassSig_.SetDescriptor(mainCmdList, "texSource", *pTemp->GetSrv());
+		g_blurYPassSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[1]->GetSrv());
+		g_blurYPassSig_.SetDescriptor(mainCmdList, "samLinearClamp", g_samLinearClamp_);
+
+		// DrawCall
+		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pCmdList->IASetVertexBuffers(0, 0, nullptr);
+		pCmdList->IASetIndexBuffer(nullptr);
+		pCmdList->DrawInstanced(3, 1, 0, 0);
+	}
+
+#if 0
 	{
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
@@ -510,6 +1018,7 @@ void RenderScene()
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 		*/
 	}
+#endif
 
 	ImGui::Render();
 
