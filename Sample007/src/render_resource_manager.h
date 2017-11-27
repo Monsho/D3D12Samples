@@ -191,7 +191,7 @@ public:
 	{
 		return pInputIds_;
 	}
-	const sl12::u32* GetInputPrevStates() const
+	const D3D12_RESOURCE_STATES* GetInputPrevStates() const
 	{
 		return pInputPrevStates_;
 	}
@@ -208,7 +208,7 @@ public:
 	{
 		return pOutputDescs_;
 	}
-	const sl12::u32* GetOutputPrevStates() const
+	const D3D12_RESOURCE_STATES* GetOutputPrevStates() const
 	{
 		return pOutputPrevStates_;
 	}
@@ -225,7 +225,7 @@ public:
 	{
 		return pTempDescs_;
 	}
-	const sl12::u32* GetTempPrevStates() const
+	const D3D12_RESOURCE_STATES* GetTempPrevStates() const
 	{
 		return pTempPrevStates_;
 	}
@@ -238,7 +238,7 @@ public:
 		assert(index < inputCount_);
 		pInputIds_[index] = id;
 	}
-	void SetInputPrevState(sl12::u32 index, sl12::u32 state)
+	void SetInputPrevState(sl12::u32 index, D3D12_RESOURCE_STATES state)
 	{
 		assert(index < inputCount_);
 		pInputPrevStates_[index] = state;
@@ -255,7 +255,7 @@ public:
 		assert(index < outputCount_);
 		pOutputIds_[index] = id;
 	}
-	void SetOutputPrevState(sl12::u32 index, sl12::u32 state)
+	void SetOutputPrevState(sl12::u32 index, D3D12_RESOURCE_STATES state)
 	{
 		assert(index < outputCount_);
 		pOutputPrevStates_[index] = state;
@@ -271,7 +271,7 @@ public:
 		assert(index < tempCount_);
 		pTempIds_[index] = id;
 	}
-	void SetTempPrevState(sl12::u32 index, sl12::u32 state)
+	void SetTempPrevState(sl12::u32 index, D3D12_RESOURCE_STATES state)
 	{
 		assert(index < tempCount_);
 		pTempPrevStates_[index] = state;
@@ -281,7 +281,7 @@ public:
 protected:
 	ResourceProducerBase(
 		sl12::u32 inputCount, sl12::u32 outputCount, sl12::u32 tempCount,
-		ResourceID* resIds, RenderResourceDesc* resDescs, sl12::u32* pPrevStates)
+		ResourceID* resIds, RenderResourceDesc* resDescs, D3D12_RESOURCE_STATES* pPrevStates)
 		: inputCount_(inputCount), pInputIds_(resIds), pInputPrevStates_(pPrevStates)
 		, outputCount_(outputCount), pOutputIds_(resIds + inputCount), pOutputDescs_(resDescs), pOutputPrevStates_(pPrevStates + inputCount)
 		, tempCount_(tempCount), pTempIds_(resIds + inputCount + outputCount), pTempDescs_(resDescs + outputCount), pTempPrevStates_(pPrevStates + inputCount + outputCount)
@@ -290,17 +290,17 @@ protected:
 protected:
 	sl12::u32				inputCount_;
 	ResourceID*				pInputIds_;
-	sl12::u32*				pInputPrevStates_;
+	D3D12_RESOURCE_STATES*	pInputPrevStates_;
 
 	sl12::u32				outputCount_;
 	ResourceID*				pOutputIds_;
 	RenderResourceDesc*		pOutputDescs_;
-	sl12::u32*				pOutputPrevStates_;
+	D3D12_RESOURCE_STATES*	pOutputPrevStates_;
 
 	sl12::u32				tempCount_;
 	ResourceID*				pTempIds_;
 	RenderResourceDesc*		pTempDescs_;
-	sl12::u32*				pTempPrevStates_;
+	D3D12_RESOURCE_STATES*	pTempPrevStates_;
 };	// class ResourceProducerBase
 
 /************************************************//**
@@ -318,9 +318,9 @@ public:
 	{}
 
 private:
-	ResourceID			resourceIds_[InputCount + OutputCount + TempCount];
-	RenderResourceDesc	resourceDescs_[OutputCount + TempCount];
-	sl12::u32			prevStates_[InputCount + OutputCount + TempCount];
+	ResourceID				resourceIds_[InputCount + OutputCount + TempCount];
+	RenderResourceDesc		resourceDescs_[OutputCount + TempCount];
+	D3D12_RESOURCE_STATES	prevStates_[InputCount + OutputCount + TempCount];
 };	// class ResourceProducer
 
 /************************************************//**

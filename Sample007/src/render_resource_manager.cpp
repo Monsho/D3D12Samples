@@ -206,9 +206,9 @@ namespace
 
 	struct ResourceWork
 	{
-		RenderResource*		p_res;
-		sl12::u32			currentState;
-		sl12::u32			lastPassNo;
+		RenderResource*			p_res;
+		D3D12_RESOURCE_STATES	currentState;
+		sl12::u32				lastPassNo;
 	};	// struct ResourceWork
 
 	// リソースの履歴情報を生成する
@@ -353,7 +353,7 @@ namespace
 				auto findIt = usedRes.find(ids[i]);
 				assert(findIt != usedRes.end());		// 使用中リソースに必ず存在するはず
 				prod->SetInputPrevState(i, findIt->second.currentState);
-				findIt->second.currentState = D3D12_RESOURCE_STATE_GENERIC_READ;
+				findIt->second.currentState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 			}
 
 			// 出力リソースを生成する
@@ -389,7 +389,7 @@ namespace
 						work.p_res = new RenderResource();
 						work.p_res->Initialize(device, descs[i], screenWidth, screenHeight);
 						outResources.push_back(work.p_res);
-						prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_GENERIC_READ);
+						prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 					}
 
 					// ワークを使用マップに登録する
@@ -423,7 +423,7 @@ namespace
 					work.p_res = new RenderResource();
 					work.p_res->Initialize(device, descs[i], screenWidth, screenHeight);
 					outResources.push_back(work.p_res);
-					prod->SetTempPrevState(i, D3D12_RESOURCE_STATE_GENERIC_READ);
+					prod->SetTempPrevState(i, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 				}
 
 				// ワークを使用マップに登録する

@@ -734,7 +734,7 @@ void RenderScene()
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
 	ID3D12GraphicsCommandList* pCmdList = mainCmdList.GetCommandList();
 
-	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
@@ -791,16 +791,18 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDesc()->GetCpuHandle();
 
 		// バリア
+		auto prevState = thisProd->GetOutputPrevStates();
 		for (auto&& p : pOutputs)
 		{
 			if (p->IsRtv())
 			{
-				mainCmdList.TransitionBarrier(p->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+				mainCmdList.TransitionBarrier(p->GetTexture(), *prevState, D3D12_RESOURCE_STATE_RENDER_TARGET);
 			}
 			else if (p->IsDsv())
 			{
-				mainCmdList.TransitionBarrier(p->GetTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+				mainCmdList.TransitionBarrier(p->GetTexture(), *prevState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 			}
+			prevState++;
 		}
 
 		// 画面クリア
@@ -854,8 +856,8 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		mainCmdList.TransitionBarrier(pInput->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pOutput->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+		mainCmdList.TransitionBarrier(pInput->GetTexture(), *thisProd->GetInputPrevStates(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pOutput->GetTexture(), *thisProd->GetOutputPrevStates(), D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -889,11 +891,13 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[2]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[3]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pOutput->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+		auto inputPrevStates = thisProd->GetInputPrevStates();
+		auto outputPrevStates = thisProd->GetOutputPrevStates();
+		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), inputPrevStates[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), inputPrevStates[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[2]->GetTexture(), inputPrevStates[2], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[3]->GetTexture(), inputPrevStates[3], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pOutput->GetTexture(), outputPrevStates[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -928,9 +932,11 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pTemp->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+		auto inputPrevStates = thisProd->GetInputPrevStates();
+		auto tempPrevStates = thisProd->GetTempPrevStates();
+		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), inputPrevStates[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), inputPrevStates[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pTemp->GetTexture(), tempPrevStates[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		//// X軸方向
 		// レンダーターゲット設定
@@ -955,7 +961,7 @@ void RenderScene()
 
 		//// Y軸方向
 		// バリア
-		mainCmdList.TransitionBarrier(pTemp->GetTexture(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		mainCmdList.TransitionBarrier(pTemp->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
@@ -1022,7 +1028,7 @@ void RenderScene()
 
 	ImGui::Render();
 
-	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT);
+	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 
 	mainCmdList.Close();
 }
