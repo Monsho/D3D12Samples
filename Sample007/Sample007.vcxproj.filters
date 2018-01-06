@@ -12,9 +12,6 @@
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="src\render_resource_manager.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="src\shaders\PSMesh.psh">
@@ -44,14 +41,6 @@
     <FxCompile Include="src\shaders\blur_y.p.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\render_path.h">
-      <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="src\render_resource_manager.h">
-      <Filter>src</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\const_buffer.hlsli">

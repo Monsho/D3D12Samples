@@ -17,8 +17,7 @@
 #include <sl12/pipeline_state.h>
 #include <sl12/file.h>
 #include <sl12/root_signature_manager.h>
-
-#include "render_resource_manager.h"
+#include <sl12/render_resource_manager.h>
 
 #include <DirectXTex.h>
 #include <windowsx.h>
@@ -137,8 +136,8 @@ namespace
 			LinearDepth,
 		};
 	};	// struct RenderID
-	RenderResourceManager				g_rrManager_;
-	std::vector<ResourceProducerBase*>	g_rrProducers_;
+	sl12::RenderResourceManager					g_rrManager_;
+	std::vector<sl12::ResourceProducerBase*>	g_rrProducers_;
 
 	sl12::Gui	g_Gui_;
 	sl12::InputData	g_InputData_{};
@@ -224,19 +223,13 @@ bool InitializeAssets()
 
 	// 深度バッファを作成
 	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			kWindowWidth,
-			kWindowHeight,
-			1,
-			1,
-			kDepthViewFormat,
-			1,
-			{ 0.0f, 0.0f, 0.0f, 0.0f }, 1.0f, 0,
-			false,
-			true,
-			false
-		};
+		sl12::TextureDesc texDesc;
+		texDesc.dimension = sl12::TextureDimension::Texture2D;
+		texDesc.width = kWindowWidth;
+		texDesc.height = kWindowHeight;
+		texDesc.format = kDepthViewFormat;
+		texDesc.isDepthBuffer = true;
+
 		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
 		{
 			return false;
@@ -664,13 +657,13 @@ void DestroyAssets()
 bool InitializeRenderResource()
 {
 	// プロデューサーを生成する
-	g_rrProducers_.push_back(new ResourceProducer<0, 4, 0>());		// Deferred Base Pass
-	g_rrProducers_.push_back(new ResourceProducer<1, 1, 0>());		// Linear Depth Pass
-	g_rrProducers_.push_back(new ResourceProducer<4, 1, 0>());		// Deferred Lighting Pass
-	g_rrProducers_.push_back(new ResourceProducer<2, 1, 1>());		// Blur Pass
+	g_rrProducers_.push_back(new sl12::ResourceProducer<0, 4, 0>());		// Deferred Base Pass
+	g_rrProducers_.push_back(new sl12::ResourceProducer<1, 1, 0>());		// Linear Depth Pass
+	g_rrProducers_.push_back(new sl12::ResourceProducer<4, 1, 0>());		// Deferred Lighting Pass
+	g_rrProducers_.push_back(new sl12::ResourceProducer<2, 1, 1>());		// Blur Pass
 
 	// 記述子の準備
-	RenderResourceDesc descGB0, descGB1, descGB2, descD, descLR, descLD, descBX;
+	sl12::RenderResourceDesc descGB0, descGB1, descGB2, descD, descLR, descLD, descBX;
 	descGB0.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 	descGB1.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 	descGB2.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM);
@@ -696,7 +689,7 @@ bool InitializeRenderResource()
 
 	g_rrProducers_[3]->SetInput(0, RenderID::LightResult);
 	g_rrProducers_[3]->SetInput(1, RenderID::LinearDepth);
-	g_rrProducers_[3]->SetOutput(0, kPrevOutputID, descLR);
+	g_rrProducers_[3]->SetOutput(0, sl12::kPrevOutputID, descLR);
 	g_rrProducers_[3]->SetTemp(0, descBX);
 
 	// マネージャ初期化
@@ -775,7 +768,7 @@ void RenderScene()
 	// BasePass
 	{
 		auto thisProd = g_rrProducers_[0];
-		RenderResource* pOutputs[] = {
+		sl12::RenderResource* pOutputs[] = {
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]),		// GBuffer0
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[1]),		// GBuffer1
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[2]),		// GBuffer2
@@ -850,8 +843,8 @@ void RenderScene()
 	// LinearDepthPass
 	{
 		auto thisProd = g_rrProducers_[1];
-		RenderResource* pInput = g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]);
-		RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
+		sl12::RenderResource* pInput = g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]);
+		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
 
@@ -880,13 +873,13 @@ void RenderScene()
 	// LightingPass
 	{
 		auto thisProd = g_rrProducers_[2];
-		RenderResource* pInputs[] = {
+		sl12::RenderResource* pInputs[] = {
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]),		// GBuffer0
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[1]),		// GBuffer1
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[2]),		// GBuffer2
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[3]),		// LinearDepth
 		};
-		RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
+		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
 
@@ -923,11 +916,11 @@ void RenderScene()
 	// BlurPass
 	{
 		auto thisProd = g_rrProducers_[3];
-		RenderResource* pInputs[] = {
+		sl12::RenderResource* pInputs[] = {
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]),		// LightResult
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[1]),		// LinearDepth
 		};
-		RenderResource* pTemp = g_rrManager_.GetRenderResourceFromID(thisProd->GetTempIds()[0]);
+		sl12::RenderResource* pTemp = g_rrManager_.GetRenderResourceFromID(thisProd->GetTempIds()[0]);
 
 		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDesc()->GetCpuHandle();
 
@@ -982,49 +975,6 @@ void RenderScene()
 		pCmdList->IASetIndexBuffer(nullptr);
 		pCmdList->DrawInstanced(3, 1, 0, 0);
 	}
-
-#if 0
-	{
-		// レンダーターゲット設定
-		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
-
-		// PSOとルートシグネチャを設定
-		pCmdList->SetPipelineState(g_psoMesh_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_rootSigMesh_.GetRootSignature());
-
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, curCB.cbv_.GetDesc()->GetGpuHandle());
-
-		// DrawCall
-		auto submeshCount = g_mesh_.GetSubmeshCount();
-		for (sl12::s32 i = 0; i < submeshCount; ++i)
-		{
-			sl12::DrawSubmeshInfo info = g_mesh_.GetDrawSubmeshInfo(i);
-
-			D3D12_VERTEX_BUFFER_VIEW views[] = {
-				info.pShape->GetPositionView()->GetView(),
-				info.pShape->GetNormalView()->GetView(),
-				info.pShape->GetTexcoordView()->GetView(),
-			};
-			pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			pCmdList->IASetVertexBuffers(0, _countof(views), views);
-			pCmdList->IASetIndexBuffer(&info.pSubmesh->GetIndexBufferView()->GetView());
-			pCmdList->DrawIndexedInstanced(info.numIndices, 1, 0, 0, 0);
-		}
-		/*
-		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
-		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		pCmdList->IASetVertexBuffers(0, _countof(views), views);
-		pCmdList->IASetIndexBuffer(&g_ibufferView_.GetView());
-		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
-		*/
-	}
-#endif
 
 	ImGui::Render();
 

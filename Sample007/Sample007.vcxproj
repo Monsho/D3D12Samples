@@ -85,7 +85,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\render_resource_manager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="src\shaders\base_pass.p.hlsl">
@@ -160,10 +159,6 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)data\%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)data\%(Filename).cso</ObjectFileOutput>
     </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\render_path.h" />
-    <ClInclude Include="src\render_resource_manager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\base_pass.hlsli" />

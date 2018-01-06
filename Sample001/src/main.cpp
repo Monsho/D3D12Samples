@@ -120,19 +120,17 @@ bool InitializeAssets()
 
 	// レンダーターゲットを作成
 	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			kWindowWidth,
-			kWindowHeight,
-			1,
-			1,
-			DXGI_FORMAT_R16G16B16A16_FLOAT,
-			1,
-			{0.0f, 0.6f, 0.0f, 1.0f}, 1.0f, 0,
-			true,
-			false,
-			false
-		};
+		sl12::TextureDesc texDesc;
+		texDesc.dimension = sl12::TextureDimension::Texture2D;
+		texDesc.width = kWindowWidth;
+		texDesc.height = kWindowHeight;
+		texDesc.format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		texDesc.clearColor[0] = 0.0f;
+		texDesc.clearColor[1] = 0.6f;
+		texDesc.clearColor[2] = 0.0f;
+		texDesc.clearColor[3] = 1.0f;
+		texDesc.isRenderTarget = true;
+
 		if (!g_RenderTarget_.Initialize(&g_Device_, texDesc))
 		{
 			return false;
@@ -151,19 +149,13 @@ bool InitializeAssets()
 
 	// 深度バッファを作成
 	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			kWindowWidth,
-			kWindowHeight,
-			1,
-			1,
-			kDepthViewFormat,
-			1,
-			{ 0.0f, 0.0f, 0.0f, 0.0f }, 1.0f, 0,
-			false,
-			true,
-			false
-		};
+		sl12::TextureDesc texDesc;
+		texDesc.dimension = sl12::TextureDimension::Texture2D;
+		texDesc.width = kWindowWidth;
+		texDesc.height = kWindowHeight;
+		texDesc.format = kDepthViewFormat;
+		texDesc.isDepthBuffer = true;
+
 		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
 		{
 			return false;

@@ -196,19 +196,13 @@ bool InitializeAssets()
 
 	// 深度バッファを作成
 	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			kWindowWidth,
-			kWindowHeight,
-			1,
-			1,
-			kDepthViewFormat,
-			1,
-			{ 0.0f, 0.0f, 0.0f, 0.0f }, 1.0f, 0,
-			false,
-			true,
-			false
-		};
+		sl12::TextureDesc texDesc;
+		texDesc.dimension = sl12::TextureDimension::Texture2D;
+		texDesc.width = kWindowWidth;
+		texDesc.height = kWindowHeight;
+		texDesc.format = kDepthViewFormat;
+		texDesc.isDepthBuffer = true;
+
 		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
 		{
 			return false;
@@ -223,19 +217,12 @@ bool InitializeAssets()
 	// FFTターゲットを作成する
 	for (int i = 0; i < _countof(g_FFTTargets_); i++)
 	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			256,
-			256,
-			1,
-			1,
-			DXGI_FORMAT_R16G16B16A16_FLOAT,
-			1,
-			{ 0.0f, 0.0f, 0.0f, 0.0f }, 1.0f, 0,
-			false,
-			false,
-			true
-		};
+		sl12::TextureDesc texDesc;
+		texDesc.dimension = sl12::TextureDimension::Texture2D;
+		texDesc.width = texDesc.height = 256;
+		texDesc.format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		texDesc.isUav = true;
+
 		if (!g_FFTTargets_[i].Initialize(&g_Device_, texDesc))
 		{
 			return false;

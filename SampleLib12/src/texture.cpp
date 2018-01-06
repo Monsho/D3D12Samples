@@ -53,6 +53,8 @@ namespace sl12
 			resourceDesc_.Format = DXGI_FORMAT_R16_TYPELESS; break;
 		}
 
+		currentState_ = desc.initialState;
+
 		D3D12_CLEAR_VALUE* pClearValue = nullptr;
 		D3D12_CLEAR_VALUE clearValue{};
 		if (desc.isRenderTarget)
@@ -61,7 +63,8 @@ namespace sl12
 			clearValue_.Format = desc.format;
 			memcpy(clearValue_.Color, desc.clearColor, sizeof(clearValue_.Color));
 
-			currentState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			if (currentState_ == D3D12_RESOURCE_STATE_COMMON)
+				currentState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		}
 		else if (desc.isDepthBuffer)
 		{
@@ -70,11 +73,13 @@ namespace sl12
 			clearValue_.DepthStencil.Depth = desc.clearDepth;
 			clearValue_.DepthStencil.Stencil = desc.clearStencil;
 
-			currentState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+			if (currentState_ == D3D12_RESOURCE_STATE_COMMON)
+				currentState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 		}
 		else
 		{
-			currentState_ = D3D12_RESOURCE_STATE_COPY_DEST;
+			if (currentState_ == D3D12_RESOURCE_STATE_COMMON)
+				currentState_ = D3D12_RESOURCE_STATE_COPY_DEST;
 		}
 
 		auto hr = pDev->GetDeviceDep()->CreateCommittedResource(&prop, flags, &resourceDesc_, currentState_, pClearValue, IID_PPV_ARGS(&pResource_));

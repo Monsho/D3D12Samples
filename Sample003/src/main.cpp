@@ -155,19 +155,13 @@ bool InitializeAssets()
 
 	// 深度バッファを作成
 	{
-		sl12::TextureDesc texDesc{
-			sl12::TextureDimension::Texture2D,
-			kWindowWidth,
-			kWindowHeight,
-			1,
-			1,
-			kDepthFormat,
-			1,
-			{ 0.0f, 0.0f, 0.0f, 0.0f }, 1.0f, 0,
-			false,
-			true,
-			false
-		};
+		sl12::TextureDesc texDesc;
+		texDesc.dimension = sl12::TextureDimension::Texture2D;
+		texDesc.width = kWindowWidth;
+		texDesc.height = kWindowHeight;
+		texDesc.format = kDepthFormat;
+		texDesc.isDepthBuffer = true;
+
 		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
 		{
 			return false;

@@ -289,14 +289,11 @@ namespace sl12
 		size_t upload_size = width * height * 4 * sizeof(char);
 
 		// テクスチャ作成
-		TextureDesc desc{
-			TextureDimension::Texture2D,
-			static_cast<u32>(width), static_cast<u32>(height), 1, 1,
-			DXGI_FORMAT_R8G8B8A8_UNORM,
-			1,
-			{0.0f, 0.0f, 0.0f, 0.0f}, 0.0f, 0,
-			false, false, false
-		};
+		TextureDesc desc;
+		desc.dimension = TextureDimension::Texture2D;
+		desc.width = static_cast<u32>(width);
+		desc.height = static_cast<u32>(height);
+		desc.format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		
 		pFontTexture_ = new Texture();
 		if (!pFontTexture_)
