@@ -1,4 +1,6 @@
 ﻿#include <sl12/render_resource_manager.h>
+#include <sl12/command_list.h>
+#include <sl12/swapchain.h>
 
 
 namespace sl12
@@ -371,7 +373,20 @@ namespace sl12
 					{
 						// すでにこのリソースが生成されている場合
 						prod->SetOutputPrevState(i, findIt->second.currentState);
-						findIt->second.currentState = findIt->second.p_res->IsRtv() ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_DEPTH_WRITE;
+						if (id != kSwapchainID)
+							findIt->second.currentState = findIt->second.p_res->IsRtv() ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_DEPTH_WRITE;
+						else
+							findIt->second.currentState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+					}
+					else if (id == kSwapchainID)
+					{
+						// スワップチェインを使用するパスが初めて登場したので、前回状態はPresentとする
+						prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_PRESENT);
+
+						ResourceWork work;
+						work.currentState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+						work.lastPassNo = history_map.find(id)->second.history.rbegin()->producerNo;
+						usedRes[id] = work;
 					}
 					else
 					{
@@ -473,6 +488,61 @@ namespace sl12
 
 		// 実際のリソース生成
 		MakeResourcesDetail(*pDevice_, screenWidth_, screenHeight_, history_map, producers, resources_, resource_map_);
+	}
+
+	//-------------------------------------------
+	// 入力リソースにバリアを張る
+	//-------------------------------------------
+	void RenderResourceManager::BarrierInputResources(CommandList& cmdList, const ResourceProducerBase* pProd)
+	{
+		auto count = pProd->GetInputCount();
+		auto ids = pProd->GetInputIds();
+		auto end = ids + count;
+		auto prevState = pProd->GetInputPrevStates();
+		for (; ids != end; ids++)
+		{
+			if (*prevState != (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE))
+			{
+				auto res = GetRenderResourceFromID(*ids);
+				cmdList.TransitionBarrier(res->GetTexture(), *prevState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			}
+			prevState++;
+		}
+	}
+
+	//-------------------------------------------
+	// 出力リソースにバリアを張る
+	//-------------------------------------------
+	void RenderResourceManager::BarrierOutputResources(CommandList& cmdList, const ResourceProducerBase* pProd)
+	{
+		auto count = pProd->GetOutputCount();
+		auto ids = pProd->GetOutputIds();
+		auto end = ids + count;
+		auto prevState = pProd->GetOutputPrevStates();
+		for (; ids != end; ids++)
+		{
+			if (*ids == kSwapchainID)
+			{
+				if (*prevState == D3D12_RESOURCE_STATE_PRESENT)
+				{
+					auto scTex = pDevice_->GetSwapchain().GetCurrentTexture(1);
+					cmdList.TransitionBarrier(scTex, *prevState, D3D12_RESOURCE_STATE_RENDER_TARGET);
+				}
+			}
+			else
+			{
+				auto res = GetRenderResourceFromID(*ids);
+				if (res->IsRtv() && (*prevState != D3D12_RESOURCE_STATE_RENDER_TARGET))
+				{
+					cmdList.TransitionBarrier(res->GetTexture(), *prevState, D3D12_RESOURCE_STATE_RENDER_TARGET);
+				}
+				else if (res->IsDsv() && (*prevState != D3D12_RESOURCE_STATE_DEPTH_WRITE))
+				{
+					cmdList.TransitionBarrier(res->GetTexture(), *prevState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+				}
+			}
+			prevState++;
+		}
 	}
 
 }	// namespace sl12

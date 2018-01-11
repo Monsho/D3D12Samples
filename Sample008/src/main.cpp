@@ -91,9 +91,6 @@ namespace
 	sl12::CommandList	g_computeCmdLists_[kMaxComputeCmdList];
 	sl12::CommandList	g_copyCmdList_;
 
-	sl12::Texture			g_DepthBuffer_;
-	sl12::DepthStencilView	g_DepthBufferView_;
-
 	ConstantSet				g_SceneCBs_[kMaxFrameCount];
 	ConstantSet				g_MeshCB_;
 	ConstantSet				g_BlurCB_;
@@ -220,26 +217,6 @@ void InitWindow(HINSTANCE hInstance, int nCmdShow)
 bool InitializeAssets()
 {
 	ID3D12Device* pDev = g_Device_.GetDeviceDep();
-
-	// 深度バッファを作成
-	{
-		sl12::TextureDesc texDesc;
-		texDesc.dimension = sl12::TextureDimension::Texture2D;
-		texDesc.width = kWindowWidth;
-		texDesc.height = kWindowHeight;
-		texDesc.format = kDepthViewFormat;
-		texDesc.isDepthBuffer = true;
-
-		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
-		{
-			return false;
-		}
-
-		if (!g_DepthBufferView_.Initialize(&g_Device_, &g_DepthBuffer_))
-		{
-			return false;
-		}
-	}
 
 	// 定数バッファを作成
 	for (int i = 0; i < _countof(g_SceneCBs_); i++)
@@ -605,7 +582,7 @@ bool InitializeAssets()
 	}
 
 	// GUIの初期化
-	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, g_DepthBuffer_.GetTextureDesc().format))
+	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, kDepthViewFormat))
 	{
 		return false;
 	}
@@ -649,9 +626,6 @@ void DestroyAssets()
 	g_BlurCB_.Destroy();
 	g_MeshCB_.Destroy();
 	for (auto&&v : g_SceneCBs_) v.Destroy();
-
-	g_DepthBufferView_.Destroy();
-	g_DepthBuffer_.Destroy();
 }
 
 bool InitializeRenderResource()
@@ -667,7 +641,7 @@ bool InitializeRenderResource()
 	descGB0.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 	descGB1.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 	descGB2.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM);
-	descD.SetFormat(DXGI_FORMAT_D32_FLOAT);
+	descD.SetFormat(kDepthViewFormat);
 	descLR.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 	descLD.SetFormat(DXGI_FORMAT_R32_FLOAT);
 	descBX.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
@@ -689,7 +663,7 @@ bool InitializeRenderResource()
 
 	g_rrProducers_[3]->SetInput(0, RenderID::LightResult);
 	g_rrProducers_[3]->SetInput(1, RenderID::LinearDepth);
-	g_rrProducers_[3]->SetOutput(0, sl12::kPrevOutputID, descLR);
+	g_rrProducers_[3]->SetOutput(0, sl12::kSwapchainID, descLR);
 	g_rrProducers_[3]->SetTemp(0, descBX);
 
 	// マネージャ初期化
@@ -724,15 +698,7 @@ void RenderScene()
 
 	auto scTex = g_Device_.GetSwapchain().GetCurrentTexture(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetDescHandle(nextFrameIndex);
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
 	ID3D12GraphicsCommandList* pCmdList = mainCmdList.GetCommandList();
-
-	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-	// 画面クリア
-	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
-	pCmdList->ClearRenderTargetView(rtvHandle, kClearColor, 0, nullptr);
-	pCmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, g_DepthBuffer_.GetTextureDesc().clearDepth, g_DepthBuffer_.GetTextureDesc().clearStencil, 0, nullptr);
 
 	// Viewport + Scissor設定
 	D3D12_VIEWPORT viewport{ 0.0f, 0.0f, (float)kWindowWidth, (float)kWindowHeight, 0.0f, 1.0f };
@@ -784,19 +750,7 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		auto prevState = thisProd->GetOutputPrevStates();
-		for (auto&& p : pOutputs)
-		{
-			if (p->IsRtv())
-			{
-				mainCmdList.TransitionBarrier(p->GetTexture(), *prevState, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			}
-			else if (p->IsDsv())
-			{
-				mainCmdList.TransitionBarrier(p->GetTexture(), *prevState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-			}
-			prevState++;
-		}
+		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
 
 		// 画面クリア
 		pCmdList->ClearRenderTargetView(rtvs[0], pOutputs[0]->GetTexture()->GetTextureDesc().clearColor, 0, nullptr);
@@ -849,8 +803,7 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		mainCmdList.TransitionBarrier(pInput->GetTexture(), *thisProd->GetInputPrevStates(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pOutput->GetTexture(), *thisProd->GetOutputPrevStates(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
 
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -884,13 +837,7 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		auto inputPrevStates = thisProd->GetInputPrevStates();
-		auto outputPrevStates = thisProd->GetOutputPrevStates();
-		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), inputPrevStates[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), inputPrevStates[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[2]->GetTexture(), inputPrevStates[2], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[3]->GetTexture(), inputPrevStates[3], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pOutput->GetTexture(), outputPrevStates[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
+		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
 
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
@@ -925,10 +872,8 @@ void RenderScene()
 		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDesc()->GetCpuHandle();
 
 		// バリア
-		auto inputPrevStates = thisProd->GetInputPrevStates();
+		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
 		auto tempPrevStates = thisProd->GetTempPrevStates();
-		mainCmdList.TransitionBarrier(pInputs[0]->GetTexture(), inputPrevStates[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		mainCmdList.TransitionBarrier(pInputs[1]->GetTexture(), inputPrevStates[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		mainCmdList.TransitionBarrier(pTemp->GetTexture(), tempPrevStates[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		//// X軸方向
@@ -955,6 +900,10 @@ void RenderScene()
 		//// Y軸方向
 		// バリア
 		mainCmdList.TransitionBarrier(pTemp->GetTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+		// 一応、画面クリア
+		const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
+		pCmdList->ClearRenderTargetView(rtvHandle, kClearColor, 0, nullptr);
 
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);

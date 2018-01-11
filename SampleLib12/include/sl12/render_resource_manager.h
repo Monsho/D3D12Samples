@@ -12,6 +12,7 @@ namespace sl12
 	typedef sl12::u32			ResourceID;
 	static const ResourceID		kPrevOutputID = 0x10000;
 	static const ResourceID		kTempResourceID = 0x10000000;
+	static const ResourceID		kSwapchainID = 0x80000000;
 
 	/************************************************//**
 	 * @brief 描画リソース記述子
@@ -345,6 +346,25 @@ namespace sl12
 		void Destroy();
 
 		void MakeResources(std::vector<ResourceProducerBase*>& producers);
+
+		/**
+		 * @brief 入力リソースにバリアを張る
+		*/
+		void BarrierInputResources(CommandList& cmdList, const ResourceProducerBase* pProd);
+
+		/**
+		 * @brief 出力リソースにバリアを張る
+		*/
+		void BarrierOutputResources(CommandList& cmdList, const ResourceProducerBase* pProd);
+
+		/**
+		 * @brief 入出力リソースにバリアを張る
+		*/
+		void BarrierAllResources(CommandList& cmdList, const ResourceProducerBase* pProd)
+		{
+			BarrierInputResources(cmdList, pProd);
+			BarrierOutputResources(cmdList, pProd);
+		}
 
 		/**
 		 * @brief IDから描画リソースを取得する
