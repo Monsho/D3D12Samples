@@ -32,7 +32,7 @@ VSOutput mainVS(VSInput In)
 	float4 posVS = mul(mtxWorldToView, In.position);
 	Out.position = Out.posCopy = mul(mtxViewToClip, posVS);
 	Out.viewDirWS = -mul((float3x3)mtxViewToWorld, posVS.xyz);
-	Out.normalUV = In.position.zx / float2(500.0, 500.0);
+	Out.normalUV = In.position.zx / float2(500.0, 200.0);
 
 	return Out;
 }
@@ -43,15 +43,17 @@ PSOutput mainPS(VSOutput In)
 
 	float3 V = normalize(In.viewDirWS);
 	float3 N = normalize(texNormal.Sample(samLinear, In.normalUV).xzy * 2.0 - 1.0);
-	float3 N_VS = mul((float3x3)mtxWorldToView, N);
+	float3 R = 2.0 * dot(N, V) * N - V;
+	float3 R_VS = mul((float3x3)mtxWorldToView, R);
 
 	// ÉtÉåÉlÉãÇ…ÇÊÇÈîΩéÀó ÇãÅÇﬂÇÈ
-	float f = pow(1.0 - dot(V, N), 3.0);
+	float f = pow(1.0 - dot(V, N), 5.0);
 	float t = lerp(0.08, 1.0, f);
 
 	float2 uv = In.posCopy.xy / In.posCopy.w * float2(0.5, -0.5) + 0.5;
-	Out.color = texSSPR.SampleLevel(samLinear, uv + N_VS.xy * 0.01, 0.0);
-	Out.color.rgb = lerp(0.0, Out.color.rgb, t);
+	Out.color = texSSPR.SampleLevel(samLinear, uv + R_VS.xy * 0.02, 0.0);
+	Out.color.rgb = lerp(0.0, Out.color.rgb, t * 2.0);
+	Out.color.a = t;
 
 	return Out;
 }

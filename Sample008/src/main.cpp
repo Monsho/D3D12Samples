@@ -401,7 +401,7 @@ bool InitializeAssets()
 		g_LightCB_.cb_.Unmap();
 	}
 	{
-		static const float	kWaterHeight = 10.0f;
+		static const float	kWaterHeight = 60.0f;
 
 		if (!g_WaterVB_.Initialize(&g_Device_, sizeof(DirectX::XMFLOAT3) * 4, sizeof(DirectX::XMFLOAT3), sl12::BufferUsage::VertexBuffer, true, false))
 		{
@@ -759,7 +759,13 @@ bool InitializeAssets()
 		desc.pPS = &g_Shaders_[ShaderKind::WaterP];
 
 		desc.blend.sampleMask = UINT_MAX;
-		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].isBlendEnable = true;
+		desc.blend.rtDesc[0].srcBlendColor = D3D12_BLEND_SRC_ALPHA;
+		desc.blend.rtDesc[0].dstBlendColor = D3D12_BLEND_INV_SRC_ALPHA;
+		desc.blend.rtDesc[0].blendOpColor = D3D12_BLEND_OP_ADD;
+		desc.blend.rtDesc[0].srcBlendAlpha = D3D12_BLEND_ONE;
+		desc.blend.rtDesc[0].dstBlendAlpha = D3D12_BLEND_ZERO;
+		desc.blend.rtDesc[0].blendOpAlpha = D3D12_BLEND_OP_ADD;
 		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
 		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
