@@ -241,6 +241,11 @@ namespace sl12
 			assert(index < inputCount_);
 			pInputIds_[index] = id;
 		}
+		void SetInputFromPrevOutput(sl12::u32 index, sl12::u32 prevOutputIndex)
+		{
+			assert(index < inputCount_);
+			pInputIds_[index] = kPrevOutputID | prevOutputIndex;
+		}
 		void SetInputPrevState(sl12::u32 index, D3D12_RESOURCE_STATES state)
 		{
 			assert(index < inputCount_);

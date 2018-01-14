@@ -14,12 +14,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="src\shaders\PSMesh.psh">
-      <Filter>src\shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="src\shaders\VSMesh.vsh">
-      <Filter>src\shaders</Filter>
-    </FxCompile>
     <FxCompile Include="src\shaders\base_pass.p.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
@@ -39,6 +33,18 @@
       <Filter>src\shaders</Filter>
     </FxCompile>
     <FxCompile Include="src\shaders\blur_y.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\tile_lighting.c.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\resolve_hash.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\project_hash.c.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\clear_hash.c.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
   </ItemGroup>

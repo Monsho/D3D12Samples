@@ -28,11 +28,15 @@ namespace sl12
 		assert(IsValid());
 
 		auto it = pInstance_->slotMap_.find(name);
+		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
 			for (auto index : it->second)
 			{
-				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, cbv.GetDesc()->GetGpuHandle());
+				if (isGraphics)
+					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, cbv.GetDesc()->GetGpuHandle());
+				else
+					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, cbv.GetDesc()->GetGpuHandle());
 			}
 			return true;
 		}
@@ -47,11 +51,15 @@ namespace sl12
 		assert(IsValid());
 
 		auto it = pInstance_->slotMap_.find(name);
+		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
 			for (auto index : it->second)
 			{
-				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+				if (isGraphics)
+					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+				else
+					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
 			}
 			return true;
 		}
@@ -66,11 +74,15 @@ namespace sl12
 		assert(IsValid());
 
 		auto it = pInstance_->slotMap_.find(name);
+		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
 			for (auto index : it->second)
 			{
-				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+				if (isGraphics)
+					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+				else
+					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
 			}
 			return true;
 		}
@@ -85,11 +97,15 @@ namespace sl12
 		assert(IsValid());
 
 		auto it = pInstance_->slotMap_.find(name);
+		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
 			for (auto index : it->second)
 			{
-				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, sam.GetDesc()->GetGpuHandle());
+				if (isGraphics)
+					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, sam.GetDesc()->GetGpuHandle());
+				else
+					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, sam.GetDesc()->GetGpuHandle());
 			}
 			return true;
 		}
@@ -104,11 +120,15 @@ namespace sl12
 		assert(IsValid());
 
 		auto it = pInstance_->slotMap_.find(name);
+		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
 			for (auto index : it->second)
 			{
-				cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, uav.GetDesc()->GetGpuHandle());
+				if (isGraphics)
+					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, uav.GetDesc()->GetGpuHandle());
+				else
+					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, uav.GetDesc()->GetGpuHandle());
 			}
 			return true;
 		}
@@ -205,6 +225,7 @@ namespace sl12
 				case D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED:
 				case D3D_SHADER_INPUT_TYPE::D3D_SIT_BYTEADDRESS:
 					paramType = RootParameterType::ShaderResource; break;
+				case D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWTYPED:
 				case D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED:
 				case D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWBYTEADDRESS:
 				case D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER:

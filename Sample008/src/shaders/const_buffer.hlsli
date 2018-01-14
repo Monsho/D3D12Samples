@@ -6,7 +6,7 @@ cbuffer CbScene
 	float4x4	mtxWorldToView;
 	float4x4	mtxViewToClip;
 	float4x4	mtxViewToWorld;
-	float4		screenInfo;
+	float4		screenInfo;			// (ScreenWidth, ScreenHeight, nearZ, farZ)
 	float4		frustumCorner;
 };
 
