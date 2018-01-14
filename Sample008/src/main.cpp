@@ -19,6 +19,8 @@
 #include <sl12/root_signature_manager.h>
 #include <sl12/render_resource_manager.h>
 
+#include "file.h"
+
 #include <DirectXTex.h>
 #include <windowsx.h>
 
@@ -62,6 +64,18 @@ namespace
 			cb_.Destroy();
 		}
 	};	// struct ConstantSet
+
+	struct TextureSet
+	{
+		sl12::Texture			tex_;
+		sl12::TextureView		srv_;
+
+		void Destroy()
+		{
+			srv_.Destroy();
+			tex_.Destroy();
+		}
+	};	// struct TextureSet
 
 	struct ShaderKind
 	{
@@ -109,6 +123,7 @@ namespace
 	ConstantSet				g_BlurCB_;
 	ConstantSet				g_LightCB_;
 	ConstantSet				g_WaterCB_;
+	TextureSet				g_WaveNormalTex_;
 
 	sl12::Sampler			g_sampler_;
 	sl12::Sampler			g_samLinearClamp_;
@@ -172,6 +187,23 @@ namespace
 
 	int					g_SyncInterval = 1;
 
+}
+
+// テクスチャを読み込む
+bool LoadTexture(TextureSet* pTexSet, const char* filename)
+{
+	File texFile(filename);
+
+	if (!pTexSet->tex_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), false))
+	{
+		return false;
+	}
+	if (!pTexSet->srv_.Initialize(&g_Device_, &pTexSet->tex_))
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // Window Proc
@@ -434,6 +466,12 @@ bool InitializeAssets()
 		{
 			return false;
 		}
+	}
+
+	// テクスチャロード
+	if (!LoadTexture(&g_WaveNormalTex_, "data/wave_normal.tga"))
+	{
+		return false;
 	}
 
 	// シェーダロード
@@ -841,6 +879,9 @@ void DestroyAssets()
 
 	g_samLinearClamp_.Destroy();
 	g_sampler_.Destroy();
+
+	for (auto&& v : g_Shaders_) v.Destroy();
+	g_WaveNormalTex_.Destroy();
 
 	g_WaterCB_.Destroy();
 	g_LightCB_.Destroy();
@@ -1272,7 +1313,8 @@ void RenderScene()
 		// デスクリプタテーブル設定
 		g_waterSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
 		g_waterSig_.SetDescriptor(mainCmdList, "texSSPR", *pInput->GetSrv());
-		g_waterSig_.SetDescriptor(mainCmdList, "samLinear", g_samLinearClamp_);
+		g_waterSig_.SetDescriptor(mainCmdList, "texNormal", g_WaveNormalTex_.srv_);
+		g_waterSig_.SetDescriptor(mainCmdList, "samLinear", g_sampler_);
 
 		// DrawCall
 		auto vb = g_WaterVBV_.GetView();

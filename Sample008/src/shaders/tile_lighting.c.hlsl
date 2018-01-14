@@ -275,7 +275,7 @@ void main(
     GroupMemoryBarrierWithGroupSync();
 
 	// ƒ‰ƒCƒgŒvZ
-	float3 light_result = (float3)0;
+	float3 light_result = surface.diffuseColor * 0.2;
 	for (uint i = 0; i < sTileNumLights; ++i)
 	{
 		uint lightIndex = sTileLightIndices[i];

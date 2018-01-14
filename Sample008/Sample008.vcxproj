@@ -198,6 +198,9 @@
     <None Include="src\shaders\const_buffer.hlsli" />
     <None Include="src\shaders\water.hlsli" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\file.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
