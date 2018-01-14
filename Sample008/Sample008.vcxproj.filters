@@ -47,6 +47,12 @@
     <FxCompile Include="src\shaders\clear_hash.c.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
+    <FxCompile Include="src\shaders\water.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\water.vv.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\const_buffer.hlsli">
@@ -56,6 +62,9 @@
       <Filter>src\shaders</Filter>
     </None>
     <None Include="src\shaders\blur.hlsli">
+      <Filter>src\shaders</Filter>
+    </None>
+    <None Include="src\shaders\water.hlsli">
       <Filter>src\shaders</Filter>
     </None>
   </ItemGroup>
