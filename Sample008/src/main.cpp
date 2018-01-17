@@ -923,46 +923,46 @@ bool InitializeRenderResource()
 		int pass = 0;
 
 		// Deferred Base Pass
-		g_rrProducers_[pass]->SetOutput(0, RenderID::GBuffer0, descGB0);
-		g_rrProducers_[pass]->SetOutput(1, RenderID::GBuffer1, descGB1);
-		g_rrProducers_[pass]->SetOutput(2, RenderID::GBuffer2, descGB2);
-		g_rrProducers_[pass]->SetOutput(3, RenderID::Depth, descD);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::GBuffer0, descGB0);
+		g_rrProducers_[pass]->SetOutputUnique(1, RenderID::GBuffer1, descGB1);
+		g_rrProducers_[pass]->SetOutputUnique(2, RenderID::GBuffer2, descGB2);
+		g_rrProducers_[pass]->SetOutputUnique(3, RenderID::Depth, descD);
 		pass++;
 
 		// Linear Depth Pass
-		g_rrProducers_[pass]->SetInput(0, RenderID::Depth);
-		g_rrProducers_[pass]->SetOutput(0, RenderID::LinearDepth, descLD);
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::Depth);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::LinearDepth, descLD);
 		pass++;
 
 		// Deferred Lighting Pass
-		g_rrProducers_[pass]->SetInput(0, RenderID::GBuffer0);
-		g_rrProducers_[pass]->SetInput(1, RenderID::GBuffer1);
-		g_rrProducers_[pass]->SetInput(2, RenderID::GBuffer2);
-		g_rrProducers_[pass]->SetInput(3, RenderID::LinearDepth);
-		g_rrProducers_[pass]->SetOutput(0, RenderID::LightResult, descLR);
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::GBuffer0);
+		g_rrProducers_[pass]->SetInputUnique(1, RenderID::GBuffer1);
+		g_rrProducers_[pass]->SetInputUnique(2, RenderID::GBuffer2);
+		g_rrProducers_[pass]->SetInputUnique(3, RenderID::LinearDepth);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::LightResult, descLR);
 		pass++;
 
 		// Projection Hash Pass
-		g_rrProducers_[pass]->SetInput(0, RenderID::LinearDepth);
-		g_rrProducers_[pass]->SetOutput(0, sl12::kPrevOutputID, descHash);
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::LinearDepth);
+		g_rrProducers_[pass]->SetOutputForNextPass(0, descHash);
 		pass++;
 
 		// Resolve Hash Pass
-		g_rrProducers_[pass]->SetInput(0, RenderID::LightResult);
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::LightResult);
 		g_rrProducers_[pass]->SetInputFromPrevOutput(1, 0);
-		g_rrProducers_[pass]->SetOutput(0, sl12::kPrevOutputID, descBX);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::WaterResult, descBX);
 		pass++;
 
 		// Water Pass
-		g_rrProducers_[pass]->SetInputFromPrevOutput(0, 0);
-		g_rrProducers_[pass]->SetOutput(0, RenderID::LightResult, descLR);
-		g_rrProducers_[pass]->SetOutput(1, RenderID::Depth, descD);
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::WaterResult);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::LightResult, descLR);
+		g_rrProducers_[pass]->SetOutputUnique(1, RenderID::Depth, descD);
 		pass++;
 
 		// Blur Pass
-		g_rrProducers_[pass]->SetInput(0, RenderID::LightResult);
-		g_rrProducers_[pass]->SetInput(1, RenderID::LinearDepth);
-		g_rrProducers_[pass]->SetOutput(0, sl12::kSwapchainID, descLR);
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::LightResult);
+		g_rrProducers_[pass]->SetInputUnique(1, RenderID::LinearDepth);
+		g_rrProducers_[pass]->SetOutputSwapchain(0);
 		g_rrProducers_[pass]->SetTemp(0, descBX);
 		pass++;
 	}

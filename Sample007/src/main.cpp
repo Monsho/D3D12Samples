@@ -673,23 +673,23 @@ bool InitializeRenderResource()
 	descBX.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 
 	// プロデューサー設定
-	g_rrProducers_[0]->SetOutput(0, RenderID::GBuffer0, descGB0);
-	g_rrProducers_[0]->SetOutput(1, RenderID::GBuffer1, descGB1);
-	g_rrProducers_[0]->SetOutput(2, RenderID::GBuffer2, descGB2);
-	g_rrProducers_[0]->SetOutput(3, RenderID::Depth, descD);
+	g_rrProducers_[0]->SetOutputUnique(0, RenderID::GBuffer0, descGB0);
+	g_rrProducers_[0]->SetOutputUnique(1, RenderID::GBuffer1, descGB1);
+	g_rrProducers_[0]->SetOutputUnique(2, RenderID::GBuffer2, descGB2);
+	g_rrProducers_[0]->SetOutputUnique(3, RenderID::Depth, descD);
 
-	g_rrProducers_[1]->SetInput(0, RenderID::Depth);
-	g_rrProducers_[1]->SetOutput(0, RenderID::LinearDepth, descLD);
+	g_rrProducers_[1]->SetInputUnique(0, RenderID::Depth);
+	g_rrProducers_[1]->SetOutputUnique(0, RenderID::LinearDepth, descLD);
 
-	g_rrProducers_[2]->SetInput(0, RenderID::GBuffer0);
-	g_rrProducers_[2]->SetInput(1, RenderID::GBuffer1);
-	g_rrProducers_[2]->SetInput(2, RenderID::GBuffer2);
-	g_rrProducers_[2]->SetInput(3, RenderID::LinearDepth);
-	g_rrProducers_[2]->SetOutput(0, RenderID::LightResult, descLR);
+	g_rrProducers_[2]->SetInputUnique(0, RenderID::GBuffer0);
+	g_rrProducers_[2]->SetInputUnique(1, RenderID::GBuffer1);
+	g_rrProducers_[2]->SetInputUnique(2, RenderID::GBuffer2);
+	g_rrProducers_[2]->SetInputUnique(3, RenderID::LinearDepth);
+	g_rrProducers_[2]->SetOutputUnique(0, RenderID::LightResult, descLR);
 
-	g_rrProducers_[3]->SetInput(0, RenderID::LightResult);
-	g_rrProducers_[3]->SetInput(1, RenderID::LinearDepth);
-	g_rrProducers_[3]->SetOutput(0, sl12::kPrevOutputID, descLR);
+	g_rrProducers_[3]->SetInputUnique(0, RenderID::LightResult);
+	g_rrProducers_[3]->SetInputUnique(1, RenderID::LinearDepth);
+	g_rrProducers_[3]->SetOutputForNextPass(0, descLR);
 	g_rrProducers_[3]->SetTemp(0, descBX);
 
 	// マネージャ初期化

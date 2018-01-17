@@ -9,10 +9,84 @@
 
 namespace sl12
 {
-	typedef sl12::u32			ResourceID;
-	static const ResourceID		kPrevOutputID = 0x10000;
-	static const ResourceID		kTempResourceID = 0x10000000;
-	static const ResourceID		kSwapchainID = 0x80000000;
+	/************************************************//**
+	 * @brief リソースID
+	 *
+	 * 描画リソースの識別子.
+	 * ユニークか非ユニークか、一時リソースかなどによって使用する変数に違いがある.
+	****************************************************/
+	union ResourceID
+	{
+		sl12::u32				id;						//!< リソース全体のID
+		struct
+		{
+			union
+			{
+				sl12::u16		uniqueID;				//!< リソースに命名する際のユニークID
+				struct
+				{
+					sl12::u8	passNo;					//!< 前パス出力、もしくは一時リソースの主力元パス番号
+					sl12::u8	index;					//!< 前パス出力、もしくは一時リソースのリソースインデックス
+				};
+			};
+			sl12::u8			historyOffset;			//!< ヒストリーバッファのオフセット(0なら現在フレームのバッファ、1～の値は何フレーム遡ったバッファを使用するか)
+			sl12::u8			isPrevOutput	: 1;	//!< 前パス出力を使用するフラグ
+			sl12::u8			isTemporal		: 1;	//!< 一時リソースフラグ
+			sl12::u8			isSwapchain		: 1;	//!< スワップチェインフラグ
+		};
+
+		// operators
+		bool operator==(const ResourceID& x) const
+		{
+			return id == x.id;
+		}
+		bool operator!=(const ResourceID& x) const
+		{
+			return id != x.id;
+		}
+		bool operator<(const ResourceID& x) const
+		{
+			return id < x.id;
+		}
+
+		// 各種リソースID生成命令
+		static ResourceID CreateUniqueID(sl12::u16 unique_id)
+		{
+			ResourceID ret{};
+			ret.uniqueID = unique_id;
+			return ret;
+		}
+		static ResourceID CreateUniqueID(sl12::u16 unique_id, sl12::u8 history_offset)
+		{
+			ResourceID ret{};
+			ret.uniqueID = unique_id;
+			ret.historyOffset = history_offset;
+			return ret;
+		}
+		static ResourceID CreatePrevOutputID(sl12::u8 pass_no, sl12::u8 prev_index)
+		{
+			ResourceID ret{};
+			ret.passNo = pass_no;
+			ret.index = prev_index;
+			ret.isPrevOutput = 1;
+			return ret;
+		}
+		static ResourceID CreateTemporalID(sl12::u8 pass_no, sl12::u8 temp_index)
+		{
+			ResourceID ret{};
+			ret.passNo = pass_no;
+			ret.index = temp_index;
+			ret.isTemporal = 1;
+			return ret;
+		}
+		static ResourceID CreateSwapchainID()
+		{
+			ResourceID ret{};
+			ret.isSwapchain = 1;
+			return ret;
+		}
+	};	// struct ResourceID
+
 
 	/************************************************//**
 	 * @brief 描画リソース記述子
@@ -241,10 +315,15 @@ namespace sl12
 			assert(index < inputCount_);
 			pInputIds_[index] = id;
 		}
+		void SetInputUnique(sl12::u32 index, sl12::u16 unique_id)
+		{
+			assert(index < inputCount_);
+			pInputIds_[index] = ResourceID::CreateUniqueID(unique_id);
+		}
 		void SetInputFromPrevOutput(sl12::u32 index, sl12::u32 prevOutputIndex)
 		{
 			assert(index < inputCount_);
-			pInputIds_[index] = kPrevOutputID | prevOutputIndex;
+			pInputIds_[index] = ResourceID::CreatePrevOutputID(0, prevOutputIndex);
 		}
 		void SetInputPrevState(sl12::u32 index, D3D12_RESOURCE_STATES state)
 		{
@@ -257,6 +336,23 @@ namespace sl12
 			assert(index < outputCount_);
 			pOutputIds_[index] = id;
 			pOutputDescs_[index] = desc;
+		}
+		void SetOutputUnique(sl12::u32 index, sl12::u16 unique_id, const RenderResourceDesc& desc)
+		{
+			assert(index < outputCount_);
+			pOutputIds_[index] = ResourceID::CreateUniqueID(unique_id);
+			pOutputDescs_[index] = desc;
+		}
+		void SetOutputForNextPass(sl12::u32 index, const RenderResourceDesc& desc)
+		{
+			assert(index < outputCount_);
+			pOutputIds_[index] = ResourceID::CreatePrevOutputID(0, (sl12::u8)index);
+			pOutputDescs_[index] = desc;
+		}
+		void SetOutputSwapchain(sl12::u32 index)
+		{
+			assert(index < outputCount_);
+			pOutputIds_[index] = ResourceID::CreateSwapchainID();
 		}
 		void SetOutputID(sl12::u32 index, ResourceID id)
 		{

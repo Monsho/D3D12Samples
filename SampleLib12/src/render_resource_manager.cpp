@@ -219,15 +219,6 @@ namespace sl12
 		// リソースの履歴情報を生成する
 		void MakeResourceHistory(std::vector<ResourceProducerBase*>& producers, std::map<ResourceID, RWHistory>& history_map)
 		{
-			auto CreateOutputID = [&](sl12::u32 passNo, sl12::u32 outputIndex)
-			{
-				return sl12::u32(kPrevOutputID | ((passNo & 0xff) << 8) | (outputIndex & 0xff));
-			};
-			auto CreateTemporalID = [&](sl12::u32 passNo, sl12::u32 index)
-			{
-				return sl12::u32(kTempResourceID | ((passNo & 0xff) << 8) | (index & 0xff));
-			};
-
 			auto prodCnt = producers.size();
 			sl12::u16 passNo = 0;
 			ResourceProducerBase* prev_prod = nullptr;
@@ -241,9 +232,9 @@ namespace sl12
 					// IDの加工を行う
 					// 特定用途を持たないただの出力バッファ(kPrevOutputID)の場合、パス番号と出力番号からユニークなIDを生成する
 					auto id = ids[i];
-					if (id & kPrevOutputID)
+					if (id.isPrevOutput)
 					{
-						id = CreateOutputID(passNo, i);
+						id = ResourceID::CreatePrevOutputID((sl12::u8)passNo, (sl12::u8)i);
 						prod->SetOutputID(i, id);		// IDをセットし直す
 					}
 
@@ -275,14 +266,12 @@ namespace sl12
 					// kPrevOutputID以上の場合は前回パスの出力を用いる
 					// 入力IDとしては (kPrevOutputID | prevOutputIndex) を指定するものとする
 					auto id = ids[i];
-					if (id & kPrevOutputID)
+					if (id.isPrevOutput)
 					{
 						assert(prev_prod != nullptr);
+						assert(id.index < prev_prod->GetOutputCount());
 
-						auto prevOutputIndex = id & (~kPrevOutputID);
-						assert(prevOutputIndex < prev_prod->GetOutputCount());
-
-						id = CreateOutputID(passNo - 1, prevOutputIndex);
+						id = ResourceID::CreatePrevOutputID(passNo - 1, id.index);
 						prod->SetInput(i, id);			// IDをセットし直す
 					}
 
@@ -315,7 +304,7 @@ namespace sl12
 				cnt = prod->GetTempCount();
 				for (sl12::u16 i = 0; i < cnt; ++i)
 				{
-					prod->SetTempID(i, CreateTemporalID(passNo, i));
+					prod->SetTempID(i, ResourceID::CreateTemporalID((sl12::u8)passNo, (sl12::u8)i));
 				}
 
 				prev_prod = prod;
@@ -373,12 +362,12 @@ namespace sl12
 					{
 						// すでにこのリソースが生成されている場合
 						prod->SetOutputPrevState(i, findIt->second.currentState);
-						if (id != kSwapchainID)
+						if (!id.isSwapchain)
 							findIt->second.currentState = findIt->second.p_res->IsRtv() ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_DEPTH_WRITE;
 						else
 							findIt->second.currentState = D3D12_RESOURCE_STATE_RENDER_TARGET;
 					}
-					else if (id == kSwapchainID)
+					else if (id.isSwapchain)
 					{
 						// スワップチェインを使用するパスが初めて登場したので、前回状態はPresentとする
 						prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_PRESENT);
@@ -521,7 +510,7 @@ namespace sl12
 		auto prevState = pProd->GetOutputPrevStates();
 		for (; ids != end; ids++)
 		{
-			if (*ids == kSwapchainID)
+			if (ids->isSwapchain)
 			{
 				if (*prevState == D3D12_RESOURCE_STATE_PRESENT)
 				{
