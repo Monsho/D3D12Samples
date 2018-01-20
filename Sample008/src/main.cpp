@@ -1151,43 +1151,6 @@ void RenderScene()
 	}
 
 	// LightingPass
-#if 0
-	{
-		auto thisProd = g_rrProducers_[passNo++];
-		sl12::RenderResource* pInputs[] = {
-			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]),		// GBuffer0
-			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[1]),		// GBuffer1
-			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[2]),		// GBuffer2
-			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[3]),		// LinearDepth
-		};
-		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
-
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
-
-		// バリア
-		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
-
-		// レンダーターゲット設定
-		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
-
-		// PSOとルートシグネチャを設定
-		pCmdList->SetPipelineState(g_lightingPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_lightingSig_.GetRootSignature()->GetRootSignature());
-
-		// デスクリプタテーブル設定
-		g_lightingSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_lightingSig_.SetDescriptor(mainCmdList, "texGBuffer0", *pInputs[0]->GetSrv());
-		g_lightingSig_.SetDescriptor(mainCmdList, "texGBuffer1", *pInputs[1]->GetSrv());
-		g_lightingSig_.SetDescriptor(mainCmdList, "texGBuffer2", *pInputs[2]->GetSrv());
-		g_lightingSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[3]->GetSrv());
-
-		// DrawCall
-		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		pCmdList->IASetVertexBuffers(0, 0, nullptr);
-		pCmdList->IASetIndexBuffer(nullptr);
-		pCmdList->DrawInstanced(3, 1, 0, 0);
-	}
-#else
 	{
 		auto thisProd = g_rrProducers_[passNo++];
 		sl12::RenderResource* pInputs[] = {
@@ -1219,7 +1182,6 @@ void RenderScene()
 		// DrawCall
 		pCmdList->Dispatch(kWindowWidth / kTileWidth, kWindowHeight / kTileWidth, 1);
 	}
-#endif
 
 	// Clear & Projection Hash Pass
 	{

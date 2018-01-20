@@ -189,287 +189,9 @@ namespace sl12
 
 	namespace
 	{
-		struct RWIndex
-		{
-			bool		isRead = false;
-			sl12::u32	producerNo = 0;
-
-			RWIndex(bool is_read, sl12::u32 prod_no)
-				: isRead(is_read), producerNo(prod_no)
-			{}
-		};	// struct RWIndex
-
-		struct RWHistory
-		{
-			std::vector<RWIndex>	history;
-
-			RWHistory()
-			{}
-			RWHistory(size_t s)
-			{
-				history.reserve(s);
-			}
-		};	// struct RWHistory
-
-		struct ResourceWork
-		{
-			RenderResource*			p_res;
-			D3D12_RESOURCE_STATES	currentState;
-			sl12::u32				lastPassNo;
-		};	// struct ResourceWork
-
-		// リソースの履歴情報を生成する
-		void MakeResourceHistory(std::vector<ResourceProducerBase*>& producers, std::map<ResourceID, RWHistory>& history_map)
-		{
-			auto prodCnt = producers.size();
-			sl12::u16 passNo = 0;
-			ResourceProducerBase* prev_prod = nullptr;
-			for (auto&& prod : producers)
-			{
-				// 出力リソースを処理する
-				auto cnt = prod->GetOutputCount();
-				auto ids = prod->GetOutputIds();
-				for (sl12::u16 i = 0; i < cnt; ++i)
-				{
-					// IDの加工を行う
-					// 特定用途を持たないただの出力バッファ(kPrevOutputID)の場合、パス番号と出力番号からユニークなIDを生成する
-					auto id = ids[i];
-					if (id.isPrevOutput)
-					{
-						id = ResourceID::CreatePrevOutputID((sl12::u8)passNo, (sl12::u8)i);
-						prod->SetOutputID(i, id);		// IDをセットし直す
-					}
-
-					auto findIt = history_map.find(id);
-					if (findIt == history_map.end())
-					{
-						// 新規リソースをWrite状態で追加
-						RWHistory h(prodCnt);
-						h.history.push_back(RWIndex(false, passNo));
-						history_map[id] = h;
-					}
-					else
-					{
-						// 前回状態がReadならWrite状態を追加する
-						auto last_state = findIt->second.history.rbegin();
-						if (last_state->isRead)
-						{
-							findIt->second.history.push_back(RWIndex(false, passNo));
-						}
-					}
-				}
-
-				// 入力リソースを処理する
-				cnt = prod->GetInputCount();
-				ids = prod->GetInputIds();
-				for (sl12::u16 i = 0; i < cnt; ++i)
-				{
-					// IDの加工を行う
-					// kPrevOutputID以上の場合は前回パスの出力を用いる
-					// 入力IDとしては (kPrevOutputID | prevOutputIndex) を指定するものとする
-					auto id = ids[i];
-					if (id.isPrevOutput)
-					{
-						assert(prev_prod != nullptr);
-						assert(id.index < prev_prod->GetOutputCount());
-
-						id = ResourceID::CreatePrevOutputID(passNo - 1, id.index);
-						prod->SetInput(i, id);			// IDをセットし直す
-					}
-
-					auto findIt = history_map.find(id);
-					if (findIt == history_map.end())
-					{
-						// 出力されていない入力バッファはヒストリーバッファ以外に存在しない
-						assert(id.historyOffset > 0);
-						// 新規リソースをRead状態で追加
-						RWHistory h(prodCnt);
-						h.history.push_back(RWIndex(true, passNo));
-						history_map[id] = h;
-					}
-					else
-					{
-						auto last_state = findIt->second.history.rbegin();
-						assert(last_state->producerNo < passNo);
-						if (last_state->isRead)
-						{
-							// 前回状態がReadならReadの最終パスを更新する
-							last_state->producerNo = passNo;
-						}
-						else
-						{
-							// 前回状態がWriteならRead状態を追加する
-							findIt->second.history.push_back(RWIndex(true, passNo));
-						}
-					}
-				}
-
-				// 一時リソースに自動的にIDを割り当てる
-				cnt = prod->GetTempCount();
-				for (sl12::u16 i = 0; i < cnt; ++i)
-				{
-					prod->SetTempID(i, ResourceID::CreateTemporalID((sl12::u8)passNo, (sl12::u8)i));
-				}
-
-				prev_prod = prod;
-				passNo++;
-			}
-		}
-
-		// 未使用リソースから使えるものを探す
-		std::vector<ResourceWork>::iterator FindFromUnusedResource(std::vector<ResourceWork>& unusedRes, const RenderResourceDesc& desc)
-		{
-			for (auto it = unusedRes.begin(); it != unusedRes.end(); it++)
-			{
-				if (it->p_res->IsSameDesc(desc))
-				{
-					return it;
-				}
-			}
-			return unusedRes.end();
-		}
-
-		// リソース生成
-		void MakeResourcesDetail(
-			sl12::Device& device,
-			sl12::u32 screenWidth, sl12::u32 screenHeight,
-			const std::map<ResourceID, RWHistory> history_map,
-			std::vector<ResourceProducerBase*>& producers,
-			std::vector<RenderResource*>& outResources,
-			std::map<ResourceID, RenderResource*>& outMap)
-		{
-			sl12::u16 passNo = 0;
-			std::map<ResourceID, ResourceWork> usedRes;
-			std::vector<ResourceWork> unusedRes;
-
-			for (auto&& prod : producers)
-			{
-				// 入力リソースの状態遷移
-				auto cnt = prod->GetInputCount();
-				auto ids = prod->GetInputIds();
-				for (sl12::u32 i = 0; i < cnt; i++)
-				{
-					auto findIt = usedRes.find(ids[i]);
-					assert(findIt != usedRes.end());		// 使用中リソースに必ず存在するはず
-					prod->SetInputPrevState(i, findIt->second.currentState);
-					findIt->second.currentState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-				}
-
-				// 出力リソースを生成する
-				cnt = prod->GetOutputCount();
-				ids = prod->GetOutputIds();
-				auto descs = prod->GetOutputDescs();
-				for (sl12::u32 i = 0; i < cnt; i++)
-				{
-					auto id = ids[i];
-					auto findIt = usedRes.find(id);
-					if (findIt != usedRes.end())
-					{
-						// すでにこのリソースが生成されている場合
-						prod->SetOutputPrevState(i, findIt->second.currentState);
-						if (!id.isSwapchain)
-							findIt->second.currentState = findIt->second.p_res->IsRtv() ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_DEPTH_WRITE;
-						else
-							findIt->second.currentState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-					}
-					else if (id.isSwapchain)
-					{
-						// スワップチェインを使用するパスが初めて登場したので、前回状態はPresentとする
-						prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_PRESENT);
-
-						ResourceWork work;
-						work.currentState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-						work.lastPassNo = history_map.find(id)->second.history.rbegin()->producerNo;
-						usedRes[id] = work;
-					}
-					else
-					{
-						ResourceWork work;
-
-						// 未使用リソースに使えるものがあるかチェック
-						auto unusedIt = FindFromUnusedResource(unusedRes, descs[i]);
-						if (unusedIt != unusedRes.end())
-						{
-							// 未使用リソースが見つかったので利用する
-							work = *unusedIt;
-							unusedRes.erase(unusedIt);
-							prod->SetOutputPrevState(i, work.currentState);
-						}
-						else
-						{
-							// 未使用リソースが存在しないので新規作成
-							work.p_res = new RenderResource();
-							work.p_res->Initialize(device, descs[i], screenWidth, screenHeight);
-							outResources.push_back(work.p_res);
-							prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-						}
-
-						// ワークを使用マップに登録する
-						work.currentState = work.p_res->IsRtv() ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_DEPTH_WRITE;
-						work.lastPassNo = history_map.find(id)->second.history.rbegin()->producerNo;
-						usedRes[id] = work;
-						outMap[id] = work.p_res;
-					}
-				}
-
-				// 一時リソースを生成する
-				cnt = prod->GetTempCount();
-				ids = prod->GetTempIds();
-				descs = prod->GetTempDescs();
-				for (sl12::u32 i = 0; i < cnt; i++)
-				{
-					ResourceWork work;
-
-					auto id = ids[i];
-					auto unusedIt = FindFromUnusedResource(unusedRes, descs[i]);
-					if (unusedIt != unusedRes.end())
-					{
-						// 未使用リソースが見つかったので利用する
-						work = *unusedIt;
-						unusedRes.erase(unusedIt);
-						prod->SetTempPrevState(i, work.currentState);
-					}
-					else
-					{
-						// 未使用リソースが存在しないので新規作成
-						work.p_res = new RenderResource();
-						work.p_res->Initialize(device, descs[i], screenWidth, screenHeight);
-						outResources.push_back(work.p_res);
-						prod->SetTempPrevState(i, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-					}
-
-					// ワークを使用マップに登録する
-					work.currentState = work.p_res->IsRtv() ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_DEPTH_WRITE;
-					work.lastPassNo = passNo;
-					usedRes[id] = work;
-					outMap[id] = work.p_res;
-				}
-
-				// 使用中リストを整理する
-				auto usedIt = usedRes.begin();
-				while (usedIt != usedRes.end())
-				{
-					if (usedIt->second.lastPassNo <= passNo)
-					{
-						unusedRes.push_back(usedIt->second);
-						auto thisIt = usedIt;
-						usedIt++;
-						usedRes.erase(thisIt);
-					}
-					else
-					{
-						usedIt++;
-					}
-				}
-
-				passNo++;
-			}
-		}
-
-		// new functions
 		typedef std::map<ResourceID, sl12::u32>		LastAccessPassInfo;
 
-		void MakeResourceHistory2(std::vector<ResourceProducerBase*>& producers, LastAccessPassInfo& lastAccess)
+		void MakeResourceHistory(std::vector<ResourceProducerBase*>& producers, LastAccessPassInfo& lastAccess)
 		{
 			auto prodCnt = producers.size();
 			sl12::u16 passNo = 0;
@@ -529,7 +251,7 @@ namespace sl12
 		}
 
 		// 未使用リソースから使えるものを探す
-		std::vector<RenderResource*>::iterator FindFromUnusedResource2(std::vector<RenderResource*>& unusedRes, const RenderResourceDesc& desc)
+		std::vector<RenderResource*>::iterator FindFromUnusedResource(std::vector<RenderResource*>& unusedRes, const RenderResourceDesc& desc)
 		{
 			for (auto it = unusedRes.begin(); it != unusedRes.end(); it++)
 			{
@@ -563,7 +285,7 @@ namespace sl12
 		}
 
 		// リソース生成
-		void MakeResourcesDetail2(
+		void MakeResourcesDetail(
 			sl12::Device& device,
 			sl12::u32 screenWidth, sl12::u32 screenHeight,
 			const LastAccessPassInfo& lastAccess,
@@ -667,7 +389,7 @@ namespace sl12
 						auto&& desc = descs[i];
 
 						// 未使用リソースに使えるものがあるかチェック
-						auto unusedIt = FindFromUnusedResource2(unusedRes, desc);
+						auto unusedIt = FindFromUnusedResource(unusedRes, desc);
 						if (unusedIt != unusedRes.end())
 						{
 							// 未使用リソースが見つかったので利用する
@@ -701,7 +423,7 @@ namespace sl12
 					RenderResource* res;
 
 					auto id = ids[i];
-					auto unusedIt = FindFromUnusedResource2(unusedRes, descs[i]);
+					auto unusedIt = FindFromUnusedResource(unusedRes, descs[i]);
 					if (unusedIt != unusedRes.end())
 					{
 						// 未使用リソースが見つかったので利用する
@@ -764,23 +486,12 @@ namespace sl12
 	{
 		assert(pDevice_ != nullptr);
 
-#if 0
-		AllReset();
-
-		// 各リソースのR/Wタイミングを記録する
-		std::map<ResourceID, RWHistory> history_map;
-		MakeResourceHistory(producers, history_map);
-
-		// 実際のリソース生成
-		MakeResourcesDetail(*pDevice_, screenWidth_, screenHeight_, history_map, producers, resources_, resource_map_);
-#else
 		// 各IDの最終アクセスパス番号を記録する
 		LastAccessPassInfo lastAccess;
-		MakeResourceHistory2(producers, lastAccess);
+		MakeResourceHistory(producers, lastAccess);
 
 		// 実際のリソース生成
-		MakeResourcesDetail2(*pDevice_, screenWidth_, screenHeight_, lastAccess, producers, resources_, resource_map_);
-#endif
+		MakeResourcesDetail(*pDevice_, screenWidth_, screenHeight_, lastAccess, producers, resources_, resource_map_);
 	}
 
 	//-------------------------------------------
