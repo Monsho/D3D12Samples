@@ -103,6 +103,7 @@ namespace sl12
 		sl12::u32		targetCount;				//!< RTV、もしくはDSVの数(ミップレベル以下)
 		sl12::u32		srvCount;					//!< SRVの数(ミップレベル+1以下)
 		sl12::u32		uavCount;					//!< UAVの数(ミップレベル以下)
+		sl12::u32		historyMax;					//!< ヒストリーバッファとしての保持フレーム数(0なら現在フレームのみ使用する)
 
 		RenderResourceDesc()
 			: width(0), height(0)
@@ -113,6 +114,7 @@ namespace sl12
 			, targetCount(1)
 			, srvCount(1)
 			, uavCount(0)
+			, historyMax(0)
 		{}
 
 		bool operator==(const RenderResourceDesc& d) const
@@ -125,6 +127,7 @@ namespace sl12
 			{
 				if (width != d.width || height != d.height) { return false; }
 			}
+			// NOTE: ヒストリー数が一致しなくても同一記述子とみなす
 			return (mipLevels == d.mipLevels)
 				&& (format == d.format)
 				&& (sampleCount == d.sampleCount)
@@ -174,6 +177,11 @@ namespace sl12
 			uavCount = c;
 			return *this;
 		}
+		RenderResourceDesc& SetHistoryMax(sl12::u32 c)
+		{
+			historyMax = c;
+			return *this;
+		}
 	};	// struct RenderResourceDesc
 
 	/************************************************//**
@@ -192,7 +200,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(sl12::Device& device, const RenderResourceDesc& desc, sl12::u32 screenWidth, sl12::u32 screenHeight);
+		bool Initialize(sl12::Device& device, const RenderResourceDesc& desc, sl12::u32 screenWidth, sl12::u32 screenHeight, D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		void Destroy();
 
 		bool IsSameDesc(const RenderResourceDesc& d) const
@@ -214,6 +222,27 @@ namespace sl12
 		{
 			return !uavs_.empty();
 		}
+
+		//! @name 設定関数
+		//! @{
+		void SetState(D3D12_RESOURCE_STATES s)
+		{
+			state_ = s;
+		}
+		void SetLastID(ResourceID id)
+		{
+			lastID_ = id;
+		}
+		void SetHistoryMax(int n)
+		{
+			history_ = 0;
+			historyMax_ = n;
+		}
+		void IncrementHistory()
+		{
+			history_++;
+		}
+		//! @}
 
 		//! @name 取得関数
 		//! @{
@@ -237,6 +266,18 @@ namespace sl12
 		{
 			return &uavs_[index];
 		}
+		D3D12_RESOURCE_STATES GetState() const
+		{
+			return state_;
+		}
+		ResourceID GetLastID() const
+		{
+			return lastID_;
+		}
+		bool IsHistoryEnd() const
+		{
+			return history_ >= historyMax_;
+		}
 		//! @}
 
 	private:
@@ -247,6 +288,11 @@ namespace sl12
 		std::vector<sl12::DepthStencilView>		dsvs_;
 		std::vector<sl12::TextureView>			srvs_;
 		std::vector<sl12::UnorderedAccessView>	uavs_;
+
+		D3D12_RESOURCE_STATES					state_;				//!< この状態はリソース生成時に参照される
+		ResourceID								lastID_;			//!< 最後に使用された時のID
+		int										history_ = 0;		//!< 現在のヒストリー番号(進行フレーム)
+		int										historyMax_ = 0;	//!< ヒストリーとして保存する最大フレーム
 	};	// class RenderResource
 
 	/************************************************//**

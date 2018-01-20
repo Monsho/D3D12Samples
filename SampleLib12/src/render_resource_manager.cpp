@@ -8,7 +8,7 @@ namespace sl12
 	//-------------------------------------------
 	// レンダリングリソースの初期化
 	//-------------------------------------------
-	bool RenderResource::Initialize(sl12::Device& device, const RenderResourceDesc& desc, sl12::u32 screenWidth, sl12::u32 screenHeight)
+	bool RenderResource::Initialize(sl12::Device& device, const RenderResourceDesc& desc, sl12::u32 screenWidth, sl12::u32 screenHeight, D3D12_RESOURCE_STATES initialState)
 	{
 		// ミップレベルは明示する必要がある
 		if (desc.mipLevels == 0)
@@ -60,7 +60,7 @@ namespace sl12
 			td.format = desc.format;
 			td.mipLevels = desc.mipLevels;
 			td.sampleCount = desc.sampleCount;
-			td.initialState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+			td.initialState = initialState;
 			td.clearDepth = 1.0f;
 			td.isRenderTarget = isRtv;
 			td.isDepthBuffer = isDsv;
@@ -129,6 +129,8 @@ namespace sl12
 				}
 			}
 		}
+
+		state_ = initialState;
 
 		return true;
 	}
@@ -278,19 +280,21 @@ namespace sl12
 					auto findIt = history_map.find(id);
 					if (findIt == history_map.end())
 					{
-						// TODO: この場合はヒストリーバッファとなるが、現在は対応していない
+						// 出力されていない入力バッファはヒストリーバッファ以外に存在しない
+						assert(id.historyOffset > 0);
+						// 新規リソースをRead状態で追加
+						RWHistory h(prodCnt);
+						h.history.push_back(RWIndex(true, passNo));
+						history_map[id] = h;
 					}
 					else
 					{
 						auto last_state = findIt->second.history.rbegin();
+						assert(last_state->producerNo < passNo);
 						if (last_state->isRead)
 						{
 							// 前回状態がReadならReadの最終パスを更新する
 							last_state->producerNo = passNo;
-						}
-						else if (last_state->producerNo == passNo)
-						{
-							// TODO: この場合はヒストリーバッファを使用することになるが、現在は対応していない
 						}
 						else
 						{
@@ -337,6 +341,7 @@ namespace sl12
 			sl12::u16 passNo = 0;
 			std::map<ResourceID, ResourceWork> usedRes;
 			std::vector<ResourceWork> unusedRes;
+
 			for (auto&& prod : producers)
 			{
 				// 入力リソースの状態遷移
@@ -460,6 +465,296 @@ namespace sl12
 				passNo++;
 			}
 		}
+
+		// new functions
+		typedef std::map<ResourceID, sl12::u32>		LastAccessPassInfo;
+
+		void MakeResourceHistory2(std::vector<ResourceProducerBase*>& producers, LastAccessPassInfo& lastAccess)
+		{
+			auto prodCnt = producers.size();
+			sl12::u16 passNo = 0;
+			ResourceProducerBase* prev_prod = nullptr;
+			for (auto&& prod : producers)
+			{
+				// 出力リソースを処理する
+				auto cnt = prod->GetOutputCount();
+				auto ids = prod->GetOutputIds();
+				for (sl12::u16 i = 0; i < cnt; ++i)
+				{
+					// IDの加工を行う
+					// 特定用途を持たないただの出力バッファ(kPrevOutputID)の場合、パス番号と出力番号からユニークなIDを生成する
+					auto id = ids[i];
+					if (id.isPrevOutput)
+					{
+						id = ResourceID::CreatePrevOutputID((sl12::u8)passNo, (sl12::u8)i);
+						prod->SetOutputID(i, id);		// IDをセットし直す
+					}
+
+					lastAccess[id] = passNo;
+				}
+
+				// 入力リソースを処理する
+				cnt = prod->GetInputCount();
+				ids = prod->GetInputIds();
+				for (sl12::u16 i = 0; i < cnt; ++i)
+				{
+					// IDの加工を行う
+					// kPrevOutputID以上の場合は前回パスの出力を用いる
+					// 入力IDとしては (kPrevOutputID | prevOutputIndex) を指定するものとする
+					auto id = ids[i];
+					if (id.isPrevOutput)
+					{
+						assert(prev_prod != nullptr);
+						assert(id.index < prev_prod->GetOutputCount());
+
+						id = ResourceID::CreatePrevOutputID(passNo - 1, id.index);
+						prod->SetInput(i, id);			// IDをセットし直す
+					}
+
+					lastAccess[id] = passNo;
+				}
+
+				// 一時リソースに自動的にIDを割り当てる
+				cnt = prod->GetTempCount();
+				for (sl12::u16 i = 0; i < cnt; ++i)
+				{
+					auto id = ResourceID::CreateTemporalID((sl12::u8)passNo, (sl12::u8)i);
+					prod->SetTempID(i, id);
+					lastAccess[id] = passNo;
+				}
+
+				prev_prod = prod;
+				passNo++;
+			}
+		}
+
+		// 未使用リソースから使えるものを探す
+		std::vector<RenderResource*>::iterator FindFromUnusedResource2(std::vector<RenderResource*>& unusedRes, const RenderResourceDesc& desc)
+		{
+			for (auto it = unusedRes.begin(); it != unusedRes.end(); it++)
+			{
+				if ((*it)->IsSameDesc(desc))
+				{
+					return it;
+				}
+			}
+			return unusedRes.end();
+		}
+
+		// ヒストリーバッファの記述子を検索する
+		bool FindDescForHistoryBuffer(RenderResourceDesc* pOut, const std::vector<ResourceProducerBase*>& producers, ResourceID id)
+		{
+			id.historyOffset = 0;
+			for (auto&& prod : producers)
+			{
+				// 出力バッファを検索する
+				auto cnt = prod->GetOutputCount();
+				auto ids = prod->GetOutputIds();
+				for (u32 i = 0; i < cnt; i++)
+				{
+					if (ids[i] == id)
+					{
+						*pOut = prod->GetOutputDescs()[i];
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		// リソース生成
+		void MakeResourcesDetail2(
+			sl12::Device& device,
+			sl12::u32 screenWidth, sl12::u32 screenHeight,
+			const LastAccessPassInfo& lastAccess,
+			std::vector<ResourceProducerBase*>& producers,
+			std::vector<RenderResource*>& outResources,
+			std::map<ResourceID, RenderResource*>& outResourceMap)
+		{
+			const D3D12_RESOURCE_STATES kInitialState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+			const D3D12_RESOURCE_STATES kInputState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+			const D3D12_RESOURCE_STATES kRtvState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			const D3D12_RESOURCE_STATES kDsvState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+
+			sl12::u16 passNo = 0;
+			std::map<ResourceID, RenderResource*> usedRes;
+			std::vector<RenderResource*> unusedRes;
+
+			// 前回フレームのリソースを使用中リストと未使用リストに振り分ける
+			for (auto&& res : outResources)
+			{
+				if (res->IsHistoryEnd())
+				{
+					unusedRes.push_back(res);
+				}
+				else
+				{
+					auto id = res->GetLastID();
+					id.historyOffset++;
+					res->IncrementHistory();
+					usedRes[id] = res;
+				}
+			}
+			outResourceMap.clear();
+
+			for (auto&& prod : producers)
+			{
+				// 入力リソースを検索・生成する
+				auto cnt = prod->GetInputCount();
+				auto ids = prod->GetInputIds();
+				for (sl12::u32 i = 0; i < cnt; i++)
+				{
+					auto id = ids[i];
+					auto findIt = usedRes.find(id);
+					if (findIt != usedRes.end())
+					{
+						// 使用中リストに見つかったので状態を保存
+						auto res = findIt->second;
+						prod->SetInputPrevState(i, res->GetState());
+						res->SetState(kInputState);
+					}
+					else
+					{
+						// まだ描画されていないヒストリーバッファの場合は使用中リストに見つからない
+						assert(id.historyOffset > 0);
+						// 入力リソースには記述子が指定されていないので、プロデューサーから対応する記述子を検索する
+						// NOTE: ヒストリーバッファに描画するパスが存在しないはずはないが、存在しない場合はAssertする
+						RenderResourceDesc desc;
+						bool isFindHBDesc = FindDescForHistoryBuffer(&desc, producers, id);
+						assert(isFindHBDesc);
+						// 新規リソースを作成する
+						auto res = new RenderResource();
+						res->Initialize(device, desc, screenWidth, screenHeight, kInitialState);
+						res->SetHistoryMax(0);
+						outResources.push_back(res);
+						usedRes[id] = res;
+						prod->SetOutputPrevState(i, kInitialState);
+					}
+				}
+
+				// 出力リソースを検索・生成する
+				cnt = prod->GetOutputCount();
+				ids = prod->GetOutputIds();
+				auto descs = prod->GetOutputDescs();
+				for (sl12::u32 i = 0; i < cnt; i++)
+				{
+					auto id = ids[i];
+					auto findIt = usedRes.find(id);
+					if (findIt != usedRes.end())
+					{
+						// リソースが使用中リストから見つかった
+						auto res = findIt->second;
+						if (!id.isSwapchain)
+						{
+							prod->SetOutputPrevState(i, res->GetState());
+							res->SetState(res->IsRtv() ? kRtvState : kDsvState);
+						}
+						else
+						{
+							prod->SetOutputPrevState(i, kRtvState);
+						}
+					}
+					else if (id.isSwapchain)
+					{
+						// スワップチェインを使用するパスが初めて登場したので、前回状態はPresentとする
+						// NOTE: スワップチェインはヒストリーを無視する
+						prod->SetOutputPrevState(i, D3D12_RESOURCE_STATE_PRESENT);
+						usedRes[id] = nullptr;
+					}
+					else
+					{
+						RenderResource* res;
+						auto&& desc = descs[i];
+
+						// 未使用リソースに使えるものがあるかチェック
+						auto unusedIt = FindFromUnusedResource2(unusedRes, desc);
+						if (unusedIt != unusedRes.end())
+						{
+							// 未使用リソースが見つかったので利用する
+							res = *unusedIt;
+							unusedRes.erase(unusedIt);
+							prod->SetOutputPrevState(i, res->GetState());
+						}
+						else
+						{
+							// 未使用リソースが存在しないので新規作成
+							res = new RenderResource();
+							res->Initialize(device, descs[i], screenWidth, screenHeight, kInitialState);
+							outResources.push_back(res);
+							prod->SetOutputPrevState(i, kInitialState);
+						}
+
+						// 使用中リストに登録する
+						res->SetState(res->IsRtv() ? kRtvState : kDsvState);
+						res->SetHistoryMax(desc.historyMax);
+						usedRes[id] = res;
+						outResourceMap[id] = res;
+					}
+				}
+
+				// 一時リソースを検索・生成する
+				cnt = prod->GetTempCount();
+				ids = prod->GetTempIds();
+				descs = prod->GetTempDescs();
+				for (sl12::u32 i = 0; i < cnt; i++)
+				{
+					RenderResource* res;
+
+					auto id = ids[i];
+					auto unusedIt = FindFromUnusedResource2(unusedRes, descs[i]);
+					if (unusedIt != unusedRes.end())
+					{
+						// 未使用リソースが見つかったので利用する
+						res = *unusedIt;
+						unusedRes.erase(unusedIt);
+						prod->SetTempPrevState(i, res->GetState());
+					}
+					else
+					{
+						// 未使用リソースが存在しないので新規作成
+						res = new RenderResource();
+						res->Initialize(device, descs[i], screenWidth, screenHeight, kInitialState);
+						outResources.push_back(res);
+						prod->SetTempPrevState(i, kInitialState);
+					}
+
+					// ワークを使用マップに登録する
+					res->SetState(kInputState);
+					res->SetHistoryMax(0);
+					usedRes[id] = res;
+					outResourceMap[id] = res;
+				}
+
+				// 使用中リストを整理する
+				auto usedIt = usedRes.begin();
+				while (usedIt != usedRes.end())
+				{
+					if (usedIt->first.isSwapchain)
+					{
+						usedIt++;
+						continue;
+					}
+
+					auto findIt = lastAccess.find(usedIt->first);
+					if (usedIt->second->IsHistoryEnd() && (findIt != lastAccess.end()) && (findIt->second <= passNo))
+					{
+						// すでに不要になったリソースを未使用リストに移動する
+						// NOTE: ヒストリーバッファは保持するフレーム数を経過するまで未使用にできない
+						unusedRes.push_back(usedIt->second);
+						auto thisIt = usedIt;
+						usedIt++;
+						usedRes.erase(thisIt);
+					}
+					else
+					{
+						usedIt++;
+					}
+				}
+
+				passNo++;
+			}
+		}
+
 	}
 
 	//-------------------------------------------
@@ -469,6 +764,7 @@ namespace sl12
 	{
 		assert(pDevice_ != nullptr);
 
+#if 0
 		AllReset();
 
 		// 各リソースのR/Wタイミングを記録する
@@ -477,6 +773,14 @@ namespace sl12
 
 		// 実際のリソース生成
 		MakeResourcesDetail(*pDevice_, screenWidth_, screenHeight_, history_map, producers, resources_, resource_map_);
+#else
+		// 各IDの最終アクセスパス番号を記録する
+		LastAccessPassInfo lastAccess;
+		MakeResourceHistory2(producers, lastAccess);
+
+		// 実際のリソース生成
+		MakeResourcesDetail2(*pDevice_, screenWidth_, screenHeight_, lastAccess, producers, resources_, resource_map_);
+#endif
 	}
 
 	//-------------------------------------------

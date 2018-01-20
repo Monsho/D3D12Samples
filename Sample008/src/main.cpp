@@ -973,8 +973,8 @@ bool InitializeRenderResource()
 		return false;
 	}
 
-	// リソース生成
-	g_rrManager_.MakeResources(g_rrProducers_);
+	//// リソース生成
+	//g_rrManager_.MakeResources(g_rrProducers_);
 
 	return true;
 }
@@ -996,6 +996,9 @@ void RenderScene()
 
 	// グラフィクスコマンドロードの開始
 	mainCmdList.Reset();
+
+	// リソース生成
+	g_rrManager_.MakeResources(g_rrProducers_);
 
 	auto scTex = g_Device_.GetSwapchain().GetCurrentTexture(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetDescHandle(nextFrameIndex);
@@ -1329,9 +1332,6 @@ void RenderScene()
 		pCmdList->IASetVertexBuffers(0, 1, &vb);
 		pCmdList->IASetIndexBuffer(&ib);
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
-
-		// NOTE: プロデューサーシステムの問題を回避するため、ここでDepthの状態遷移
-		mainCmdList.TransitionBarrier(pOutputs[1]->GetTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	}
 
 	// BlurPass
