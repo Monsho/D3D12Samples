@@ -22,6 +22,7 @@ cbuffer CbWaterInfo
 	float		temporalBlend;
 	float		enableFresnel;
 	float		fresnelCoeff;
+	float		gapBleed;
 };
 
 #endif // SHADERS_CONST_BUFFER_HLSLI

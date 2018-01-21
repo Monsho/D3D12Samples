@@ -54,6 +54,7 @@ namespace
 		float					temporalBlend;
 		float					enableFresnel;
 		float					fresnelCoeff;
+		float					gapBleed;
 	};	// struct WaterCB
 
 	struct ConstantSet
@@ -195,8 +196,10 @@ namespace
 
 	static float	g_waterHeight = 60.0f;
 	static float	g_temporalBlend = 0.5f;
-	static bool		g_enableFresnel = true;
 	static float	g_fresnelCoeff = 2.0f;
+	static bool		g_enableFresnel = true;
+	static bool		g_gapBleed = true;
+	static bool		g_scenePause = false;
 
 	int					g_SyncInterval = 1;
 }
@@ -1069,6 +1072,8 @@ void RenderScene()
 		ImGui::DragFloat("Temporal Blend", &g_temporalBlend, 0.01f, 0.0f, 1.0f);
 		ImGui::DragFloat("Fresnel Coeff", &g_fresnelCoeff, 0.01f, 1.0f, 5.0f);
 		ImGui::Checkbox("Fresnel Enable", &g_enableFresnel);
+		ImGui::Checkbox("Gap Bleed", &g_gapBleed);
+		ImGui::Checkbox("Scene Pause", &g_scenePause);
 	}
 
 	// グラフィクスコマンドロードの開始
@@ -1116,7 +1121,8 @@ void RenderScene()
 		ptr->frustumCorner.y = tanf(kFovY * 0.5f) * kFarZ;
 		ptr->frustumCorner.x = ptr->frustumCorner.y * kAspect;
 
-		sCamAngle += 1.0f;
+		if (!g_scenePause)
+			sCamAngle += 1.0f;
 	}
 	auto&& curWaterCB = g_WaterCBs_[frameIndex];
 	{
@@ -1132,6 +1138,7 @@ void RenderScene()
 		ptr->temporalBlend = g_temporalBlend;
 		ptr->enableFresnel = g_enableFresnel ? 1.0f : 0.0f;
 		ptr->fresnelCoeff = g_fresnelCoeff;
+		ptr->gapBleed = g_gapBleed ? 1.0f : 0.0f;
 		curWaterCB.cb_.Unmap();
 	}
 
@@ -1139,7 +1146,7 @@ void RenderScene()
 	auto&& curLightPosB = g_LightPosB_[frameIndex];
 	auto&& curLightPosBV = g_LightPosBV_[frameIndex];
 	{
-		auto mtxRot = DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(1.0f));
+		auto mtxRot = DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(g_scenePause ? 0.0f : 1.0f));
 		for (int i = 0; i < kLightMax; i++)
 		{
 			DirectX::XMVECTOR p = DirectX::XMLoadFloat4(&DirectX::XMFLOAT4(g_LightPos_[i].x, g_LightPos_[i].y, g_LightPos_[i].z, 1.0f));
@@ -1349,6 +1356,7 @@ void RenderScene()
 
 		// デスクリプタテーブル設定
 		g_resolveHashSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
+		g_resolveHashSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
 		g_resolveHashSig_.SetDescriptor(mainCmdList, "texSceneColor", *pInputs[0]->GetSrv());
 		g_resolveHashSig_.SetDescriptor(mainCmdList, "texProjectHash", *pInputs[1]->GetSrv());
 
