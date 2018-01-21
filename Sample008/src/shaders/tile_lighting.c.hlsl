@@ -274,8 +274,13 @@ void main(
 	// ここで同期を取ると、sTileLightIndicesにタイルと衝突しているライトのインデックスが積まれている
     GroupMemoryBarrierWithGroupSync();
 
+	// NOTE: 暗すぎるのもどうかと思うのでアンビエントライトを計算しておく
+	const float3 kSkyColor = float3(0.1, 0.2, 0.35);
+	const float3 kGroundColor = float3(0.33, 0.16, 0.0);
+	float3 ambient = lerp(kGroundColor, kSkyColor, surface.normalInWorld.y * 0.5 + 0.5);
+
 	// ライト計算
-	float3 light_result = surface.diffuseColor * 0.2;
+	float3 light_result = surface.diffuseColor * ambient;
 	for (uint i = 0; i < sTileNumLights; ++i)
 	{
 		uint lightIndex = sTileLightIndices[i];

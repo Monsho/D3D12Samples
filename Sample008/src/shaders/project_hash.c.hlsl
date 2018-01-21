@@ -5,13 +5,6 @@
 #define kTileWidth				(16)
 #define kTileSize				(kTileWidth * kTileWidth)
 
-// 定数バッファ
-cbuffer CbWaterInfo
-{
-	float	waterHeight;
-};
-
-
 // 入力
 Texture2D				texLinearDepth;
 

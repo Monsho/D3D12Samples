@@ -303,6 +303,7 @@ namespace sl12
 			std::vector<RenderResource*> unusedRes;
 
 			// 前回フレームのリソースを使用中リストと未使用リストに振り分ける
+			outResourceMap.clear();
 			for (auto&& res : outResources)
 			{
 				if (res->IsHistoryEnd())
@@ -315,9 +316,9 @@ namespace sl12
 					id.historyOffset++;
 					res->IncrementHistory();
 					usedRes[id] = res;
+					outResourceMap[id] = res;
 				}
 			}
-			outResourceMap.clear();
 
 			for (auto&& prod : producers)
 			{
@@ -348,8 +349,10 @@ namespace sl12
 						auto res = new RenderResource();
 						res->Initialize(device, desc, screenWidth, screenHeight, kInitialState);
 						res->SetHistoryMax(0);
+						res->SetLastID(id);
 						outResources.push_back(res);
 						usedRes[id] = res;
+						outResourceMap[id] = res;
 						prod->SetOutputPrevState(i, kInitialState);
 					}
 				}
@@ -409,6 +412,7 @@ namespace sl12
 						// 使用中リストに登録する
 						res->SetState(res->IsRtv() ? kRtvState : kDsvState);
 						res->SetHistoryMax(desc.historyMax);
+						res->SetLastID(id);
 						usedRes[id] = res;
 						outResourceMap[id] = res;
 					}
@@ -443,6 +447,7 @@ namespace sl12
 					// ワークを使用マップに登録する
 					res->SetState(kInputState);
 					res->SetHistoryMax(0);
+					res->SetLastID(id);
 					usedRes[id] = res;
 					outResourceMap[id] = res;
 				}

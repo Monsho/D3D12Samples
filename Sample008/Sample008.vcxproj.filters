@@ -53,6 +53,12 @@
     <FxCompile Include="src\shaders\water.vv.hlsl">
       <Filter>src\shaders</Filter>
     </FxCompile>
+    <FxCompile Include="src\shaders\reproject_reflection.p.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="src\shaders\reproject_reflection.vv.hlsl">
+      <Filter>src\shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\const_buffer.hlsli">
@@ -65,6 +71,9 @@
       <Filter>src\shaders</Filter>
     </None>
     <None Include="src\shaders\water.hlsli">
+      <Filter>src\shaders</Filter>
+    </None>
+    <None Include="src\shaders\reproject_reflection.hlsli">
       <Filter>src\shaders</Filter>
     </None>
   </ItemGroup>

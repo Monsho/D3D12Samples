@@ -32,6 +32,7 @@ namespace
 		DirectX::XMFLOAT4X4		mtxWorldToView;
 		DirectX::XMFLOAT4X4		mtxViewToClip;
 		DirectX::XMFLOAT4X4		mtxViewToWorld;
+		DirectX::XMFLOAT4X4		mtxPrevWorldToClip;
 		DirectX::XMFLOAT4		screenInfo;
 		DirectX::XMFLOAT4		frustumCorner;
 	};	// struct SceneCB
@@ -50,6 +51,9 @@ namespace
 	struct WaterCB
 	{
 		float					waterHeight;
+		float					temporalBlend;
+		float					enableFresnel;
+		float					fresnelCoeff;
 	};	// struct WaterCB
 
 	struct ConstantSet
@@ -94,6 +98,8 @@ namespace
 			ResolveHashP,
 			WaterV,
 			WaterP,
+			ReprojectReflectionV,
+			ReprojectReflectionP,
 
 			Max
 		};
@@ -122,7 +128,7 @@ namespace
 	ConstantSet				g_MeshCB_;
 	ConstantSet				g_BlurCB_;
 	ConstantSet				g_LightCB_;
-	ConstantSet				g_WaterCB_;
+	ConstantSet				g_WaterCBs_[kMaxFrameCount];
 	TextureSet				g_WaveNormalTex_;
 
 	sl12::Sampler			g_sampler_;
@@ -130,8 +136,8 @@ namespace
 
 	sl12::Shader			g_Shaders_[ShaderKind::Max];
 
-	sl12::Buffer			g_LightPosB_[3];
-	sl12::BufferView		g_LightPosBV_[3];
+	sl12::Buffer			g_LightPosB_[kMaxFrameCount];
+	sl12::BufferView		g_LightPosBV_[kMaxFrameCount];
 	sl12::Buffer			g_LightColorB_;
 	sl12::BufferView		g_LightColorBV_;
 	sl12::Buffer			g_WaterVB_;
@@ -150,6 +156,7 @@ namespace
 	sl12::RootSignatureHandle	g_resolveHashSig_;
 	sl12::RootSignatureHandle	g_tiledLightSig_;
 	sl12::RootSignatureHandle	g_waterSig_;
+	sl12::RootSignatureHandle	g_reprojectSig_;
 
 	sl12::GraphicsPipelineState	g_basePassPso_;
 	sl12::GraphicsPipelineState	g_linearDepthPso_;
@@ -158,6 +165,7 @@ namespace
 	sl12::GraphicsPipelineState	g_blurYPassPso_;
 	sl12::GraphicsPipelineState	g_resolveHashPso_;
 	sl12::GraphicsPipelineState	g_waterPso_;
+	sl12::GraphicsPipelineState	g_reprojectPso_;
 	sl12::ComputePipelineState	g_tiledLightPso_;
 	sl12::ComputePipelineState	g_clearHashPso_;
 	sl12::ComputePipelineState	g_projectHashPso_;
@@ -185,8 +193,12 @@ namespace
 	sl12::Gui	g_Gui_;
 	sl12::InputData	g_InputData_{};
 
-	int					g_SyncInterval = 1;
+	static float	g_waterHeight = 60.0f;
+	static float	g_temporalBlend = 0.5f;
+	static bool		g_enableFresnel = true;
+	static float	g_fresnelCoeff = 2.0f;
 
+	int					g_SyncInterval = 1;
 }
 
 // テクスチャを読み込む
@@ -401,8 +413,6 @@ bool InitializeAssets()
 		g_LightCB_.cb_.Unmap();
 	}
 	{
-		static const float	kWaterHeight = 60.0f;
-
 		if (!g_WaterVB_.Initialize(&g_Device_, sizeof(DirectX::XMFLOAT3) * 4, sizeof(DirectX::XMFLOAT3), sl12::BufferUsage::VertexBuffer, true, false))
 		{
 			return false;
@@ -412,10 +422,10 @@ bool InitializeAssets()
 			return false;
 		}
 		auto vb = reinterpret_cast<DirectX::XMFLOAT3*>(g_WaterVB_.Map(nullptr));
-		vb[0] = DirectX::XMFLOAT3(-1000.0f, kWaterHeight, -500.0f);
-		vb[1] = DirectX::XMFLOAT3( 1000.0f, kWaterHeight, -500.0f);
-		vb[2] = DirectX::XMFLOAT3(-1000.0f, kWaterHeight,  500.0f);
-		vb[3] = DirectX::XMFLOAT3( 1000.0f, kWaterHeight,  500.0f);
+		vb[0] = DirectX::XMFLOAT3(-1000.0f, 0.0f, -500.0f);
+		vb[1] = DirectX::XMFLOAT3( 1000.0f, 0.0f, -500.0f);
+		vb[2] = DirectX::XMFLOAT3(-1000.0f, 0.0f,  500.0f);
+		vb[3] = DirectX::XMFLOAT3( 1000.0f, 0.0f,  500.0f);
 		g_WaterVB_.Unmap();
 
 		if (!g_WaterIB_.Initialize(&g_Device_, sizeof(sl12::u16) * 6, sizeof(sl12::u16), sl12::BufferUsage::IndexBuffer, true, false))
@@ -431,19 +441,18 @@ bool InitializeAssets()
 		ib[3] = 1; ib[4] = 3; ib[5] = 2;
 		g_WaterIB_.Unmap();
 
-		if (!g_WaterCB_.cb_.Initialize(&g_Device_, sizeof(WaterCB), 1, sl12::BufferUsage::ConstantBuffer, true, false))
+		for (int i = 0; i < kMaxFrameCount; ++i)
 		{
-			return false;
-		}
+			if (!g_WaterCBs_[i].cb_.Initialize(&g_Device_, sizeof(WaterCB), 1, sl12::BufferUsage::ConstantBuffer, true, false))
+			{
+				return false;
+			}
 
-		if (!g_WaterCB_.cbv_.Initialize(&g_Device_, &g_WaterCB_.cb_))
-		{
-			return false;
+			if (!g_WaterCBs_[i].cbv_.Initialize(&g_Device_, &g_WaterCBs_[i].cb_))
+			{
+				return false;
+			}
 		}
-
-		auto p = reinterpret_cast<WaterCB*>(g_WaterCB_.cb_.Map(nullptr));
-		p->waterHeight = kWaterHeight;
-		g_WaterCB_.cb_.Unmap();
 	}
 
 	// サンプラ作成
@@ -527,6 +536,14 @@ bool InitializeAssets()
 	{
 		return false;
 	}
+	if (!g_Shaders_[ShaderKind::ReprojectReflectionV].Initialize(&g_Device_, sl12::ShaderType::Vertex, "data/reproject_reflection.vv.cso"))
+	{
+		return false;
+	}
+	if (!g_Shaders_[ShaderKind::ReprojectReflectionP].Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/reproject_reflection.p.cso"))
+	{
+		return false;
+	}
 
 	// ルートシグネチャマネージャの初期化
 	if (!g_rootSigMan_.Initialize(&g_Device_))
@@ -561,6 +578,10 @@ bool InitializeAssets()
 		desc.pVS = &g_Shaders_[ShaderKind::WaterV];
 		desc.pPS = &g_Shaders_[ShaderKind::WaterP];
 		g_waterSig_ = g_rootSigMan_.CreateRootSignature(desc);
+
+		desc.pVS = &g_Shaders_[ShaderKind::ReprojectReflectionV];
+		desc.pPS = &g_Shaders_[ShaderKind::ReprojectReflectionP];
+		g_reprojectSig_ = g_rootSigMan_.CreateRootSignature(desc);
 	}
 	{
 		sl12::RootSignatureCreateDesc desc;
@@ -795,6 +816,47 @@ bool InitializeAssets()
 		}
 	}
 	{
+		sl12::GraphicsPipelineStateDesc desc;
+		desc.pRootSignature = g_reprojectSig_.GetRootSignature();
+		desc.pVS = &g_Shaders_[ShaderKind::ReprojectReflectionV];
+		desc.pPS = &g_Shaders_[ShaderKind::ReprojectReflectionP];
+
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = true;
+		desc.blend.rtDesc[0].srcBlendColor = D3D12_BLEND_SRC_ALPHA;
+		desc.blend.rtDesc[0].dstBlendColor = D3D12_BLEND_INV_SRC_ALPHA;
+		desc.blend.rtDesc[0].blendOpColor = D3D12_BLEND_OP_ADD;
+		desc.blend.rtDesc[0].srcBlendAlpha = D3D12_BLEND_ONE;
+		desc.blend.rtDesc[0].dstBlendAlpha = D3D12_BLEND_ONE;
+		desc.blend.rtDesc[0].blendOpAlpha = D3D12_BLEND_OP_MAX;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.isDepthClipEnable = true;
+		desc.rasterizer.isFrontCCW = true;
+
+		desc.depthStencil.isDepthEnable = false;
+		desc.depthStencil.isDepthWriteEnable = false;
+
+		D3D12_INPUT_ELEMENT_DESC inputElem[] = {
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		};
+		desc.inputLayout.numElements = _countof(inputElem);
+		desc.inputLayout.pElements = inputElem;
+
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
+		desc.multisampleCount = 1;
+
+		if (!g_reprojectPso_.Initialize(&g_Device_, desc))
+		{
+			return false;
+		}
+	}
+	{
 		sl12::ComputePipelineStateDesc desc;
 		desc.pRootSignature = g_tiledLightSig_.GetRootSignature();
 		desc.pCS = &g_Shaders_[ShaderKind::TiledLightC];
@@ -836,7 +898,7 @@ bool InitializeAssets()
 	}
 
 	// GUIの初期化
-	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, kDepthViewFormat))
+	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM))
 	{
 		return false;
 	}
@@ -865,6 +927,7 @@ void DestroyAssets()
 	g_resolveHashPso_.Destroy();
 	g_tiledLightPso_.Destroy();
 	g_waterPso_.Destroy();
+	g_reprojectPso_.Destroy();
 
 	g_basePassSig_.Invalid();
 	g_linearDepthSig_.Invalid();
@@ -876,6 +939,7 @@ void DestroyAssets()
 	g_resolveHashSig_.Invalid();
 	g_tiledLightSig_.Invalid();
 	g_waterSig_.Invalid();
+	g_reprojectSig_.Invalid();
 	g_rootSigMan_.Destroy();
 
 	for (auto&& v : g_LightPosBV_) v.Destroy();
@@ -889,7 +953,7 @@ void DestroyAssets()
 	for (auto&& v : g_Shaders_) v.Destroy();
 	g_WaveNormalTex_.Destroy();
 
-	g_WaterCB_.Destroy();
+	for (auto&&v : g_WaterCBs_) v.Destroy();
 	g_LightCB_.Destroy();
 	g_BlurCB_.Destroy();
 	g_MeshCB_.Destroy();
@@ -904,11 +968,12 @@ bool InitializeRenderResource()
 	g_rrProducers_.push_back(new sl12::ResourceProducer<4, 1, 0>());		// Deferred Lighting Pass
 	g_rrProducers_.push_back(new sl12::ResourceProducer<1, 1, 0>());		// Projection Hash Pass
 	g_rrProducers_.push_back(new sl12::ResourceProducer<2, 1, 0>());		// Resolve Hash Pass
+	g_rrProducers_.push_back(new sl12::ResourceProducer<2, 1, 0>());		// Temporal Reprojection Pass
 	g_rrProducers_.push_back(new sl12::ResourceProducer<1, 2, 0>());		// Water Pass
 	g_rrProducers_.push_back(new sl12::ResourceProducer<2, 1, 1>());		// Blur Pass
 
 																			// 記述子の準備
-	sl12::RenderResourceDesc descGB0, descGB1, descGB2, descD, descLR, descLD, descBX, descHash;
+	sl12::RenderResourceDesc descGB0, descGB1, descGB2, descD, descLR, descLD, descBX, descHash, descWater;
 	descGB0.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 	descGB1.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 	descGB2.SetFormat(DXGI_FORMAT_R8G8B8A8_UNORM);
@@ -917,6 +982,7 @@ bool InitializeRenderResource()
 	descLD.SetFormat(DXGI_FORMAT_R32_FLOAT);
 	descBX.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT);
 	descHash.SetFormat(DXGI_FORMAT_R32_UINT).SetUavCount(1);
+	descWater.SetFormat(DXGI_FORMAT_R16G16B16A16_FLOAT).SetHistoryMax(1);
 
 	// プロデューサー設定
 	{
@@ -944,13 +1010,19 @@ bool InitializeRenderResource()
 
 		// Projection Hash Pass
 		g_rrProducers_[pass]->SetInputUnique(0, RenderID::LinearDepth);
-		g_rrProducers_[pass]->SetOutputForNextPass(0, descHash);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::HashBuffer, descHash);
 		pass++;
 
 		// Resolve Hash Pass
 		g_rrProducers_[pass]->SetInputUnique(0, RenderID::LightResult);
-		g_rrProducers_[pass]->SetInputFromPrevOutput(1, 0);
-		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::WaterResult, descBX);
+		g_rrProducers_[pass]->SetInputUnique(1, RenderID::HashBuffer);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::WaterResult, descWater);
+		pass++;
+
+		// Temporal Reprojection Pass
+		g_rrProducers_[pass]->SetInputUnique(0, RenderID::WaterResult, 1);
+		g_rrProducers_[pass]->SetInputUnique(1, RenderID::HashBuffer);
+		g_rrProducers_[pass]->SetOutputUnique(0, RenderID::WaterResult, descWater);
 		pass++;
 
 		// Water Pass
@@ -973,9 +1045,6 @@ bool InitializeRenderResource()
 		return false;
 	}
 
-	//// リソース生成
-	//g_rrManager_.MakeResources(g_rrProducers_);
-
 	return true;
 }
 
@@ -993,6 +1062,14 @@ void RenderScene()
 	sl12::CommandList& mainCmdList = g_mainCmdLists_[frameIndex];
 
 	g_Gui_.BeginNewFrame(&mainCmdList, kWindowWidth, kWindowHeight, g_InputData_);
+
+	// GUI
+	{
+		ImGui::DragFloat("Water Height", &g_waterHeight, 0.1f, 0.0f, 100.0f);
+		ImGui::DragFloat("Temporal Blend", &g_temporalBlend, 0.01f, 0.0f, 1.0f);
+		ImGui::DragFloat("Fresnel Coeff", &g_fresnelCoeff, 0.01f, 1.0f, 5.0f);
+		ImGui::Checkbox("Fresnel Enable", &g_enableFresnel);
+	}
 
 	// グラフィクスコマンドロードの開始
 	mainCmdList.Reset();
@@ -1016,23 +1093,46 @@ void RenderScene()
 		static const float kNearZ = 1.0f;
 		static const float kFarZ = 10000.0f;
 		static const float kFovY = DirectX::XMConvertToRadians(60.0f);
+		static DirectX::XMFLOAT4X4 sPrevWorldToClip = DirectX::XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+		static float sCamAngle = 0.0f;
 		const float kAspect = (float)kWindowWidth / (float)kWindowHeight;
 
 		SceneCB* ptr = reinterpret_cast<SceneCB*>(curCB.ptr_);
-		DirectX::FXMVECTOR eye = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(-1000.0f, 200.0f, 0.0f));
-		DirectX::FXMVECTOR focus = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
-		DirectX::FXMVECTOR up = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f));
+		auto eye = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(-1000.0f, 200.0f, 0.0f));
+		auto mtxRotY = DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(sinf(DirectX::XMConvertToRadians(sCamAngle)) * 10.0f));
+		eye = DirectX::XMVector3TransformCoord(eye, mtxRotY);
+		auto focus = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
+		auto up = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f));
 		auto mtxView = DirectX::XMMatrixLookAtRH(eye, focus, up);
 		auto mtxClip = DirectX::XMMatrixPerspectiveFovRH(kFovY, kAspect, kNearZ, kFarZ);
 		DirectX::XMStoreFloat4x4(&ptr->mtxWorldToView, mtxView);
 		DirectX::XMStoreFloat4x4(&ptr->mtxViewToWorld, DirectX::XMMatrixInverse(nullptr, mtxView));
 		DirectX::XMStoreFloat4x4(&ptr->mtxViewToClip, mtxClip);
+		ptr->mtxPrevWorldToClip = sPrevWorldToClip;
+		auto mtxVC = DirectX::XMMatrixMultiply(mtxView, mtxClip);
+		DirectX::XMStoreFloat4x4(&sPrevWorldToClip, mtxVC);
 		ptr->screenInfo = DirectX::XMFLOAT4((float)kWindowWidth, (float)kWindowHeight, kNearZ, kFarZ);
 		ptr->frustumCorner.z = kFarZ;
 		ptr->frustumCorner.y = tanf(kFovY * 0.5f) * kFarZ;
 		ptr->frustumCorner.x = ptr->frustumCorner.y * kAspect;
 
-		//sAngle += 1.0f;
+		sCamAngle += 1.0f;
+	}
+	auto&& curWaterCB = g_WaterCBs_[frameIndex];
+	{
+		static const float kNearZ = 1.0f;
+		static const float kFarZ = 10000.0f;
+		static const float kFovY = DirectX::XMConvertToRadians(60.0f);
+		static DirectX::XMFLOAT4X4 sPrevWorldToClip = DirectX::XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+		static float sCamAngle = 0.0f;
+		const float kAspect = (float)kWindowWidth / (float)kWindowHeight;
+
+		WaterCB* ptr = reinterpret_cast<WaterCB*>(curWaterCB.cb_.Map(nullptr));
+		ptr->waterHeight = g_waterHeight;
+		ptr->temporalBlend = g_temporalBlend;
+		ptr->enableFresnel = g_enableFresnel ? 1.0f : 0.0f;
+		ptr->fresnelCoeff = g_fresnelCoeff;
+		curWaterCB.cb_.Unmap();
 	}
 
 	// ライト更新
@@ -1214,7 +1314,7 @@ void RenderScene()
 
 			// デスクリプタテーブル設定
 			g_projectHashSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-			g_projectHashSig_.SetDescriptor(mainCmdList, "CbWaterInfo", g_WaterCB_.cbv_);
+			g_projectHashSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
 			g_projectHashSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInput->GetSrv());
 			g_projectHashSig_.SetDescriptor(mainCmdList, "rwProjectHash", *pOutput->GetUav());
 
@@ -1259,6 +1359,42 @@ void RenderScene()
 		pCmdList->DrawInstanced(3, 1, 0, 0);
 	}
 
+	// Temporal Reprojection Pass
+	{
+		auto thisProd = g_rrProducers_[passNo++];
+		sl12::RenderResource* pInputs[] = {
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]),
+			g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[1]),
+		};
+		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
+
+		auto rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+
+		// バリア
+		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
+
+		// レンダーターゲット設定
+		pCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_reprojectPso_.GetPSO());
+		pCmdList->SetGraphicsRootSignature(g_reprojectSig_.GetRootSignature()->GetRootSignature());
+
+		// デスクリプタテーブル設定
+		g_reprojectSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
+		g_reprojectSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
+		g_reprojectSig_.SetDescriptor(mainCmdList, "texPrevReflection", *pInputs[0]->GetSrv());
+		g_reprojectSig_.SetDescriptor(mainCmdList, "texProjectHash", *pInputs[1]->GetSrv());
+
+		// DrawCall
+		auto vb = g_WaterVBV_.GetView();
+		auto ib = g_WaterIBV_.GetView();
+		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pCmdList->IASetVertexBuffers(0, 1, &vb);
+		pCmdList->IASetIndexBuffer(&ib);
+		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+	}
+
 	// Water Pass
 	{
 		auto thisProd = g_rrProducers_[passNo++];
@@ -1283,6 +1419,7 @@ void RenderScene()
 
 		// デスクリプタテーブル設定
 		g_waterSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
+		g_waterSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
 		g_waterSig_.SetDescriptor(mainCmdList, "texSSPR", *pInput->GetSrv());
 		g_waterSig_.SetDescriptor(mainCmdList, "texNormal", g_WaveNormalTex_.srv_);
 		g_waterSig_.SetDescriptor(mainCmdList, "samLinear", g_sampler_);

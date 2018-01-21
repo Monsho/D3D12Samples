@@ -366,6 +366,11 @@ namespace sl12
 			assert(index < inputCount_);
 			pInputIds_[index] = ResourceID::CreateUniqueID(unique_id);
 		}
+		void SetInputUnique(sl12::u32 index, sl12::u16 unique_id, sl12::u8 history)
+		{
+			assert(index < inputCount_);
+			pInputIds_[index] = ResourceID::CreateUniqueID(unique_id, history);
+		}
 		void SetInputFromPrevOutput(sl12::u32 index, sl12::u32 prevOutputIndex)
 		{
 			assert(index < inputCount_);
@@ -387,6 +392,12 @@ namespace sl12
 		{
 			assert(index < outputCount_);
 			pOutputIds_[index] = ResourceID::CreateUniqueID(unique_id);
+			pOutputDescs_[index] = desc;
+		}
+		void SetOutputUnique(sl12::u32 index, sl12::u16 unique_id, sl12::u8 history, const RenderResourceDesc& desc)
+		{
+			assert(index < outputCount_);
+			pOutputIds_[index] = ResourceID::CreateUniqueID(unique_id, history);
 			pOutputDescs_[index] = desc;
 		}
 		void SetOutputForNextPass(sl12::u32 index, const RenderResourceDesc& desc)
