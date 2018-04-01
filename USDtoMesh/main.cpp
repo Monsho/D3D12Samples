@@ -631,7 +631,7 @@ int main(int argc, char* argv[])
 	materials.clear();
 	for (auto&& v : meshes) delete v;
 	meshes.clear();
-	stage->Close();
+	stage->Save();
 	return 0;
 }
 
