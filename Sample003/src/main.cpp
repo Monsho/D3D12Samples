@@ -675,7 +675,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 				break;
 		}
 
+		g_Device_.WaitPresent();
+
 		RenderScene();
+
 		g_Device_.Present();
 		g_Device_.WaitDrawDone();
 	}
