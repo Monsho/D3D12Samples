@@ -18,6 +18,21 @@ namespace sl12
 				heapType = D3D12_HEAP_TYPE_DEFAULT;
 			}
 		}
+		auto initialState = (heapType == D3D12_HEAP_TYPE_UPLOAD) ? D3D12_RESOURCE_STATE_GENERIC_READ : D3D12_RESOURCE_STATE_COPY_DEST;
+		return Initialize(pDev, size, stride, type, initialState, isDynamic, isUAV);
+	}
+
+	//----
+	bool Buffer::Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, D3D12_RESOURCE_STATES initialState, bool isDynamic, bool isUAV)
+	{
+		D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_UPLOAD;
+		if (!isDynamic)
+		{
+			if (type != BufferUsage::ConstantBuffer)
+			{
+				heapType = D3D12_HEAP_TYPE_DEFAULT;
+			}
+		}
 
 		size_t allocSize = size;
 		if (type == BufferUsage::ConstantBuffer)
@@ -48,7 +63,7 @@ namespace sl12
 		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		desc.Flags = isUAV ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE;
 
-		currentState_ = (heapType == D3D12_HEAP_TYPE_UPLOAD) ? D3D12_RESOURCE_STATE_GENERIC_READ : D3D12_RESOURCE_STATE_COPY_DEST;
+		currentState_ = initialState;
 
 		auto hr = pDev->GetDeviceDep()->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc, currentState_, nullptr, IID_PPV_ARGS(&pResource_));
 		if (FAILED(hr))

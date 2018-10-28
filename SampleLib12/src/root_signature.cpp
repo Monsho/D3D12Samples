@@ -54,7 +54,7 @@ namespace sl12
 		rd.pParameters = rootParameters;
 		rd.NumStaticSamplers = 0;
 		rd.pStaticSamplers = nullptr;
-		rd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+		rd.Flags = desc.flags;
 
 		ID3DBlob* pSignature{ nullptr };
 		ID3DBlob* pError{ nullptr };
@@ -75,6 +75,33 @@ namespace sl12
 		}
 
 		return true;
+	}
+
+	//----
+	bool RootSignature::Initialize(Device* pDev, const D3D12_ROOT_SIGNATURE_DESC& desc)
+	{
+		ID3DBlob* blob = nullptr;
+		ID3DBlob* error = nullptr;
+		bool ret = true;
+
+		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
+		if (FAILED(hr))
+		{
+			ret = false;
+			goto D3D_ERROR;
+		}
+
+		hr = pDev->GetDeviceDep()->CreateRootSignature(1, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&pRootSignature_));
+		if (FAILED(hr))
+		{
+			ret = false;
+			goto D3D_ERROR;
+		}
+
+	D3D_ERROR:
+		sl12::SafeRelease(blob);
+		sl12::SafeRelease(error);
+		return ret;
 	}
 
 	//----

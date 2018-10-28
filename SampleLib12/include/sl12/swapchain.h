@@ -30,6 +30,8 @@ namespace sl12
 
 		void Present(int syncInterval);
 
+		void WaitPresent();
+
 		// getter
 		IDXGISwapChain3* GetSwapchain() { return pSwapchain_; }
 		Texture* GetTexture(int index) { return &textures_[index]; }
@@ -45,6 +47,7 @@ namespace sl12
 		Texture					textures_[kMaxBuffer];
 		RenderTargetView		views_[kMaxBuffer];
 		int32_t					frameIndex_{ 0 };
+		HANDLE					swapchainEvent_;
 	};	// class Swapchain
 
 }	// namespace sl12

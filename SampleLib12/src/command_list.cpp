@@ -8,7 +8,7 @@
 namespace sl12
 {
 	//----
-	bool CommandList::Initialize(Device* pDev, CommandQueue* pQueue)
+	bool CommandList::Initialize(Device* pDev, CommandQueue* pQueue, bool forDxr)
 	{
 		auto hr = pDev->GetDeviceDep()->CreateCommandAllocator(pQueue->listType_, IID_PPV_ARGS(&pCmdAllocator_));
 		if (FAILED(hr))
@@ -22,6 +22,15 @@ namespace sl12
 			return false;
 		}
 
+		if (forDxr && pDev->IsDxrSupported())
+		{
+			hr = pCmdList_->QueryInterface(IID_PPV_ARGS(&pDxrCmdList_));
+			if (FAILED(hr))
+			{
+				return false;
+			}
+		}
+
 		pCmdList_->Close();
 
 		pParentQueue_ = pQueue;
@@ -32,6 +41,7 @@ namespace sl12
 	void CommandList::Destroy()
 	{
 		pParentQueue_ = nullptr;
+		SafeRelease(pDxrCmdList_);
 		SafeRelease(pCmdList_);
 		SafeRelease(pCmdAllocator_);
 	}

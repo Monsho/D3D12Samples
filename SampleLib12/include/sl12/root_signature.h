@@ -48,8 +48,9 @@ namespace sl12
 
 	struct RootSignatureDesc
 	{
-		u32						numParameters;
-		const RootParameter*	pParameters;
+		u32							numParameters = 0;
+		const RootParameter*		pParameters = nullptr;
+		D3D12_ROOT_SIGNATURE_FLAGS	flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 	};	// struct RootSignatureDesc
 
 	class RootSignature
@@ -63,6 +64,7 @@ namespace sl12
 		}
 
 		bool Initialize(Device* pDev, const RootSignatureDesc& desc);
+		bool Initialize(Device* pDev, const D3D12_ROOT_SIGNATURE_DESC& desc);
 		void Destroy();
 
 		// getter

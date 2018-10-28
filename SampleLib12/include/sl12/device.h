@@ -26,21 +26,51 @@ namespace sl12
 		void Present(int syncInterval = 1);
 
 		void WaitDrawDone();
+		void WaitPresent();
 
 		// getter
-		IDXGIFactory4* GetFactoryDep() { return pFactory_; }
-		ID3D12Device* GetDeviceDep() { return pDevice_; }
-		CommandQueue& GetGraphicsQueue() { return *pGraphicsQueue_; }
-		CommandQueue& GetComputeQueue() { return *pComputeQueue_; }
-		CommandQueue& GetCopyQueue() { return *pCopyQueue_; }
-		DescriptorHeap& GetDescriptorHeap(u32 no);
-		Swapchain&	  GetSwapchain() { return *pSwapchain_; }
+		IDXGIFactory4*	GetFactoryDep()
+		{
+			return pFactory_;
+		}
+		ID3D12Device*	GetDeviceDep()
+		{
+			return pDevice_;
+		}
+		ID3D12Device5*	GetDxrDeviceDep()
+		{
+			return pDxrDevice_;
+		}
+		bool			IsDxrSupported() const
+		{
+			return isDxrSupported_;
+		}
+		CommandQueue&	GetGraphicsQueue()
+		{
+			return *pGraphicsQueue_;
+		}
+		CommandQueue&	GetComputeQueue()
+		{
+			return *pComputeQueue_;
+		}
+		CommandQueue&	GetCopyQueue()
+		{
+			return *pCopyQueue_;
+		}
+		DescriptorHeap&	GetDescriptorHeap(u32 no);
+		Swapchain&		GetSwapchain()
+		{
+			return *pSwapchain_;
+		}
 
 	private:
 		IDXGIFactory4*	pFactory_{ nullptr };
 		IDXGIAdapter3*	pAdapter_{ nullptr };
 		IDXGIOutput4*	pOutput_{ nullptr };
 		ID3D12Device*	pDevice_{ nullptr };
+
+		ID3D12Device5*	pDxrDevice_{ nullptr };
+		bool			isDxrSupported_ = false;
 
 		CommandQueue*	pGraphicsQueue_{ nullptr };
 		CommandQueue*	pComputeQueue_{ nullptr };

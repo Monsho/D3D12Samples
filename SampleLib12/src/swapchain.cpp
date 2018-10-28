@@ -12,19 +12,18 @@ namespace sl12
 	bool Swapchain::Initialize(Device* pDev, CommandQueue* pQueue, HWND hWnd, uint32_t width, uint32_t height, DXGI_FORMAT format)
 	{
 		{
-			DXGI_SWAP_CHAIN_DESC desc = {};
-			desc.BufferCount = kMaxBuffer;			// フレームバッファとバックバッファで2枚
-			desc.BufferDesc.Width = width;
-			desc.BufferDesc.Height = height;
-			desc.BufferDesc.Format = format;
+			DXGI_SWAP_CHAIN_DESC1 desc = {};
+			desc.BufferCount = kMaxBuffer;
+			desc.Width = width;
+			desc.Height = height;
+			desc.Format = format;
 			desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 			desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-			desc.OutputWindow = hWnd;
 			desc.SampleDesc.Count = 1;
-			desc.Windowed = true;
+			desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
-			IDXGISwapChain* pSwap;
-			auto hr = pDev->GetFactoryDep()->CreateSwapChain(pQueue->GetQueueDep(), &desc, &pSwap);
+			IDXGISwapChain1* pSwap;
+			auto hr = pDev->GetFactoryDep()->CreateSwapChainForHwnd(pQueue->GetQueueDep(), hWnd, &desc, nullptr, nullptr, &pSwap);
 			if (FAILED(hr))
 			{
 				return false;
@@ -37,6 +36,7 @@ namespace sl12
 			}
 
 			frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
+			swapchainEvent_ = pSwapchain_->GetFrameLatencyWaitableObject();
 
 			pSwap->Release();
 		}
@@ -71,6 +71,12 @@ namespace sl12
 	{
 		pSwapchain_->Present(syncInterval, 0);
 		frameIndex_ = pSwapchain_->GetCurrentBackBufferIndex();
+	}
+
+	//----
+	void Swapchain::WaitPresent()
+	{
+		WaitForSingleObjectEx(swapchainEvent_, 100, FALSE);
 	}
 
 	//----

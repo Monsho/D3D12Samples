@@ -81,6 +81,17 @@ namespace sl12
 			return false;
 		}
 
+		// DirectX Raytracingが使用可能ならDXR用のデバイスを作成する
+		D3D12_FEATURE_DATA_D3D12_OPTIONS5 featureSupportData{};
+		if (SUCCEEDED(pDevice_->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &featureSupportData, sizeof(featureSupportData))))
+		{
+			isDxrSupported_ = featureSupportData.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+			if (isDxrSupported_)
+			{
+				pDevice_->QueryInterface(IID_PPV_ARGS(&pDxrDevice_));
+			}
+		}
+
 		// Queueの作成
 		pGraphicsQueue_ = new CommandQueue();
 		pComputeQueue_ = new CommandQueue();
@@ -160,6 +171,8 @@ namespace sl12
 		SafeDelete(pComputeQueue_);
 		SafeDelete(pCopyQueue_);
 
+		SafeRelease(pDxrDevice_);
+
 		SafeRelease(pDevice_);
 		SafeRelease(pOutput_);
 		SafeRelease(pAdapter_);
@@ -194,6 +207,15 @@ namespace sl12
 				// イベントが発火するまで待つ
 				WaitForSingleObject(fenceEvent_, INFINITE);
 			}
+		}
+	}
+
+	//----
+	void Device::WaitPresent()
+	{
+		if (pSwapchain_)
+		{
+			pSwapchain_->WaitPresent();
 		}
 	}
 

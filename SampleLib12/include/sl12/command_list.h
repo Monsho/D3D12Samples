@@ -20,7 +20,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, CommandQueue* pQueue);
+		bool Initialize(Device* pDev, CommandQueue* pQueue, bool forDxr = false);
 		void Destroy();
 
 		void Reset();
@@ -42,11 +42,13 @@ namespace sl12
 		CommandQueue* GetParentQueue() { return pParentQueue_; }
 		ID3D12CommandAllocator* GetCommandAllocator() { return pCmdAllocator_; }
 		ID3D12GraphicsCommandList* GetCommandList() { return pCmdList_; };
+		ID3D12GraphicsCommandList4* GetDxrCommandList() { return pDxrCmdList_; };
 
 	private:
 		CommandQueue*				pParentQueue_{ nullptr };
 		ID3D12CommandAllocator*		pCmdAllocator_{ nullptr };
 		ID3D12GraphicsCommandList*	pCmdList_{ nullptr };
+		ID3D12GraphicsCommandList4*	pDxrCmdList_{ nullptr };
 	};	// class CommandList
 
 }	// namespace sl12

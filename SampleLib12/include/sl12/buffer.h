@@ -34,6 +34,7 @@ namespace sl12
 		}
 
 		bool Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic, bool isUAV);
+		bool Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, D3D12_RESOURCE_STATES initialState, bool isDynamic, bool isUAV);
 		void Destroy();
 
 		void UpdateBuffer(Device* pDev, CommandList* pCmdList, const void* pData, size_t size, size_t offset = 0);

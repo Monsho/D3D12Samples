@@ -1064,6 +1064,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 				break;
 		}
 
+		g_Device_.WaitPresent();
+
 		RenderScene();
 
 		// GPUによる描画待ち

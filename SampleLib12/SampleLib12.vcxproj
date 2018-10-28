@@ -87,6 +87,7 @@
     <ClInclude Include="..\External\imgui\stb_rect_pack.h" />
     <ClInclude Include="..\External\imgui\stb_textedit.h" />
     <ClInclude Include="..\External\imgui\stb_truetype.h" />
+    <ClInclude Include="include\sl12\application.h" />
     <ClInclude Include="include\sl12\buffer.h" />
     <ClInclude Include="include\sl12\buffer_view.h" />
     <ClInclude Include="include\sl12\command_list.h" />
@@ -117,6 +118,7 @@
     <ClCompile Include="..\External\imgui\imgui.cpp" />
     <ClCompile Include="..\External\imgui\imgui_demo.cpp" />
     <ClCompile Include="..\External\imgui\imgui_draw.cpp" />
+    <ClCompile Include="src\application.cpp" />
     <ClCompile Include="src\buffer.cpp" />
     <ClCompile Include="src\buffer_view.cpp" />
     <ClCompile Include="src\command_list.cpp" />
