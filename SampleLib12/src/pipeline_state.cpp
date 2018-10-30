@@ -172,6 +172,27 @@ namespace sl12
 		SafeRelease(pPipelineState_);
 	}
 
+
+	//----
+	bool DxrPipelineState::Initialize(Device* pDev, DxrPipelineStateDesc& dxrDesc)
+	{
+		D3D12_STATE_OBJECT_DESC psoDesc = dxrDesc.GetStateObjectDesc();
+
+		auto hr = pDev->GetDxrDeviceDep()->CreateStateObject(&psoDesc, IID_PPV_ARGS(&pDxrStateObject_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	//----
+	void DxrPipelineState::Destroy()
+	{
+		SafeRelease(pDxrStateObject_);
+	}
+
 }	// namespace sl12
 
 //	EOF

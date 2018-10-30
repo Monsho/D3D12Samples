@@ -11,6 +11,7 @@
 #include "sl12/descriptor.h"
 #include "sl12/descriptor_heap.h"
 #include "sl12/swapchain.h"
+#include "sl12/pipeline_state.h"
 
 #include "CompiledShaders/test.lib.hlsl.h"
 
@@ -199,7 +200,7 @@ public:
 		desc.Width = kScreenWidth;
 		desc.Height = kScreenHeight;
 		desc.Depth = 1;
-		dxrCmdList->SetPipelineState1(pStateObject_);
+		dxrCmdList->SetPipelineState1(stateObject_.GetPSO());
 		dxrCmdList->DispatchRays(&desc);
 
 		cmdList.UAVBarrier(&resultTexture_);
@@ -244,7 +245,7 @@ public:
 		resultTextureView_.Destroy();
 		resultTexture_.Destroy();
 
-		sl12::SafeRelease(pStateObject_);
+		stateObject_.Destroy();
 
 		localRootSig_.Destroy();
 		globalRootSig_.Destroy();
@@ -278,6 +279,135 @@ private:
 		return ret;
 	}
 
+	class DxrPipelineStateDesc
+	{
+	public:
+		DxrPipelineStateDesc()
+		{}
+		~DxrPipelineStateDesc()
+		{
+			for (auto&& v : descBinaries_)
+			{
+				free(v);
+			}
+			descBinaries_.clear();
+		}
+
+		void AddSubobject(D3D12_STATE_SUBOBJECT_TYPE type, const void* desc)
+		{
+			if (type == D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION)
+			{
+				exportAssociationIndices_.push_back((int)subobjects_.size());
+			}
+
+			D3D12_STATE_SUBOBJECT sub;
+			sub.Type = type;
+			sub.pDesc = desc;
+			subobjects_.push_back(sub);
+		}
+
+		void AddDxilLibrary(const void* shaderBin, size_t shaderBinSize, D3D12_EXPORT_DESC* exportDescs, UINT exportDescsCount)
+		{
+			auto dxilDesc = AllocBinary< D3D12_DXIL_LIBRARY_DESC>();
+
+			dxilDesc->DXILLibrary.pShaderBytecode = shaderBin;
+			dxilDesc->DXILLibrary.BytecodeLength = shaderBinSize;
+			dxilDesc->NumExports = exportDescsCount;
+			dxilDesc->pExports = exportDescs;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, dxilDesc);
+		}
+
+		void AddHitGroup(LPCWSTR hitGroupName, bool isTriangle, LPCWSTR anyHitName, LPCWSTR closestHitName, LPCWSTR intersectionName)
+		{
+			auto hitGroupDesc = AllocBinary<D3D12_HIT_GROUP_DESC>();
+
+			hitGroupDesc->HitGroupExport = hitGroupName;
+			hitGroupDesc->Type = isTriangle ? D3D12_HIT_GROUP_TYPE_TRIANGLES : D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE;
+			hitGroupDesc->AnyHitShaderImport = anyHitName;
+			hitGroupDesc->ClosestHitShaderImport = closestHitName;
+			hitGroupDesc->IntersectionShaderImport = intersectionName;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, hitGroupDesc);
+		}
+
+		void AddShaderConfig(UINT payloadSizeMax, UINT attributeSizeMax)
+		{
+			auto shaderConfigDesc = AllocBinary<D3D12_RAYTRACING_SHADER_CONFIG>();
+
+			shaderConfigDesc->MaxPayloadSizeInBytes = payloadSizeMax;
+			shaderConfigDesc->MaxAttributeSizeInBytes = attributeSizeMax;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, shaderConfigDesc);
+		}
+
+		void AddLocalRootSignatureAndExportAssociation(sl12::RootSignature& localRootSig, LPCWSTR* exportsArray, UINT exportsCount)
+		{
+			auto localRS = AllocBinary<ID3D12RootSignature*>();
+
+			*localRS = localRootSig.GetRootSignature();
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE, localRS);
+
+			auto assDesc = AllocBinary< D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION>();
+			assDesc->pSubobjectToAssociate = nullptr;
+			assDesc->NumExports = exportsCount;
+			assDesc->pExports = exportsArray;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, assDesc);
+
+		}
+
+		void AddGlobalRootSignature(sl12::RootSignature& localRootSig)
+		{
+			auto globalRS = AllocBinary<ID3D12RootSignature*>();
+
+			*globalRS = localRootSig.GetRootSignature();
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE, globalRS);
+		}
+
+		void AddRaytracinConfig(UINT traceRayCount)
+		{
+			auto rtConfigDesc = AllocBinary<D3D12_RAYTRACING_PIPELINE_CONFIG>();
+
+			rtConfigDesc->MaxTraceRecursionDepth = traceRayCount;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, rtConfigDesc);
+		}
+
+		D3D12_STATE_OBJECT_DESC GetStateObjectDesc()
+		{
+			ResolveExportAssosiation();
+
+			D3D12_STATE_OBJECT_DESC psoDesc{};
+			psoDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+			psoDesc.pSubobjects = subobjects_.data();
+			psoDesc.NumSubobjects = (UINT)subobjects_.size();
+			return psoDesc;
+		}
+
+	private:
+		template <typename T>
+		T* AllocBinary()
+		{
+			auto p = malloc(sizeof(T));
+			descBinaries_.push_back(p);
+			return reinterpret_cast<T*>(p);
+		}
+
+		void ResolveExportAssosiation()
+		{
+			auto subDesc = subobjects_.data();
+			for (auto&& v : exportAssociationIndices_)
+			{
+				auto e = v;
+				auto l = e - 1;
+
+				auto eDesc = (D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION*)subobjects_[e].pDesc;
+				eDesc->pSubobjectToAssociate = subDesc + l;
+			}
+		}
+
+	private:
+		std::vector<D3D12_STATE_SUBOBJECT>	subobjects_;
+		std::vector<int>					exportAssociationIndices_;
+		std::vector<void*>					descBinaries_;
+	};	// class DxrPipelineStateDesc
+
 	bool CreatePipelineState()
 	{
 		// DXR用のパイプラインステートを生成します.
@@ -285,15 +415,7 @@ private:
 		// これに対して、DXR用のパイプラインステートは可変個のサブオブジェクトを必要とします.
 		// また、サブオブジェクトの中には他のサブオブジェクトへのポインタを必要とするものもあるため、サブオブジェクト配列の生成には注意が必要です.
 
-		std::vector<D3D12_STATE_SUBOBJECT> subobjects;
-		subobjects.reserve(32);
-		auto AddSubobject = [&](D3D12_STATE_SUBOBJECT_TYPE type, const void* desc)
-		{
-			D3D12_STATE_SUBOBJECT sub;
-			sub.Type = type;
-			sub.pDesc = desc;
-			subobjects.push_back(sub);
-		};
+		sl12::DxrPipelineStateDesc dxrDesc;
 
 		// DXILライブラリサブオブジェクト
 		// 1つのシェーダライブラリと、そこに登録されているシェーダのエントリーポイントをエクスポートするためのサブオブジェクトです.
@@ -302,33 +424,19 @@ private:
 			{ kClosestHitName,	nullptr, D3D12_EXPORT_FLAG_NONE },
 			{ kMissName,		nullptr, D3D12_EXPORT_FLAG_NONE },
 		};
-
-		D3D12_DXIL_LIBRARY_DESC dxilDesc{};
-		dxilDesc.DXILLibrary.pShaderBytecode = g_pTestLib;
-		dxilDesc.DXILLibrary.BytecodeLength = sizeof(g_pTestLib);
-		dxilDesc.NumExports = ARRAYSIZE(libExport);
-		dxilDesc.pExports = libExport;
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, &dxilDesc);
+		dxrDesc.AddDxilLibrary(g_pTestLib, sizeof(g_pTestLib), libExport, ARRAYSIZE(libExport));
 
 		// ヒットグループサブオブジェクト
 		// Intersection, AnyHit, ClosestHitの組み合わせを定義し、ヒットグループ名でまとめるサブオブジェクトです.
 		// マテリアルごとや用途ごと(マテリアル、シャドウなど)にサブオブジェクトを用意します.
-		D3D12_HIT_GROUP_DESC hitGroupDesc{};
-		hitGroupDesc.HitGroupExport = kHitGroupName;
-		hitGroupDesc.ClosestHitShaderImport = kClosestHitName;
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hitGroupDesc);
+		dxrDesc.AddHitGroup(kHitGroupName, true, nullptr, kClosestHitName, nullptr);
 
 		// シェーダコンフィグサブオブジェクト
 		// ヒットシェーダ、ミスシェーダの引数となるPayload, IntersectionAttributesの最大サイズを設定します.
-		D3D12_RAYTRACING_SHADER_CONFIG shaderConfigDesc{};
-		shaderConfigDesc.MaxPayloadSizeInBytes = sizeof(float) * 4;		// float4 color
-		shaderConfigDesc.MaxAttributeSizeInBytes = sizeof(float) * 2;	// float2 barycentrics
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, &shaderConfigDesc);
+		dxrDesc.AddShaderConfig(sizeof(float) * 4, sizeof(float) * 2);
 
 		// ローカルルートシグネチャサブオブジェクト
 		// シェーダレコードごとに設定されるルートシグネチャを設定します.
-		auto localRS = localRootSig_.GetRootSignature();
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE, &localRS);
 
 		// Exports Assosiation サブオブジェクト
 		// シェーダレコードとローカルルートシグネチャのバインドを行うサブオブジェクトです.
@@ -337,31 +445,18 @@ private:
 			kMissName,
 			kHitGroupName,
 		};
-		D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION assocDesc{};
-		assocDesc.pSubobjectToAssociate = &subobjects.back();
-		assocDesc.NumExports = ARRAYSIZE(kExports);
-		assocDesc.pExports = kExports;
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, &assocDesc);
+		dxrDesc.AddLocalRootSignatureAndExportAssociation(localRootSig_, kExports, ARRAYSIZE(kExports));
 
 		// グローバルルートシグネチャサブオブジェクト
 		// すべてのシェーダテーブルで参照されるグローバルなルートシグネチャを設定します.
-		auto globalRS = globalRootSig_.GetRootSignature();
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE, &globalRS);
+		dxrDesc.AddGlobalRootSignature(globalRootSig_);
 
 		// レイトレースコンフィグサブオブジェクト
 		// TraceRay()を行うことができる最大深度を指定するサブオブジェクトです.
-		D3D12_RAYTRACING_PIPELINE_CONFIG rtConfigDesc{};
-		rtConfigDesc.MaxTraceRecursionDepth = 1;
-		AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, &rtConfigDesc);
+		dxrDesc.AddRaytracinConfig(1);
 
 		// PSO生成
-		D3D12_STATE_OBJECT_DESC psoDesc{};
-		psoDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-		psoDesc.pSubobjects = subobjects.data();
-		psoDesc.NumSubobjects = (UINT)subobjects.size();
-
-		auto hr = device_.GetDxrDeviceDep()->CreateStateObject(&psoDesc, IID_PPV_ARGS(&pStateObject_));
-		if (FAILED(hr))
+		if (!stateObject_.Initialize(&device_, dxrDesc))
 		{
 			return false;
 		}
@@ -571,7 +666,7 @@ private:
 		void* hitGroupShaderIdentifier;
 		{
 			ID3D12StateObjectProperties* prop;
-			pStateObject_->QueryInterface(IID_PPV_ARGS(&prop));
+			stateObject_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
 			rayGenShaderIdentifier = prop->GetShaderIdentifier(kRayGenName);
 			missShaderIdentifier = prop->GetShaderIdentifier(kMissName);
 			hitGroupShaderIdentifier = prop->GetShaderIdentifier(kHitGroupName);
@@ -657,7 +752,8 @@ private:
 	sl12::CommandList		cmdLists_[kBufferCount];
 	sl12::RootSignature		globalRootSig_, localRootSig_;
 
-	ID3D12StateObject*			pStateObject_ = nullptr;
+	sl12::DxrPipelineState		stateObject_;
+	//ID3D12StateObject*			pStateObject_ = nullptr;
 	sl12::Texture				resultTexture_;
 	sl12::UnorderedAccessView	resultTextureView_;
 
