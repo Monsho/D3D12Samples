@@ -12,6 +12,7 @@
 #include "sl12/descriptor_heap.h"
 #include "sl12/swapchain.h"
 #include "sl12/pipeline_state.h"
+#include "sl12/acceleration_structure.h"
 
 #include "CompiledShaders/test.lib.hlsl.h"
 
@@ -185,7 +186,8 @@ public:
 
 		// グローバル設定のシェーダリソースを設定する
 		d3dCmdList->SetComputeRootDescriptorTable(0, resultTextureView_.GetDesc()->GetGpuHandle());
-		d3dCmdList->SetComputeRootShaderResourceView(1, topAS_.GetResourceDep()->GetGPUVirtualAddress());
+		d3dCmdList->SetComputeRootShaderResourceView(1, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
+		//d3dCmdList->SetComputeRootShaderResourceView(1, topAS_.GetResourceDep()->GetGPUVirtualAddress());
 
 		// レイトレースを実行
 		D3D12_DISPATCH_RAYS_DESC desc{};
@@ -278,135 +280,6 @@ private:
 		sl12::SafeRelease(error);
 		return ret;
 	}
-
-	class DxrPipelineStateDesc
-	{
-	public:
-		DxrPipelineStateDesc()
-		{}
-		~DxrPipelineStateDesc()
-		{
-			for (auto&& v : descBinaries_)
-			{
-				free(v);
-			}
-			descBinaries_.clear();
-		}
-
-		void AddSubobject(D3D12_STATE_SUBOBJECT_TYPE type, const void* desc)
-		{
-			if (type == D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION)
-			{
-				exportAssociationIndices_.push_back((int)subobjects_.size());
-			}
-
-			D3D12_STATE_SUBOBJECT sub;
-			sub.Type = type;
-			sub.pDesc = desc;
-			subobjects_.push_back(sub);
-		}
-
-		void AddDxilLibrary(const void* shaderBin, size_t shaderBinSize, D3D12_EXPORT_DESC* exportDescs, UINT exportDescsCount)
-		{
-			auto dxilDesc = AllocBinary< D3D12_DXIL_LIBRARY_DESC>();
-
-			dxilDesc->DXILLibrary.pShaderBytecode = shaderBin;
-			dxilDesc->DXILLibrary.BytecodeLength = shaderBinSize;
-			dxilDesc->NumExports = exportDescsCount;
-			dxilDesc->pExports = exportDescs;
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, dxilDesc);
-		}
-
-		void AddHitGroup(LPCWSTR hitGroupName, bool isTriangle, LPCWSTR anyHitName, LPCWSTR closestHitName, LPCWSTR intersectionName)
-		{
-			auto hitGroupDesc = AllocBinary<D3D12_HIT_GROUP_DESC>();
-
-			hitGroupDesc->HitGroupExport = hitGroupName;
-			hitGroupDesc->Type = isTriangle ? D3D12_HIT_GROUP_TYPE_TRIANGLES : D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE;
-			hitGroupDesc->AnyHitShaderImport = anyHitName;
-			hitGroupDesc->ClosestHitShaderImport = closestHitName;
-			hitGroupDesc->IntersectionShaderImport = intersectionName;
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, hitGroupDesc);
-		}
-
-		void AddShaderConfig(UINT payloadSizeMax, UINT attributeSizeMax)
-		{
-			auto shaderConfigDesc = AllocBinary<D3D12_RAYTRACING_SHADER_CONFIG>();
-
-			shaderConfigDesc->MaxPayloadSizeInBytes = payloadSizeMax;
-			shaderConfigDesc->MaxAttributeSizeInBytes = attributeSizeMax;
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, shaderConfigDesc);
-		}
-
-		void AddLocalRootSignatureAndExportAssociation(sl12::RootSignature& localRootSig, LPCWSTR* exportsArray, UINT exportsCount)
-		{
-			auto localRS = AllocBinary<ID3D12RootSignature*>();
-
-			*localRS = localRootSig.GetRootSignature();
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE, localRS);
-
-			auto assDesc = AllocBinary< D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION>();
-			assDesc->pSubobjectToAssociate = nullptr;
-			assDesc->NumExports = exportsCount;
-			assDesc->pExports = exportsArray;
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, assDesc);
-
-		}
-
-		void AddGlobalRootSignature(sl12::RootSignature& localRootSig)
-		{
-			auto globalRS = AllocBinary<ID3D12RootSignature*>();
-
-			*globalRS = localRootSig.GetRootSignature();
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE, globalRS);
-		}
-
-		void AddRaytracinConfig(UINT traceRayCount)
-		{
-			auto rtConfigDesc = AllocBinary<D3D12_RAYTRACING_PIPELINE_CONFIG>();
-
-			rtConfigDesc->MaxTraceRecursionDepth = traceRayCount;
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, rtConfigDesc);
-		}
-
-		D3D12_STATE_OBJECT_DESC GetStateObjectDesc()
-		{
-			ResolveExportAssosiation();
-
-			D3D12_STATE_OBJECT_DESC psoDesc{};
-			psoDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-			psoDesc.pSubobjects = subobjects_.data();
-			psoDesc.NumSubobjects = (UINT)subobjects_.size();
-			return psoDesc;
-		}
-
-	private:
-		template <typename T>
-		T* AllocBinary()
-		{
-			auto p = malloc(sizeof(T));
-			descBinaries_.push_back(p);
-			return reinterpret_cast<T*>(p);
-		}
-
-		void ResolveExportAssosiation()
-		{
-			auto subDesc = subobjects_.data();
-			for (auto&& v : exportAssociationIndices_)
-			{
-				auto e = v;
-				auto l = e - 1;
-
-				auto eDesc = (D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION*)subobjects_[e].pDesc;
-				eDesc->pSubobjectToAssociate = subDesc + l;
-			}
-		}
-
-	private:
-		std::vector<D3D12_STATE_SUBOBJECT>	subobjects_;
-		std::vector<int>					exportAssociationIndices_;
-		std::vector<void*>					descBinaries_;
-	};	// class DxrPipelineStateDesc
 
 	bool CreatePipelineState()
 	{
@@ -515,135 +388,58 @@ private:
 		auto&& cmdList = cmdLists_[0];
 		cmdList.Reset();
 
-		// ASの生成にはジオメトリ情報が必要になります.
-		// ジオメトリ種別、頂点・インデックス情報を記述します.
-		// 頂点バッファ、インデックスバッファ、トランスフォーム行列バッファはGPUで処理されるため、GPU側のメモリアドレスを必要とします.
-		D3D12_RAYTRACING_GEOMETRY_DESC geoDesc{};
-		geoDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-		geoDesc.Triangles.IndexBuffer = geometryIBV_.GetView().BufferLocation;
-		geoDesc.Triangles.IndexCount = static_cast<UINT>(geometryIB_.GetSize()) / sizeof(UINT16);
-		geoDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
-		geoDesc.Triangles.Transform3x4 = 0;
-		geoDesc.Triangles.VertexBuffer.StartAddress = geometryVBV_.GetView().BufferLocation;
-		geoDesc.Triangles.VertexBuffer.StrideInBytes = sizeof(float) * 3;
-		geoDesc.Triangles.VertexCount = static_cast<UINT>(geometryVB_.GetSize() / geoDesc.Triangles.VertexBuffer.StrideInBytes);
-		geoDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+		// Bottom ASの生成準備
+		sl12::GeometryStructureDesc geoDesc{};
+		geoDesc.InitializeAsTriangle(
+			&geometryVB_,
+			&geometryIB_,
+			nullptr,
+			sizeof(float) * 3,
+			static_cast<UINT>(geometryVB_.GetSize() / (sizeof(float) * 3)),
+			DXGI_FORMAT_R32G32B32_FLOAT,
+			static_cast<UINT>(geometryIB_.GetSize()) / sizeof(UINT16),
+			DXGI_FORMAT_R16_UINT);
 
-		// ASビルド時のフラグです.
-		// ここではトレースを高速化することを目的としたフラグを設定します.
-		// ASを更新する場合はアップデートフラグとビルド高速化フラグを指定するほうがよいかもしれません.
-		// ASビルドはGPUドライバに依存するため、どの程度高速化されるかはドライバによるものと思われます.
-		auto buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
-
-		// ASに必要なバッファサイズを求めます.
-		// ASはGPUで生成されるため、事前に必要なサイズのバッファを確保しておく必要があります.
-		// また、生成時に作業バッファが必要となりますので、こちらも予め確保する必要があります.
-		// 作業バッファは指定されたサイズ以上であれば問題ないので、生成に必要な最大サイズを確保しておけば問題ありません.
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO topPrebuildInfo{};
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottomPrebuildInfo{};
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS topInput{};
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS bottomInput{};
-		{
-			// TopAS
-			topInput.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-			topInput.Flags = buildFlags;
-			topInput.NumDescs = 1;
-			topInput.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-			device_.GetDxrDeviceDep()->GetRaytracingAccelerationStructurePrebuildInfo(&topInput, &topPrebuildInfo);
-			if (topPrebuildInfo.ResultDataMaxSizeInBytes == 0)
-				return false;
-
-			// BottomAS
-			bottomInput = topInput;
-			bottomInput.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-			bottomInput.pGeometryDescs = &geoDesc;
-			device_.GetDxrDeviceDep()->GetRaytracingAccelerationStructurePrebuildInfo(&bottomInput, &bottomPrebuildInfo);
-			if (bottomPrebuildInfo.ResultDataMaxSizeInBytes == 0)
-				return false;
-		}
-
-		// スクラッチリソースを生成します.
-		// スクラッチリソースとはASビルドに使用される作業バッファです.
-		// ASをアップデートする場合は保持しておいたほうがいいと思いますが、アップデートしない場合は生成後に破棄して問題ありません.
-		sl12::Buffer scratchResource;
-		auto scratchSize = std::max(topPrebuildInfo.ScratchDataSizeInBytes, bottomPrebuildInfo.ScratchDataSizeInBytes);
-		if (!scratchResource.Initialize(&device_, scratchSize, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+		sl12::StructureInputDesc bottomInput{};
+		if (!bottomInput.InitializeAsBottom(&device_, &geoDesc, 1, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
 		{
 			return false;
 		}
 
-		// TopAS, BottomASのバッファを確保します
+		if (!bottomAS_.CreateBuffer(&device_, bottomInput.prebuildInfo.ResultDataMaxSizeInBytes, bottomInput.prebuildInfo.ScratchDataSizeInBytes))
 		{
-			D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-			if (!topAS_.Initialize(&device_, topPrebuildInfo.ResultDataMaxSizeInBytes, 0, sl12::BufferUsage::ShaderResource, initialState, false, true))
-			{
-				return false;
-			}
-			if (!bottomAS_.Initialize(&device_, bottomPrebuildInfo.ResultDataMaxSizeInBytes, 0, sl12::BufferUsage::ShaderResource, initialState, false, true))
-			{
-				return false;
-			}
-
-			// シェーダリソースとして使用されるTopASはViewを作成しておく
-			if (!topAS_Srv_.Initialize(&device_, &topAS_, 0, 0))
-			{
-				return false;
-			}
+			return false;
 		}
 
-		// TopAS用のインスタンスバッファを生成します.
-		// BottomASの生成に必要な頂点バッファ、インデックスバッファはすでに生成されています.
-		// TopASはBottomASのインスタンスを元に生成されるため、必要なインスタンスを定義したバッファが必要になります.
-		// このバッファはTopAS生成後には不要となります.
-		sl12::Buffer instanceBuffer;
+		// コマンド発行
+		if (!bottomAS_.Build(&cmdList, bottomInput))
 		{
-			D3D12_RAYTRACING_INSTANCE_DESC desc{};
-			desc.Transform[0][0] = desc.Transform[1][1] = desc.Transform[2][2] = 1.0f;
-			desc.InstanceID = 0;
-			desc.InstanceMask = 0xff;
-			desc.InstanceContributionToHitGroupIndex = 0;
-			desc.Flags = 0;
-			desc.AccelerationStructure = bottomAS_.GetResourceDep()->GetGPUVirtualAddress();
-
-			if (!instanceBuffer.Initialize(&device_, sizeof(desc), 0, sl12::BufferUsage::ShaderResource, true, false))
-			{
-				return false;
-			}
-
-			auto p = instanceBuffer.Map(nullptr);
-			memcpy(p, &desc, sizeof(desc));
-			instanceBuffer.Unmap();
+			return false;
 		}
 
-		// BottomASビルド用の記述子
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottomBuildDesc{};
+		// Top ASの生成準備
+		sl12::StructureInputDesc topInput{};
+		if (!topInput.InitializeAsTop(&device_, 1, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
 		{
-			bottomBuildDesc.DestAccelerationStructureData = bottomAS_.GetResourceDep()->GetGPUVirtualAddress();
-			bottomBuildDesc.Inputs = bottomInput;
-			bottomBuildDesc.ScratchAccelerationStructureData = scratchResource.GetResourceDep()->GetGPUVirtualAddress();
+			return false;
 		}
 
-		// TopASビルド用の記述子
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC topBuildDesc{};
+		sl12::TopInstanceDesc topInstance{};
+		topInstance.Initialize(&bottomAS_);
+
+		if (!topAS_.CreateBuffer(&device_, topInput.prebuildInfo.ResultDataMaxSizeInBytes, topInput.prebuildInfo.ScratchDataSizeInBytes))
 		{
-			topBuildDesc.DestAccelerationStructureData = topAS_.GetResourceDep()->GetGPUVirtualAddress();
-			topBuildDesc.Inputs = topInput;
-			topBuildDesc.Inputs.InstanceDescs = instanceBuffer.GetResourceDep()->GetGPUVirtualAddress();
-			topBuildDesc.ScratchAccelerationStructureData = scratchResource.GetResourceDep()->GetGPUVirtualAddress();
+			return false;
+		}
+		if (!topAS_.CreateInstanceBuffer(&device_, &topInstance, 1))
+		{
+			return false;
 		}
 
-		// ASビルド用のコマンドを発行
+		// コマンド発行
+		if (!topAS_.Build(&cmdList, topInput, false))
 		{
-			// BottomASビルド
-			// TopASビルドの際にBottomASは必ず必要になるため、こちらを先にビルドします.
-			cmdList.GetDxrCommandList()->BuildRaytracingAccelerationStructure(&bottomBuildDesc, 0, nullptr);
-
-			// TopASビルド前にBottomASのビルド完了を待つ必要があります.
-			// リソースバリアを張ることでBottomASビルドが完了していることを保証します.
-			cmdList.UAVBarrier(&bottomAS_);
-
-			// TopASビルド
-			cmdList.GetDxrCommandList()->BuildRaytracingAccelerationStructure(&topBuildDesc, 0, nullptr);
+			return false;
 		}
 
 		// コマンド実行と終了待ち
@@ -651,8 +447,9 @@ private:
 		cmdList.Execute();
 		device_.WaitDrawDone();
 
-		instanceBuffer.Destroy();
-		scratchResource.Destroy();
+		bottomAS_.DestroyScratchBuffer();
+		topAS_.DestroyScratchBuffer();
+		topAS_.DestroyInstanceBuffer();
 
 		return true;
 	}
@@ -753,7 +550,6 @@ private:
 	sl12::RootSignature		globalRootSig_, localRootSig_;
 
 	sl12::DxrPipelineState		stateObject_;
-	//ID3D12StateObject*			pStateObject_ = nullptr;
 	sl12::Texture				resultTexture_;
 	sl12::UnorderedAccessView	resultTextureView_;
 
@@ -761,8 +557,8 @@ private:
 	sl12::VertexBufferView	geometryVBV_;
 	sl12::IndexBufferView	geometryIBV_;
 
-	sl12::Buffer			topAS_, bottomAS_;
-	sl12::BufferView		topAS_Srv_;
+	sl12::BottomAccelerationStructure	bottomAS_;
+	sl12::TopAccelerationStructure		topAS_;
 
 	sl12::Buffer				rayGenCB_;
 	sl12::ConstantBufferView	rayGenCBV_;

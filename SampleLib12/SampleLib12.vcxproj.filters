@@ -123,6 +123,9 @@
     <ClInclude Include="include\sl12\application.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="include\sl12\acceleration_structure.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\swapchain.cpp">
@@ -195,6 +198,9 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="src\application.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\acceleration_structure.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
