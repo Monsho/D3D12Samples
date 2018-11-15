@@ -13,6 +13,7 @@
 #include "sl12/swapchain.h"
 #include "sl12/pipeline_state.h"
 #include "sl12/acceleration_structure.h"
+#include "sl12/file.h"
 
 #include "CompiledShaders/test.lib.hlsl.h"
 
@@ -31,18 +32,12 @@ namespace
 class SampleApplication
 	: public sl12::Application
 {
-	struct Viewport
+	struct SceneCB
 	{
-		float left;
-		float top;
-		float right;
-		float bottom;
-	};
-
-	struct RayGenCB
-	{
-		Viewport viewport;
-		Viewport stencil;
+		DirectX::XMFLOAT4X4	mtxProjToWorld;
+		DirectX::XMFLOAT4	camPos;
+		DirectX::XMFLOAT4	lightDir;
+		DirectX::XMFLOAT4	lightColor;
 	};
 
 public:
@@ -62,21 +57,48 @@ public:
 			}
 		}
 
+		// テクスチャ読み込み
+		{
+			sl12::File texFile("data/ConcreteTile_basecolor.tga");
+
+			if (!imageTexture_.InitializeFromTGA(&device_, &cmdLists_[0], texFile.GetData(), texFile.GetSize(), false))
+			{
+				return false;
+			}
+			if (!imageTextureView_.Initialize(&device_, &imageTexture_))
+			{
+				return false;
+			}
+
+			D3D12_SAMPLER_DESC samDesc{};
+			samDesc.AddressU = samDesc.AddressV = samDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			samDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			if (!imageSampler_.Initialize(&device_, samDesc))
+			{
+				return false;
+			}
+		}
+
 		// ルートシグネチャの初期化
 		{
 			D3D12_DESCRIPTOR_RANGE ranges[] = {
 				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
 			};
 
-			D3D12_ROOT_PARAMETER params[2];
+			D3D12_ROOT_PARAMETER params[3];
 			params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 			params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 			params[0].DescriptorTable.NumDescriptorRanges = 1;
-			params[0].DescriptorTable.pDescriptorRanges = ranges;
-			params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+			params[0].DescriptorTable.pDescriptorRanges = &ranges[0];
+			params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 			params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-			params[1].Descriptor.ShaderRegister = 0;
-			params[1].Descriptor.RegisterSpace = 0;
+			params[1].DescriptorTable.NumDescriptorRanges = 1;
+			params[1].DescriptorTable.pDescriptorRanges = &ranges[1];
+			params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+			params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+			params[2].Descriptor.ShaderRegister = 0;
+			params[2].Descriptor.RegisterSpace = 0;
 
 			D3D12_ROOT_SIGNATURE_DESC sigDesc{};
 			sigDesc.NumParameters = ARRAYSIZE(params);
@@ -92,7 +114,10 @@ public:
 		}
 		{
 			sl12::RootParameter params[] = {
-				sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::All, 0),
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 1),
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 2),
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 3),
+				sl12::RootParameter(sl12::RootParameterType::Sampler, sl12::ShaderVisibility::All, 0),
 			};
 			sl12::RootSignatureDesc desc;
 			desc.pParameters = params;
@@ -149,6 +174,12 @@ public:
 			return false;
 		}
 
+		// シーン定数バッファを生成する
+		if (!CreateSceneCB())
+		{
+			return false;
+		}
+
 		// シェーダテーブルを生成する
 		if (!CreateShaderTable())
 		{
@@ -166,6 +197,8 @@ public:
 		auto&& cmdList = cmdLists_[frameIndex];
 		auto&& d3dCmdList = cmdList.GetCommandList();
 		auto&& dxrCmdList = cmdList.GetDxrCommandList();
+
+		UpdateSceneCB(frameIndex);
 
 		cmdList.Reset();
 
@@ -186,7 +219,8 @@ public:
 
 		// グローバル設定のシェーダリソースを設定する
 		d3dCmdList->SetComputeRootDescriptorTable(0, resultTextureView_.GetDesc()->GetGpuHandle());
-		d3dCmdList->SetComputeRootShaderResourceView(1, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
+		d3dCmdList->SetComputeRootDescriptorTable(1, sceneCBVs_[frameIndex].GetDesc()->GetGpuHandle());
+		d3dCmdList->SetComputeRootShaderResourceView(2, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
 		//d3dCmdList->SetComputeRootShaderResourceView(1, topAS_.GetResourceDep()->GetGPUVirtualAddress());
 
 		// レイトレースを実行
@@ -233,15 +267,16 @@ public:
 		missTable_.Destroy();
 		hitGroupTable_.Destroy();
 
-		rayGenCBV_.Destroy();
-		rayGenCB_.Destroy();
+		for (auto&& v : sceneCBVs_) v.Destroy();
+		for (auto&& v : sceneCBs_) v.Destroy();
 
 		topAS_.Destroy();
 		bottomAS_.Destroy();
 
 		geometryIBV_.Destroy();
-		geometryVBV_.Destroy();
 		geometryIB_.Destroy();
+		geometryUVBV_.Destroy();
+		geometryUVB_.Destroy();
 		geometryVB_.Destroy();
 
 		resultTextureView_.Destroy();
@@ -251,6 +286,11 @@ public:
 
 		localRootSig_.Destroy();
 		globalRootSig_.Destroy();
+
+		imageSampler_.Destroy();
+		imageTextureView_.Destroy();
+		imageTexture_.Destroy();
+
 		for (auto&& v : cmdLists_) v.Destroy();
 	}
 
@@ -339,25 +379,88 @@ private:
 
 	bool CreateGeometry()
 	{
-		const float size = 0.7f;
-		const float depth = 1.0f;
+		const float size = 2.f;
 		float vertices[] = {
-			size, -size, depth,
-			-size, -size, depth,
-			size,  size, depth,
-			-size,  size, depth,
+			-size,  size, -size,
+			 size,  size, -size,
+			-size,  size,  size,
+			 size,  size,  size,
+
+			 size, -size, -size,
+			-size, -size, -size,
+			 size, -size,  size,
+			-size, -size,  size,
+
+			 size,  size, -size,
+			 size,  size,  size,
+			 size, -size, -size,
+			 size, -size,  size,
+
+			-size,  size, -size,
+			-size,  size,  size,
+			-size, -size, -size,
+			-size, -size,  size,
+
+			-size,  size, -size,
+			 size,  size, -size,
+			-size, -size, -size,
+			 size, -size, -size,
+
+			-size,  size,  size,
+			 size,  size,  size,
+			-size, -size,  size,
+			 size, -size,  size,
+		};
+		float uv[] = {
+			0.0f, 0.0f,
+			1.0f, 0.0f,
+			0.0f, 1.0f,
+			1.0f, 1.0f,
+
+			1.0f, 0.0f,
+			0.0f, 0.0f,
+			1.0f, 1.0f,
+			0.0f, 1.0f,
+
+			1.0f, 0.0f,
+			1.0f, 1.0f,
+			0.0f, 0.0f,
+			0.0f, 1.0f,
+
+			1.0f, 0.0f,
+			1.0f, 1.0f,
+			0.0f, 0.0f,
+			0.0f, 1.0f,
+
+			0.0f, 1.0f,
+			1.0f, 1.0f,
+			0.0f, 0.0f,
+			1.0f, 0.0f,
+
+			0.0f, 1.0f,
+			1.0f, 1.0f,
+			0.0f, 0.0f,
+			1.0f, 0.0f,
 		};
 		UINT16 indices[] =
 		{
-			0, 1, 2,
-			1, 3, 2,
+			0, 2, 1, 1, 2, 3,
+			4, 6, 5, 5, 6, 7,
+			8, 9, 10, 9, 11, 10,
+			12, 14, 13, 13, 14, 15,
+			16, 17, 18, 17, 19, 18,
+			20, 22, 21, 21, 22, 23,
 		};
 
-		if (!geometryVB_.Initialize(&device_, sizeof(vertices), 0, sl12::BufferUsage::VertexBuffer, true, false))
+		if (!geometryVB_.Initialize(&device_, sizeof(vertices), sizeof(float) * 3, sl12::BufferUsage::ShaderResource, true, false))
 		{
 			return false;
 		}
-		if (!geometryIB_.Initialize(&device_, sizeof(indices), 0, sl12::BufferUsage::IndexBuffer, true, false))
+		if (!geometryUVB_.Initialize(&device_, sizeof(uv), sizeof(float) * 2, sl12::BufferUsage::ShaderResource, true, false))
+		{
+			return false;
+		}
+		if (!geometryIB_.Initialize(&device_, sizeof(indices), 0, sl12::BufferUsage::ShaderResource, true, false))
 		{
 			return false;
 		}
@@ -366,15 +469,19 @@ private:
 		memcpy(p, vertices, sizeof(vertices));
 		geometryVB_.Unmap();
 
+		p = geometryUVB_.Map(nullptr);
+		memcpy(p, uv, sizeof(uv));
+		geometryUVB_.Unmap();
+
 		p = geometryIB_.Map(nullptr);
 		memcpy(p, indices, sizeof(indices));
 		geometryIB_.Unmap();
 
-		if (!geometryVBV_.Initialize(&device_, &geometryVB_))
+		if (!geometryIBV_.Initialize(&device_, &geometryIB_, 0, 0))
 		{
 			return false;
 		}
-		if (!geometryIBV_.Initialize(&device_, &geometryIB_))
+		if (!geometryUVBV_.Initialize(&device_, &geometryUVB_, 0, sizeof(float) * 2))
 		{
 			return false;
 		}
@@ -454,6 +561,47 @@ private:
 		return true;
 	}
 
+	bool CreateSceneCB()
+	{
+		// レイ生成シェーダで使用する定数バッファを生成する
+		auto mtxWorldToView = DirectX::XMMatrixLookAtLH(
+			DirectX::XMLoadFloat4(&camPos_),
+			DirectX::XMLoadFloat4(&tgtPos_),
+			DirectX::XMLoadFloat4(&upVec_));
+		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(60.0f), (float)kScreenWidth / (float)kScreenHeight, 0.01f, 100.0f);
+		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
+		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
+
+		DirectX::XMFLOAT4 lightDir = { 1.0f, -1.0f, -1.0f, 0.0f };
+		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
+
+		DirectX::XMFLOAT4 lightColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+		for (int i = 0; i < kBufferCount; i++)
+		{
+			if (!sceneCBs_[i].Initialize(&device_, sizeof(SceneCB), 0, sl12::BufferUsage::ConstantBuffer, true, false))
+			{
+				return false;
+			}
+			else
+			{
+				auto cb = reinterpret_cast<SceneCB*>(sceneCBs_[i].Map(nullptr));
+				DirectX::XMStoreFloat4x4(&cb->mtxProjToWorld, mtxClipToWorld);
+				cb->camPos = camPos_;
+				cb->lightDir = lightDir;
+				cb->lightColor = lightColor;
+				sceneCBs_[i].Unmap();
+
+				if (!sceneCBVs_[i].Initialize(&device_, &sceneCBs_[i]))
+				{
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
 	bool CreateShaderTable()
 	{
 		// レイ生成シェーダ、ミスシェーダ、ヒットグループのIDを取得します.
@@ -472,32 +620,6 @@ private:
 
 		UINT shaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 
-		// レイ生成シェーダで使用する定数バッファを生成する
-		struct Viewport
-		{
-			float		left, top, right, bottom;
-		};
-		struct RayGenCB
-		{
-			Viewport	viewport, stencil;
-		};
-		if (!rayGenCB_.Initialize(&device_, sizeof(RayGenCB), 0, sl12::BufferUsage::ConstantBuffer, true, false))
-		{
-			return false;
-		}
-		else
-		{
-			auto cb = reinterpret_cast<RayGenCB*>(rayGenCB_.Map(nullptr));
-			cb->viewport = { -1.0f, -1.0f, 1.0f, 1.0f };
-			cb->stencil = { -0.9f, -0.9f, 0.9f, 0.9f };
-			rayGenCB_.Unmap();
-
-			if (!rayGenCBV_.Initialize(&device_, &rayGenCB_))
-			{
-				return false;
-			}
-		}
-
 		auto Align = [](UINT size, UINT align)
 		{
 			return ((size + align - 1) / align) * align;
@@ -509,7 +631,7 @@ private:
 		// シェーダレコードのサイズはシェーダテーブル内で同一でなければならないため、同一シェーダテーブル内で最大のレコードサイズを指定すべきです.
 		// 本サンプルではすべてのシェーダレコードについてサイズが同一となります.
 		UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE), D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 4, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 
 		auto GenShaderTable = [&](void* shaderId, sl12::Buffer& buffer)
 		{
@@ -520,8 +642,16 @@ private:
 
 			auto p = reinterpret_cast<char*>(buffer.Map(nullptr));
 			memcpy(p, shaderId, shaderIdentifierSize);
-			auto cbHandle = rayGenCBV_.GetDesc()->GetGpuHandle();
-			memcpy(p + descHandleOffset, &cbHandle, sizeof(cbHandle));
+			p += descHandleOffset;
+
+			auto texHandle = imageTextureView_.GetDesc()->GetGpuHandle();
+			auto uvHandle = geometryUVBV_.GetDesc()->GetGpuHandle();
+			auto indexHandle = geometryIBV_.GetDesc()->GetGpuHandle();
+			auto samHandle = imageSampler_.GetDesc()->GetGpuHandle();
+			memcpy(p, &texHandle, sizeof(texHandle)); p += sizeof(texHandle);
+			memcpy(p, &uvHandle, sizeof(uvHandle)); p += sizeof(uvHandle);
+			memcpy(p, &indexHandle, sizeof(indexHandle)); p += sizeof(indexHandle);
+			memcpy(p, &samHandle, sizeof(samHandle)); p += sizeof(samHandle);
 			buffer.Unmap();
 
 			return true;
@@ -543,6 +673,34 @@ private:
 		return true;
 	}
 
+	void UpdateSceneCB(int frameIndex)
+	{
+		auto mtxRot = DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(1.0f));
+		auto cp = DirectX::XMLoadFloat4(&camPos_);
+		cp = DirectX::XMVector4Transform(cp, mtxRot);
+		DirectX::XMStoreFloat4(&camPos_, cp);
+
+		auto mtxWorldToView = DirectX::XMMatrixLookAtLH(
+			cp,
+			DirectX::XMLoadFloat4(&tgtPos_),
+			DirectX::XMLoadFloat4(&upVec_));
+		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(60.0f), (float)kScreenWidth / (float)kScreenHeight, 0.01f, 100.0f);
+		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
+		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
+
+		DirectX::XMFLOAT4 lightDir = { 1.0f, -1.0f, -1.0f, 0.0f };
+		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
+
+		DirectX::XMFLOAT4 lightColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+		auto cb = reinterpret_cast<SceneCB*>(sceneCBs_[frameIndex].Map(nullptr));
+		DirectX::XMStoreFloat4x4(&cb->mtxProjToWorld, mtxClipToWorld);
+		cb->camPos = camPos_;
+		cb->lightDir = lightDir;
+		cb->lightColor = lightColor;
+		sceneCBs_[frameIndex].Unmap();
+	}
+
 private:
 	static const int kBufferCount = sl12::Swapchain::kMaxBuffer;
 
@@ -553,17 +711,24 @@ private:
 	sl12::Texture				resultTexture_;
 	sl12::UnorderedAccessView	resultTextureView_;
 
-	sl12::Buffer			geometryVB_, geometryIB_;
-	sl12::VertexBufferView	geometryVBV_;
-	sl12::IndexBufferView	geometryIBV_;
+	sl12::Texture			imageTexture_;
+	sl12::TextureView		imageTextureView_;
+	sl12::Sampler			imageSampler_;
+
+	sl12::Buffer			geometryVB_, geometryIB_, geometryUVB_;
+	sl12::BufferView		geometryIBV_, geometryUVBV_;
 
 	sl12::BottomAccelerationStructure	bottomAS_;
 	sl12::TopAccelerationStructure		topAS_;
 
-	sl12::Buffer				rayGenCB_;
-	sl12::ConstantBufferView	rayGenCBV_;
+	sl12::Buffer				sceneCBs_[kBufferCount];
+	sl12::ConstantBufferView	sceneCBVs_[kBufferCount];
 
 	sl12::Buffer			rayGenTable_, missTable_, hitGroupTable_;
+
+	DirectX::XMFLOAT4		camPos_ = { 5.0f, 5.0f, -5.0f, 1.0f };
+	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, 0.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
 
 	int		frameIndex_ = 0;
 };	// class SampleApplication
