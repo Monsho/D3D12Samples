@@ -7,6 +7,8 @@ namespace sl12
 
 	namespace
 	{
+		Application* g_AppInst = nullptr;
+
 		// Window Proc
 		LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
@@ -16,6 +18,11 @@ namespace sl12
 			case WM_DESTROY:
 				PostQuitMessage(0);
 				return 0;
+			}
+
+			if (g_AppInst)
+			{
+				g_AppInst->Input(message, wParam, lParam);
 			}
 
 			// Handle any messages the switch statement didn't.
@@ -123,6 +130,7 @@ namespace sl12
 	//--------------------------------------------------
 	int Application::Run()
 	{
+		g_AppInst = this;
 		if (!Initialize())
 		{
 			return -1;
@@ -146,6 +154,7 @@ namespace sl12
 		}
 
 		Finalize();
+		g_AppInst = nullptr;
 
 		return static_cast<char>(msg.wParam);
 	}

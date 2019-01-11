@@ -23,6 +23,7 @@ namespace sl12
 		virtual bool Initialize() = 0;
 		virtual bool Execute() = 0;
 		virtual void Finalize() = 0;
+		virtual int Input(UINT message, WPARAM wParam, LPARAM lParam) { return 0; }
 
 	private:
 

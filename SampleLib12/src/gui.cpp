@@ -183,8 +183,8 @@ namespace sl12
 			stencilWDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 			stencilWDesc.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
 			stencilWDesc.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-			dsDesc.DepthEnable = true;
-			dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+			dsDesc.DepthEnable = (dsFormat != DXGI_FORMAT_UNKNOWN);
+			dsDesc.DepthWriteMask = (dsFormat != DXGI_FORMAT_UNKNOWN) ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
 			dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 			dsDesc.StencilEnable = false;
 			dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
