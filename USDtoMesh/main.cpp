@@ -575,7 +575,7 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	auto stage = pxr::UsdStage::Open(input_filepath);
+	auto stage = pxr::UsdStage::Open(input_filepath, pxr::UsdStage::LoadNone);
 	if (stage == nullptr)
 	{
 		fprintf(stderr, "[ERROR] 無効なUSDファイルです. (%s)\n", input_filepath.c_str());

@@ -45,6 +45,19 @@ uint3 GetTriangleIndices2byte(uint offset)
 	return ret;
 }
 
+uint3 Get16bitIndices(uint primIdx)
+{
+	uint indexOffset = primIdx * 2 * 3;
+	return GetTriangleIndices2byte(indexOffset);
+}
+
+uint3 Get32bitIndices(uint primIdx)
+{
+	uint indexOffset = primIdx * 4 * 3;
+	uint3 ret = Indices.Load3(indexOffset);
+	return ret;
+}
+
 [shader("raygeneration")]
 void RayGenerator()
 {
@@ -73,8 +86,7 @@ void RayGenerator()
 [shader("closesthit")]
 void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
 {
-	uint indexOffset = PrimitiveIndex() * 2 * 3;
-	uint3 indices = GetTriangleIndices2byte(indexOffset);
+	uint3 indices = Get32bitIndices(PrimitiveIndex());
 
 	float2 uvs[3] = {
 		VertexUV[indices.x],

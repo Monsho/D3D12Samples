@@ -14,6 +14,7 @@
 #include "sl12/pipeline_state.h"
 #include "sl12/acceleration_structure.h"
 #include "sl12/file.h"
+#include "sl12/glb_mesh.h"
 
 #include "CompiledShaders/test.lib.hlsl.h"
 
@@ -273,6 +274,7 @@ public:
 		topAS_.Destroy();
 		bottomAS_.Destroy();
 
+		glbMesh_.Destroy();
 		geometryIBV_.Destroy();
 		geometryIB_.Destroy();
 		geometryUVBV_.Destroy();
@@ -442,7 +444,7 @@ private:
 			0.0f, 0.0f,
 			1.0f, 0.0f,
 		};
-		UINT16 indices[] =
+		UINT32 indices[] =
 		{
 			0, 2, 1, 1, 2, 3,
 			4, 6, 5, 5, 6, 7,
@@ -460,7 +462,7 @@ private:
 		{
 			return false;
 		}
-		if (!geometryIB_.Initialize(&device_, sizeof(indices), 0, sl12::BufferUsage::ShaderResource, true, false))
+		if (!geometryIB_.Initialize(&device_, sizeof(indices), sizeof(indices[0]), sl12::BufferUsage::ShaderResource, true, false))
 		{
 			return false;
 		}
@@ -486,6 +488,11 @@ private:
 			return false;
 		}
 
+		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "PreviewSphere.glb"))
+		{
+			return false;
+		}
+
 		return true;
 	}
 
@@ -497,15 +504,25 @@ private:
 
 		// Bottom AS‚Ì¶¬€”õ
 		sl12::GeometryStructureDesc geoDesc{};
+		auto submesh = glbMesh_.GetSubmesh(0);
 		geoDesc.InitializeAsTriangle(
-			&geometryVB_,
-			&geometryIB_,
+			&submesh->GetPositionB(),
+			&submesh->GetIndexB(),
 			nullptr,
-			sizeof(float) * 3,
-			static_cast<UINT>(geometryVB_.GetSize() / (sizeof(float) * 3)),
+			submesh->GetPositionB().GetStride(),
+			static_cast<UINT>(submesh->GetPositionB().GetSize() / submesh->GetPositionB().GetStride()),
 			DXGI_FORMAT_R32G32B32_FLOAT,
-			static_cast<UINT>(geometryIB_.GetSize()) / sizeof(UINT16),
-			DXGI_FORMAT_R16_UINT);
+			static_cast<UINT>(submesh->GetIndexB().GetSize()) / submesh->GetIndexB().GetStride(),
+			DXGI_FORMAT_R32_UINT);
+		//geoDesc.InitializeAsTriangle(
+		//	&geometryVB_,
+		//	&geometryIB_,
+		//	nullptr,
+		//	geometryVB_.GetStride(),
+		//	static_cast<UINT>(geometryVB_.GetSize() / geometryVB_.GetStride()),
+		//	DXGI_FORMAT_R32G32B32_FLOAT,
+		//	static_cast<UINT>(geometryIB_.GetSize()) / geometryIB_.GetStride(),
+		//	DXGI_FORMAT_R32_UINT);
 
 		sl12::StructureInputDesc bottomInput{};
 		if (!bottomInput.InitializeAsBottom(&device_, &geoDesc, 1, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
@@ -645,8 +662,10 @@ private:
 			p += descHandleOffset;
 
 			auto texHandle = imageTextureView_.GetDesc()->GetGpuHandle();
-			auto uvHandle = geometryUVBV_.GetDesc()->GetGpuHandle();
-			auto indexHandle = geometryIBV_.GetDesc()->GetGpuHandle();
+			auto uvHandle = glbMesh_.GetSubmesh(0)->GetTexcoordBV().GetDesc()->GetGpuHandle();
+			auto indexHandle = glbMesh_.GetSubmesh(0)->GetIndexBV().GetDesc()->GetGpuHandle();
+			//auto uvHandle = geometryUVBV_.GetDesc()->GetGpuHandle();
+			//auto indexHandle = geometryIBV_.GetDesc()->GetGpuHandle();
 			auto samHandle = imageSampler_.GetDesc()->GetGpuHandle();
 			memcpy(p, &texHandle, sizeof(texHandle)); p += sizeof(texHandle);
 			memcpy(p, &uvHandle, sizeof(uvHandle)); p += sizeof(uvHandle);
@@ -715,6 +734,7 @@ private:
 	sl12::TextureView		imageTextureView_;
 	sl12::Sampler			imageSampler_;
 
+	sl12::GlbMesh			glbMesh_;
 	sl12::Buffer			geometryVB_, geometryIB_, geometryUVB_;
 	sl12::BufferView		geometryIBV_, geometryUVBV_;
 

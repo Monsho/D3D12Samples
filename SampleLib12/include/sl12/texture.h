@@ -55,6 +55,7 @@ namespace sl12
 		bool Initialize(Device* pDev, const TextureDesc& desc);
 		bool InitializeFromDXImage(Device* pDev, const DirectX::ScratchImage& image, bool isForceSRGB);
 		bool InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, bool isForceSRGB);
+		bool InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, bool isForceSRGB);
 		bool InitializeFromImageBin(Device* pDev, CommandList* pCmdList, const TextureDesc& desc, const void* pImageBin);
 		bool InitializeFromSwapchain(Device* pDev, Swapchain* pSwapchain, int bufferIndex);
 

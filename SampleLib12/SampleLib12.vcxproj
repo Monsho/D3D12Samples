@@ -100,6 +100,7 @@
     <ClInclude Include="include\sl12\device.h" />
     <ClInclude Include="include\sl12\fence.h" />
     <ClInclude Include="include\sl12\file.h" />
+    <ClInclude Include="include\sl12\glb_mesh.h" />
     <ClInclude Include="include\sl12\gui.h" />
     <ClInclude Include="include\sl12\mesh.h" />
     <ClInclude Include="include\sl12\mesh_format.h" />
@@ -130,6 +131,7 @@
     <ClCompile Include="src\descriptor_heap.cpp" />
     <ClCompile Include="src\device.cpp" />
     <ClCompile Include="src\fence.cpp" />
+    <ClCompile Include="src\glb_mesh.cpp" />
     <ClCompile Include="src\gui.cpp" />
     <ClCompile Include="src\mesh.cpp" />
     <ClCompile Include="src\pipeline_state.cpp" />
@@ -172,7 +174,19 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
     </FxCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\rapidjson.temprelease.0.0.2.20\build\native\rapidjson.temprelease.targets" Condition="Exists('..\packages\rapidjson.temprelease.0.0.2.20\build\native\rapidjson.temprelease.targets')" />
+    <Import Project="..\packages\Microsoft.glTF.CPP.1.6.3.1\build\native\Microsoft.glTF.CPP.targets" Condition="Exists('..\packages\Microsoft.glTF.CPP.1.6.3.1\build\native\Microsoft.glTF.CPP.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>このプロジェクトは、このコンピューター上にない NuGet パッケージを参照しています。それらのパッケージをダウンロードするには、[NuGet パッケージの復元] を使用します。詳細については、http://go.microsoft.com/fwlink/?LinkID=322105 を参照してください。見つからないファイルは {0} です。</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\rapidjson.temprelease.0.0.2.20\build\native\rapidjson.temprelease.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\rapidjson.temprelease.0.0.2.20\build\native\rapidjson.temprelease.targets'))" />
+    <Error Condition="!Exists('..\packages\Microsoft.glTF.CPP.1.6.3.1\build\native\Microsoft.glTF.CPP.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.glTF.CPP.1.6.3.1\build\native\Microsoft.glTF.CPP.targets'))" />
+  </Target>
 </Project>

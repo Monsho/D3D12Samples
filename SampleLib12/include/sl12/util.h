@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#define NOMINMAX
+
+#include <stdio.h>
 #include "types.h"
 #include <Windows.h>
 #include <d3d12.h>
@@ -40,6 +43,17 @@ namespace sl12
 		}
 	}
 
+	inline void ConsolePrint(const char* format, ...)
+	{
+		va_list arg;
+
+		char tsv[4096];
+		va_start(arg, format);
+		vsprintf_s(tsv, format, arg);
+		va_end(arg);
+
+		OutputDebugStringA(tsv);
+	}
 }	// namespace sl12
 
 //	EOF

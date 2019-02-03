@@ -126,6 +126,9 @@
     <ClInclude Include="include\sl12\acceleration_structure.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="include\sl12\glb_mesh.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\swapchain.cpp">
@@ -203,6 +206,9 @@
     <ClCompile Include="src\acceleration_structure.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\glb_mesh.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="src\shader\VSGui.hlsl">
@@ -211,5 +217,8 @@
     <FxCompile Include="src\shader\PSGui.hlsl">
       <Filter>ソース ファイル\shader</Filter>
     </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

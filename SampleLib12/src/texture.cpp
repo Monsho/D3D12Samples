@@ -228,6 +228,53 @@ namespace sl12
 	}
 
 	//----
+	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, bool isForceSRGB)
+	{
+		if (!pDev)
+		{
+			return false;
+		}
+		if (!pPngBin || !size)
+		{
+			return false;
+		}
+
+		// TGAファイルフォーマットからイメージリソースを作成
+		DirectX::ScratchImage image;
+		auto hr = DirectX::LoadFromWICMemory(pPngBin, size, DirectX::WIC_FLAGS_NONE, nullptr, image);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!InitializeFromDXImage(pDev, image, isForceSRGB))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		pCmdList->Reset();
+		if (!UpdateImage(pDev, pCmdList, image, &pSrcImage))
+		{
+			return false;
+		}
+		pCmdList->Close();
+		pCmdList->Execute();
+
+		Fence fence;
+		fence.Initialize(pDev);
+		fence.Signal(pCmdList->GetParentQueue());
+		fence.WaitSignal();
+
+		fence.Destroy();
+		SafeRelease(pSrcImage);
+
+		return true;
+	}
+
+	//----
 	bool Texture::InitializeFromImageBin(Device* pDev, CommandList* pCmdList, const TextureDesc& desc, const void* pImageBin)
 	{
 		if (!pDev)

@@ -81,14 +81,14 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\usd\include;C:\usd\include\boost-1_61;C:\Python27\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files\USD\include;C:\Program Files\USD\include\boost-1_65_1;C:\Python27\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;TF_NO_GNU_EXT;BUILD_OPTLEVEL_OPT;BUILD_COMPONENT_SRC_PREFIX="";NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>C:\usd\lib;C:\Python27\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>arch.lib;gf.lib;tf.lib;kind.lib;sdf.lib;plug.lib;js.lib;work.lib;tracelite.lib;vt.lib;pcp.lib;boost_python-vc140-mt-1_61.lib;python27.lib;usd.lib;usdGeom.lib;usdSkel.lib;usdShade.lib;usdUtils.lib;usdRi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Program Files\USD\lib;C:\Python27\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>arch.lib;gf.lib;tf.lib;kind.lib;sdf.lib;plug.lib;js.lib;work.lib;trace.lib;vt.lib;pcp.lib;boost_python-vc141-mt-1_65_1.lib;python27.lib;usd.lib;usdGeom.lib;usdSkel.lib;usdShade.lib;usdUtils.lib;usdRi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -111,14 +111,14 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\usd\include;C:\usd\include\boost-1_61;C:\Python27\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files\USD\include;C:\Program Files\USD\include\boost-1_65_1;C:\Python27\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;TF_NO_GNU_EXT;BUILD_OPTLEVEL_OPT;BUILD_COMPONENT_SRC_PREFIX="";NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>C:\usd\lib;C:\Python27\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>arch.lib;gf.lib;tf.lib;kind.lib;sdf.lib;plug.lib;js.lib;work.lib;tracelite.lib;vt.lib;pcp.lib;boost_python-vc140-mt-1_61.lib;python27.lib;usd.lib;usdGeom.lib;usdSkel.lib;usdShade.lib;usdUtils.lib;usdRi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Program Files\USD\lib;C:\Python27\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>arch.lib;gf.lib;tf.lib;kind.lib;sdf.lib;plug.lib;js.lib;work.lib;trace.lib;vt.lib;pcp.lib;boost_python-vc141-mt-1_65_1.lib;python27.lib;usd.lib;usdGeom.lib;usdSkel.lib;usdShade.lib;usdUtils.lib;usdRi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
