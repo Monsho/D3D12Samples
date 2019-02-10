@@ -113,6 +113,7 @@
     <ClInclude Include="include\sl12\swapchain.h" />
     <ClInclude Include="include\sl12\texture.h" />
     <ClInclude Include="include\sl12\texture_view.h" />
+    <ClInclude Include="include\sl12\timestamp.h" />
     <ClInclude Include="include\sl12\types.h" />
     <ClInclude Include="include\sl12\util.h" />
   </ItemGroup>
@@ -143,6 +144,7 @@
     <ClCompile Include="src\swapchain.cpp" />
     <ClCompile Include="src\texture.cpp" />
     <ClCompile Include="src\texture_view.cpp" />
+    <ClCompile Include="src\timestamp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="src\shader\PSGui.hlsl">

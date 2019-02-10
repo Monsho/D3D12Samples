@@ -106,7 +106,12 @@ namespace sl12
 		{
 			return materialIndex_;
 		}
-		
+
+		int GetIndicesCount() const
+		{
+			return indicesCount_;
+		}
+
 	private:
 		bool Initialize(Device* pDev, const Microsoft::glTF::Document& doc, const Microsoft::glTF::MeshPrimitive& mesh, Microsoft::glTF::GLTFResourceReader& resReader);
 		void Destroy();
@@ -118,6 +123,7 @@ namespace sl12
 		BufferBundle<IndexBufferView>	indexBuffer_;
 
 		int								materialIndex_ = -1;
+		int								indicesCount_ = 0;
 	};	// class GlbSubmesh
 
 	class GlbMaterial

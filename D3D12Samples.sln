@@ -73,6 +73,12 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sample011", "Sample011\Samp
 		{027478E8-F042-4016-BAA7-CDD455A319EA} = {027478E8-F042-4016-BAA7-CDD455A319EA}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sample012", "Sample012\Sample012.vcxproj", "{E7BA395F-5CDD-4452-8428-67012B9C609A}"
+	ProjectSection(ProjectDependencies) = postProject
+		{371B9FA9-4C90-4AC6-A123-ACED756D6C77} = {371B9FA9-4C90-4AC6-A123-ACED756D6C77}
+		{027478E8-F042-4016-BAA7-CDD455A319EA} = {027478E8-F042-4016-BAA7-CDD455A319EA}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -158,6 +164,12 @@ Global
 		{678DF1CF-E696-4132-B807-FFF626CBC90F}.Profile|x64.Build.0 = Release|x64
 		{678DF1CF-E696-4132-B807-FFF626CBC90F}.Release|x64.ActiveCfg = Release|x64
 		{678DF1CF-E696-4132-B807-FFF626CBC90F}.Release|x64.Build.0 = Release|x64
+		{E7BA395F-5CDD-4452-8428-67012B9C609A}.Debug|x64.ActiveCfg = Debug|x64
+		{E7BA395F-5CDD-4452-8428-67012B9C609A}.Debug|x64.Build.0 = Debug|x64
+		{E7BA395F-5CDD-4452-8428-67012B9C609A}.Profile|x64.ActiveCfg = Release|x64
+		{E7BA395F-5CDD-4452-8428-67012B9C609A}.Profile|x64.Build.0 = Release|x64
+		{E7BA395F-5CDD-4452-8428-67012B9C609A}.Release|x64.ActiveCfg = Release|x64
+		{E7BA395F-5CDD-4452-8428-67012B9C609A}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

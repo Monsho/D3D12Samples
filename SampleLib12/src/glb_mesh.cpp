@@ -69,6 +69,8 @@ namespace sl12
 			auto p = indexBuffer_.buffer_.Map(nullptr);
 			memcpy(p, index_data.data(), index_count * sizeof(u32));
 			indexBuffer_.buffer_.Unmap();
+
+			indicesCount_ = index_count;
 		}
 
 		// 頂点バッファ作成
