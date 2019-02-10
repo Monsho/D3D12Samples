@@ -127,7 +127,8 @@ void RayGenerator()
 	float depth = DepthTex[index].r;
 
 	// ピクセル中心座標をクリップ空間座標に変換
-	float2 xy = (float2)index + offset;
+	float2 xy = (float2)index;
+	//float2 xy = (float2)index + offset;
 	float2 clipSpacePos = xy / float2(DispatchRaysDimensions().xy) * float2(2, -2) + float2(-1, 1);
 
 	// クリップ空間座標をワールド空間座標に変換
