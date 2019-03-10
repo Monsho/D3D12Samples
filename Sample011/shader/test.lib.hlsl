@@ -12,11 +12,12 @@ struct HitData
 {
 	float4	color;
 	int		refl_count;
+	float	minT;
 };
 
 #define TMax			10000.0
 #define MaxReflCount	8
-#define MaxSample		512
+#define MaxSample		2048
 #define	PI				3.14159265358979
 
 // global
@@ -188,7 +189,7 @@ void RayGenerator()
 
 	// Let's レイトレ！
 	RayDesc ray = { origin, 0.0, direction, TMax };
-	HitData payload = { float4(0, 0, 0, 0), 0 };
+	HitData payload = { float4(0, 0, 0, 0), 0, 0 };
 	TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 2, 0, ray, payload);
 
 	// 前回までの結果とブレンド
@@ -214,9 +215,11 @@ void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriang
 		attr.barycentrics.y * (VertexNormal[indices.z] - VertexNormal[indices.x]);
 	normal = normalize(normal);
 
+	payload.minT = RayTCurrent();
 	if (payload.refl_count < MaxReflCount)
 	{
-		uint i = cbScene.loopCount % MaxSample;
+		float rnd = GetRandom();
+		uint i = (cbScene.loopCount + uint(rnd * MaxSample)) % MaxSample;
 		float2 ham = Hammersley2D(i, MaxSample);
 		float3 localDir = HemisphereSampleUniform(ham.x, ham.y);
 		float4 qRot = QuatFromTwoVector(float3(0, 0, 1), normal);
@@ -225,9 +228,9 @@ void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriang
 		float3 attenuation = texImage.SampleLevel(samImage, uv, 0.0).rgb;
 
 		// 反射ベクトルに対してレイトレ
-		float3 origin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-		RayDesc ray = { origin, 1e-2, traceDir, TMax };
-		HitData refl_payload = { float4(0, 0, 0, 0), payload.refl_count + 1 };
+		float3 origin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent() + normal * 0.01;
+		RayDesc ray = { origin, 0, traceDir, TMax };
+		HitData refl_payload = { float4(0, 0, 0, 0), payload.refl_count + 1, 0 };
 		TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 2, 0, ray, refl_payload);
 
 		// シャドウ計算用のレイトレ
@@ -235,11 +238,13 @@ void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriang
 		qRot = QuatFromTwoVector(float3(0, 0, 1), -cbScene.lightDir.xyz);
 		traceDir = QuatRotVector(localDir, qRot);
 		RayDesc shadow_ray = { origin, 0.0, traceDir, TMax };
-		HitData shadow_payload = { float4(0, 0, 0, 0), payload.refl_count + 1 };
+		HitData shadow_payload = { float4(0, 0, 0, 0), payload.refl_count + 1, 0 };
 		TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 1, 2, 1, shadow_ray, shadow_payload);
 
 		// 直接光と間接光の結果を合算
-		payload.color.rgb = (saturate(dot(normal, -cbScene.lightDir.xyz)) * cbScene.lightColor.rgb * shadow_payload.color.rgb + refl_payload.color.rgb) * attenuation;
+		float l = 1;
+		//float l = refl_payload.minT < 0.0 ? 1.0 : refl_payload.minT * 1000.0;
+		payload.color.rgb = (saturate(dot(normal, -cbScene.lightDir.xyz)) * cbScene.lightColor.rgb * shadow_payload.color.rgb + refl_payload.color.rgb * (1.0 / pow(l, 16))) * attenuation;
 	}
 	else
 	{
@@ -258,6 +263,7 @@ void MissProcessor(inout HitData payload : SV_RayPayload)
 {
 	float3 col = SkyColor(WorldRayDirection()) * cbScene.skyPower;
 	payload.color = float4(col, 1.0);
+	payload.minT = -1.0;
 }
 
 [shader("miss")]

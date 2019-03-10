@@ -54,6 +54,9 @@ namespace sl12
 
 		//nonCoherentAtomSize_ = owner.GetPhysicalDevice().getProperties().limits.nonCoherentAtomSize;
 
+		// imguiのコンテキスト作成
+		ImGui::CreateContext();
+
 		// コールバックの登録
 		ImGuiIO& io = ImGui::GetIO();
 		io.RenderDrawListsFn = &Gui::RenderDrawList;
@@ -266,6 +269,8 @@ namespace sl12
 
 			sl12::SafeRelease(pRootSig_);
 			sl12::SafeRelease(pPipelineState_);
+
+			ImGui::DestroyContext();
 
 			pOwner_ = nullptr;
 		}

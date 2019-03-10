@@ -121,6 +121,7 @@
     <ClCompile Include="..\External\imgui\imgui.cpp" />
     <ClCompile Include="..\External\imgui\imgui_demo.cpp" />
     <ClCompile Include="..\External\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\External\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\acceleration_structure.cpp" />
     <ClCompile Include="src\application.cpp" />
     <ClCompile Include="src\buffer.cpp" />

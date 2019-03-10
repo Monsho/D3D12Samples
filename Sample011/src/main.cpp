@@ -32,7 +32,7 @@ namespace
 {
 	static const int	kScreenWidth = 1280;
 	static const int	kScreenHeight = 720;
-	static const int	MaxSample = 512;
+	static const int	MaxSample = 2048;
 
 	static LPCWSTR		kRayGenName = L"RayGenerator";
 	static LPCWSTR		kClosestHitName = L"ClosestHitProcessor";
@@ -358,7 +358,7 @@ public:
 				isClearTarget_ = true;
 				loopCount_ = 0;
 			}
-			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
+			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 100.0f))
 			{
 				isClearTarget_ = true;
 				loopCount_ = 0;
@@ -608,7 +608,7 @@ private:
 
 		// シェーダコンフィグサブオブジェクト
 		// ヒットシェーダ、ミスシェーダの引数となるPayload, IntersectionAttributesの最大サイズを設定します.
-		dxrDesc.AddShaderConfig(sizeof(float) * 4 + sizeof(sl12::u32), sizeof(float) * 2);
+		dxrDesc.AddShaderConfig(sizeof(float) * 4 + sizeof(sl12::u32) + sizeof(float), sizeof(float) * 2);
 
 		// ローカルルートシグネチャサブオブジェクト
 		// シェーダレコードごとに設定されるルートシグネチャを設定します.
@@ -644,7 +644,7 @@ private:
 	bool CreateGeometry()
 	{
 #if !defined(USE_MEET_MAT)
-		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "sponza.glb"))
+		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "monsho.glb"))
 #else
 		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "MeetMat.glb"))
 #endif
@@ -887,7 +887,7 @@ private:
 		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
 		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
 
-		DirectX::XMFLOAT4 lightDir = { 0.1f, -1.0f, 0.1f, 0.0f };
+		DirectX::XMFLOAT4 lightDir = { 0.0f, -1.0f, 0.0f, 0.0f };
 		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
 
 		DirectX::XMFLOAT4 lightColor = { lightColor_[0] * lightPower_, lightColor_[1] * lightPower_, lightColor_[2] * lightPower_, 1.0f };
@@ -944,8 +944,8 @@ private:
 	sl12::InputData			inputData_{};
 
 #if !defined(USE_MEET_MAT)
-	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
-	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		camPos_ = { -30.0f, 5.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, 0.0f, 0.0f, 1.0f };
 #else
 	DirectX::XMFLOAT4		camPos_ = { -5.0f, 3.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, 0.0f, 0.0f, 1.0f };
