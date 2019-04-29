@@ -18,6 +18,7 @@
 #include "sl12/shader.h"
 #include "sl12/gui.h"
 #include "sl12/glb_mesh.h"
+#include "sl12/timestamp.h"
 
 #include "CompiledShaders/test.lib.hlsl.h"
 #include "CompiledShaders/copy.vv.hlsl.h"
@@ -37,6 +38,7 @@ namespace
 	static LPCWSTR		kRayGenName = L"RayGenerator";
 	static LPCWSTR		kClosestHitName = L"ClosestHitProcessor";
 	static LPCWSTR		kClosestHitShadowName = L"ClosestHitShadowProcessor";
+	static LPCWSTR		kAnyHitName = L"AnyHitProcessor";
 	static LPCWSTR		kMissName = L"MissProcessor";
 	static LPCWSTR		kMissShadowName = L"MissShadowProcessor";
 	static LPCWSTR		kHitGroupName = L"HitGroup";
@@ -54,6 +56,7 @@ class SampleApplication
 		DirectX::XMFLOAT4	lightColor;
 		float				skyPower;
 		uint32_t			loopCount;
+		uint32_t			maxBounces;
 	};
 
 	struct Sphere
@@ -112,10 +115,10 @@ public:
 		// ルートシグネチャの初期化
 		{
 			D3D12_DESCRIPTOR_RANGE ranges[] = {
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },		// RandomTable
+				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },		// RenderTarget
+				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },		// RandomSeed
+				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },		// cbScene
 			};
 
 			D3D12_ROOT_PARAMETER params[_countof(ranges) + 1];
@@ -126,6 +129,7 @@ public:
 				params[i].DescriptorTable.NumDescriptorRanges = 1;
 				params[i].DescriptorTable.pDescriptorRanges = &ranges[i];
 			}
+			// SceneAS
 			params[_countof(ranges)].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
 			params[_countof(ranges)].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 			params[_countof(ranges)].Descriptor.ShaderRegister = 0;
@@ -145,11 +149,13 @@ public:
 		}
 		{
 			sl12::RootParameter params[] = {
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 2),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 3),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 4),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 5),
-				sl12::RootParameter(sl12::RootParameterType::Sampler, sl12::ShaderVisibility::All, 0),
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 2),	// Indices
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 3),	// VertexPosition
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 4),	// VertexNormal
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 5),	// VertexUV
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 6),	// texImage
+				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 7),	// texNormal
+				sl12::RootParameter(sl12::RootParameterType::Sampler, sl12::ShaderVisibility::All, 0),			// samImage
 			};
 			sl12::RootSignatureDesc desc;
 			desc.pParameters = params;
@@ -333,6 +339,15 @@ public:
 			return false;
 		}
 
+		// タイムスタンプクエリとバッファ
+		for (int i = 0; i < ARRAYSIZE(gpuTimestamp_); ++i)
+		{
+			if (!gpuTimestamp_[i].Initialize(&device_, 5))
+			{
+				return false;
+			}
+		}
+
 		return true;
 	}
 
@@ -341,6 +356,7 @@ public:
 		device_.WaitPresent();
 
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
+		auto prevFrameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 2) % sl12::Swapchain::kMaxBuffer;
 		auto&& cmdList = cmdLists_[frameIndex];
 		auto&& d3dCmdList = cmdList.GetCommandList();
 		auto&& dxrCmdList = cmdList.GetDxrCommandList();
@@ -373,7 +389,26 @@ public:
 				isClearTarget_ = true;
 				loopCount_ = 0;
 			}
+			if (ImGui::SliderInt("Max Bounces", &maxBounces_, 1, 8))
+			{
+				isClearTarget_ = true;
+				loopCount_ = 0;
+			}
+
+			uint64_t timestamp[5];
+			gpuTimestamp_[prevFrameIndex].GetTimestamp(0, 5, timestamp);
+			uint64_t all_time = timestamp[3] - timestamp[0];
+			uint64_t ray_time = timestamp[2] - timestamp[1];
+			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
+			float all_ms = (float)all_time / ((float)freq / 1000.0f);
+			float ray_ms = (float)ray_time / ((float)freq / 1000.0f);
+
+			ImGui::Text("All GPU: %f (ms)", all_ms);
+			ImGui::Text("RayTracing: %f (ms)", ray_ms);
 		}
+
+		gpuTimestamp_[frameIndex].Reset();
+		gpuTimestamp_[frameIndex].Query(&cmdList);
 
 		auto&& swapchain = device_.GetSwapchain();
 		cmdList.TransitionBarrier(swapchain.GetCurrentTexture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -397,6 +432,8 @@ public:
 			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
 		};
 		d3dCmdList->SetDescriptorHeaps(ARRAYSIZE(pDescHeaps), pDescHeaps);
+
+		gpuTimestamp_[frameIndex].Query(&cmdList);
 
 		if (loopCount_ < MaxSample)
 		{
@@ -428,6 +465,8 @@ public:
 
 			cmdList.UAVBarrier(&resultTexture_);
 		}
+
+		gpuTimestamp_[frameIndex].Query(&cmdList);
 
 		// リソースバリア
 		cmdList.TransitionBarrier(&resultTexture_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -471,6 +510,9 @@ public:
 		cmdList.TransitionBarrier(swapchain.GetCurrentTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 		cmdList.TransitionBarrier(&resultTexture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
+		gpuTimestamp_[frameIndex].Query(&cmdList);
+		gpuTimestamp_[frameIndex].Resolve(&cmdList);
+
 		// コマンド終了と実行
 		cmdList.Close();
 		cmdList.Execute();
@@ -490,6 +532,8 @@ public:
 
 		for (auto&& v : sceneCBVs_) v.Destroy();
 		for (auto&& v : sceneCBs_) v.Destroy();
+
+		for (auto&& v : gpuTimestamp_) v.Destroy();
 
 		gui_.Destroy();
 
@@ -594,7 +638,7 @@ private:
 		D3D12_EXPORT_DESC libExport[] = {
 			{ kRayGenName,				nullptr, D3D12_EXPORT_FLAG_NONE },
 			{ kClosestHitName,			nullptr, D3D12_EXPORT_FLAG_NONE },
-			{ kClosestHitShadowName,	nullptr, D3D12_EXPORT_FLAG_NONE },
+			{ kAnyHitName,				nullptr, D3D12_EXPORT_FLAG_NONE },
 			{ kMissName,				nullptr, D3D12_EXPORT_FLAG_NONE },
 			{ kMissShadowName,			nullptr, D3D12_EXPORT_FLAG_NONE },
 		};
@@ -603,12 +647,16 @@ private:
 		// ヒットグループサブオブジェクト
 		// Intersection, AnyHit, ClosestHitの組み合わせを定義し、ヒットグループ名でまとめるサブオブジェクトです.
 		// マテリアルごとや用途ごと(マテリアル、シャドウなど)にサブオブジェクトを用意します.
-		dxrDesc.AddHitGroup(kHitGroupName, true, nullptr, kClosestHitName, nullptr);
-		dxrDesc.AddHitGroup(kHitGroupShadowName, true, nullptr, kClosestHitShadowName, nullptr);
+		dxrDesc.AddHitGroup(kHitGroupName, true, kAnyHitName, kClosestHitName, nullptr);
+		dxrDesc.AddHitGroup(kHitGroupShadowName, true, kAnyHitName, nullptr, nullptr);
 
 		// シェーダコンフィグサブオブジェクト
 		// ヒットシェーダ、ミスシェーダの引数となるPayload, IntersectionAttributesの最大サイズを設定します.
+#if 0
 		dxrDesc.AddShaderConfig(sizeof(float) * 4 + sizeof(sl12::u32) + sizeof(float), sizeof(float) * 2);
+#else
+		dxrDesc.AddShaderConfig(sizeof(float) * 4 + sizeof(float) * 3 * 3 + sizeof(sl12::u32), sizeof(float) * 2);
+#endif
 
 		// ローカルルートシグネチャサブオブジェクト
 		// シェーダレコードごとに設定されるルートシグネチャを設定します.
@@ -630,7 +678,7 @@ private:
 
 		// レイトレースコンフィグサブオブジェクト
 		// TraceRay()を行うことができる最大深度を指定するサブオブジェクトです.
-		dxrDesc.AddRaytracinConfig(31);
+		dxrDesc.AddRaytracinConfig(2);
 
 		// PSO生成
 		if (!stateObject_.Initialize(&device_, dxrDesc))
@@ -644,7 +692,7 @@ private:
 	bool CreateGeometry()
 	{
 #if !defined(USE_MEET_MAT)
-		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "monsho.glb"))
+		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "sponza.glb"))
 #else
 		if (!glbMesh_.Initialize(&device_, &cmdLists_[0], "data/", "MeetMat.glb"))
 #endif
@@ -769,6 +817,7 @@ private:
 				cb->lightColor = lightColor;
 				cb->skyPower = skyPower_;
 				cb->loopCount = 0;
+				cb->maxBounces = maxBounces_;
 				sceneCBs_[i].Unmap();
 
 				if (!sceneCBVs_[i].Initialize(&device_, &sceneCBs_[i]))
@@ -812,7 +861,7 @@ private:
 		// シェーダレコードのサイズはシェーダテーブル内で同一でなければならないため、同一シェーダテーブル内で最大のレコードサイズを指定すべきです.
 		// 本サンプルではすべてのシェーダレコードについてサイズが同一となります.
 		UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 5, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 7, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 		shaderRecordSize_ = shaderRecordSize;
 
 		auto GenShaderTable = [&](void** shaderIds, int shaderIdsCount, sl12::Buffer& buffer, int count = 1)
@@ -836,16 +885,21 @@ private:
 					auto submesh = glbMesh_.GetSubmesh(i);
 					auto material = glbMesh_.GetMaterial(submesh->GetMaterialIndex());
 					auto texView = glbMesh_.GetTextureView(material->GetTexBaseColorIndex());
+					auto texNView = glbMesh_.GetTextureView(material->GetTexNormalIndex());
 
 					auto indexHandle = submesh->GetIndexBV().GetDesc()->GetGpuHandle();
+					auto posHandle = submesh->GetPositionBV().GetDesc()->GetGpuHandle();
 					auto normalHandle = submesh->GetNormalBV().GetDesc()->GetGpuHandle();
 					auto uvHandle = submesh->GetTexcoordBV().GetDesc()->GetGpuHandle();
 					auto texHandle = texView->GetDesc()->GetGpuHandle();
+					auto texNHandle = texNView->GetDesc()->GetGpuHandle();
 					auto samHandle = imageSampler_.GetDesc()->GetGpuHandle();
 					memcpy(p, &indexHandle, sizeof(indexHandle)); p += sizeof(indexHandle);
+					memcpy(p, &posHandle, sizeof(posHandle)); p += sizeof(posHandle);
 					memcpy(p, &normalHandle, sizeof(normalHandle)); p += sizeof(normalHandle);
 					memcpy(p, &uvHandle, sizeof(uvHandle)); p += sizeof(uvHandle);
 					memcpy(p, &texHandle, sizeof(texHandle)); p += sizeof(texHandle);
+					memcpy(p, &texNHandle, sizeof(texNHandle)); p += sizeof(texNHandle);
 					memcpy(p, &samHandle, sizeof(samHandle)); p += sizeof(samHandle);
 
 					p = start + shaderRecordSize;
@@ -899,6 +953,7 @@ private:
 		cb->lightColor = lightColor;
 		cb->skyPower = skyPower_;
 		cb->loopCount = loopCount_++;
+		cb->maxBounces = maxBounces_;
 		sceneCBs_[frameIndex].Unmap();
 	}
 
@@ -943,9 +998,11 @@ private:
 	sl12::Gui				gui_;
 	sl12::InputData			inputData_{};
 
+	sl12::Timestamp			gpuTimestamp_[sl12::Swapchain::kMaxBuffer];
+
 #if !defined(USE_MEET_MAT)
-	DirectX::XMFLOAT4		camPos_ = { -30.0f, 5.0f, 0.0f, 1.0f };
-	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, 0.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };
 #else
 	DirectX::XMFLOAT4		camPos_ = { -5.0f, 3.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -955,6 +1012,7 @@ private:
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
 	float					lightPower_ = 1.0f;
 	uint32_t				loopCount_ = 0;
+	int						maxBounces_ = 4;
 	float					camRotAngle_ = 0.0f;
 	bool					isClearTarget_ = true;
 

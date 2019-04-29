@@ -6,14 +6,26 @@ struct SceneCB
 	float4		lightColor;
 	float		skyPower;
 	uint		loopCount;
+	uint		maxBounces;
 };
 
+#if 0
 struct HitData
 {
 	float4	color;
 	int		refl_count;
 	float	minT;
 };
+#else
+struct HitData
+{
+	float4	material_color;
+	float3	material_normal;
+	float3	next_ray_origin;
+	float3	next_ray_dir;
+	uint	is_hit;
+};
+#endif
 
 #define TMax			10000.0
 #define MaxReflCount	8
@@ -29,9 +41,11 @@ ConstantBuffer<SceneCB>				cbScene			: register(b0);
 
 // local
 ByteAddressBuffer					Indices			: register(t2);
-StructuredBuffer<float3>			VertexNormal	: register(t3);
-StructuredBuffer<float2>			VertexUV		: register(t4);
-Texture2D							texImage		: register(t5);
+StructuredBuffer<float3>			VertexPosition	: register(t3);
+StructuredBuffer<float3>			VertexNormal	: register(t4);
+StructuredBuffer<float2>			VertexUV		: register(t5);
+Texture2D							texImage		: register(t6);
+Texture2D							texNormal		: register(t7);
 SamplerState						samImage		: register(s0);
 
 
@@ -169,6 +183,22 @@ float3 Reflect(float3 v, float3 n)
 	return v - dot(v, n) * n * 2.0;
 }
 
+void CalcTangentSpace(float3 pos0, float3 pos1, float3 pos2, float2 uv0, float2 uv1, float2 uv2, out float3 T, out float3 B)
+{
+	float3 q1 = pos1 - pos0;
+	float3 q2 = pos2 - pos0;
+	float2 st1 = uv1 - uv0;
+	float2 st2 = uv2 - uv0;
+	float div = 1.0 / (st1.x * st2.y - st2.x * st1.y);
+	float2 t = float2(st2.y, -st1.y) * div;
+	float2 s = float2(-st2.x, st1.x) * div;
+	T = t.x * q1 + t.y * q2;
+	B = s.x * q1 + s.y * q2;
+	T = normalize(T);
+	B = normalize(B);
+}
+
+#if 0
 [shader("raygeneration")]
 void RayGenerator()
 {
@@ -239,7 +269,7 @@ void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriang
 		traceDir = QuatRotVector(localDir, qRot);
 		RayDesc shadow_ray = { origin, 0.0, traceDir, TMax };
 		HitData shadow_payload = { float4(0, 0, 0, 0), payload.refl_count + 1, 0 };
-		TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 1, 2, 1, shadow_ray, shadow_payload);
+		TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 1, 2, 1, shadow_ray, shadow_payload);
 
 		// 直接光と間接光の結果を合算
 		float l = 1;
@@ -271,5 +301,154 @@ void MissShadowProcessor(inout HitData payload : SV_RayPayload)
 {
 	payload.color = (1.0).xxxx;
 }
+
+#else
+
+[shader("raygeneration")]
+void RayGenerator()
+{
+	float2 offset = { GetRandom(), GetRandom() };
+
+	// ピクセル中心座標をクリップ空間座標に変換
+	uint2 index = DispatchRaysIndex().xy;
+	float2 xy = (float2)index + offset;
+	float2 clipSpacePos = xy / float2(DispatchRaysDimensions().xy) * float2(2, -2) + float2(-1, 1);
+
+	// クリップ空間座標をワールド空間座標に変換
+	float4 worldPos = mul(cbScene.mtxProjToWorld, float4(clipSpacePos, 1, 1));
+
+	// ワールド空間座標とカメラ位置からレイを生成
+	worldPos.xyz /= worldPos.w;
+	float3 origin = cbScene.camPos.xyz;
+	float3 direction = normalize(worldPos.xyz - origin);
+
+	// Let's レイトレ！
+	RayDesc ray = { origin, 0.0, direction, TMax };
+	HitData payload;
+	float3 Irradiance = (0.0).xxx;
+	float3 Radiance = (1.0).xxx;
+	for (uint i = 0; i < cbScene.maxBounces; ++i)
+	{
+		// マテリアルに対するレイトレ
+		TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 2, 0, ray, payload);
+
+		if (payload.is_hit)
+		{
+			// シャドウ計算用のレイトレ
+			float rnd = GetRandom();
+			uint i = (cbScene.loopCount + uint(rnd * MaxSample)) % MaxSample;
+			float2 ham = Hammersley2D(i, MaxSample);
+			float3 localDir = HemisphereSampleCos(ham.x * 1e-4, ham.y);
+			float4 qRot = QuatFromTwoVector(float3(0, 0, 1), -cbScene.lightDir.xyz);
+			float3 traceDir = QuatRotVector(localDir, qRot);
+			RayDesc shadow_ray = { payload.next_ray_origin, 0.0, traceDir, TMax };
+			HitData shadow_payload;
+			shadow_payload.material_color = (0.0).xxxx;
+			TraceRay(Scene, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 1, 2, 1, shadow_ray, shadow_payload);
+
+			// マテリアル計算
+			Radiance *= payload.material_color.rgb;
+			float3 R_direct = saturate(dot(payload.material_normal, -cbScene.lightDir.xyz)) * cbScene.lightColor.rgb * shadow_payload.material_color.rgb * Radiance;
+			Irradiance += R_direct;
+
+			RayDesc next_ray = { payload.next_ray_origin, 0.0, payload.next_ray_dir, TMax };
+			ray = next_ray;
+		}
+		else
+		{
+			Radiance *= payload.material_color.rgb;
+			Irradiance += Radiance;
+			break;
+		}
+	}
+
+	// 前回までの結果とブレンド
+	float4 prev = RenderTarget[index] * float(cbScene.loopCount);
+	RenderTarget[index] = (prev + float4(Irradiance, 1)) / float(cbScene.loopCount + 1);
+}
+
+[shader("closesthit")]
+void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
+{
+	uint3 indices = Get32bitIndices(PrimitiveIndex());
+
+	float3 poss[3] = {
+		VertexPosition[indices.x],
+		VertexPosition[indices.y],
+		VertexPosition[indices.z]
+	};
+	float2 uvs[3] = {
+		VertexUV[indices.x],
+		VertexUV[indices.y],
+		VertexUV[indices.z]
+	};
+	float2 uv = uvs[0] +
+		attr.barycentrics.x * (uvs[1] - uvs[0]) +
+		attr.barycentrics.y * (uvs[2] - uvs[0]);
+	float3 normal = VertexNormal[indices.x] +
+		attr.barycentrics.x * (VertexNormal[indices.y] - VertexNormal[indices.x]) +
+		attr.barycentrics.y * (VertexNormal[indices.z] - VertexNormal[indices.x]);
+	normal = normalize(normal);
+	float3 tangent, binormal;
+	CalcTangentSpace(poss[0], poss[1], poss[2], uvs[0], uvs[1], uvs[2], tangent, binormal);
+
+	float3 normalTS = texNormal.SampleLevel(samImage, uv, 0.0).rgb * 2.0 - 1.0;
+	float3 normalWS = tangent * normalTS.x + binormal * normalTS.y + normal * normalTS.z;
+	normal = normalize(normalWS);
+
+	float minT = RayTCurrent();
+	float rnd = GetRandom();
+	uint i = (cbScene.loopCount + uint(rnd * MaxSample)) % MaxSample;
+	float2 ham = Hammersley2D(i, MaxSample);
+	float3 localDir = HemisphereSampleUniform(ham.x, ham.y);
+	float4 qRot = QuatFromTwoVector(float3(0, 0, 1), normal);
+	float3 traceDir = QuatRotVector(localDir, qRot);
+
+	payload.material_normal = normal;
+	payload.material_color = texImage.SampleLevel(samImage, uv, 0.0);
+
+	// 反射ベクトルを計算
+	payload.next_ray_origin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent() + normal * 0.01;
+	payload.next_ray_dir = traceDir;
+
+	payload.is_hit = 1;
+}
+
+[shader("anyhit")]
+void AnyHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
+{
+	uint3 indices = Get32bitIndices(PrimitiveIndex());
+
+	float2 uvs[3] = {
+		VertexUV[indices.x],
+		VertexUV[indices.y],
+		VertexUV[indices.z]
+	};
+	float2 uv = uvs[0] +
+		attr.barycentrics.x * (uvs[1] - uvs[0]) +
+		attr.barycentrics.y * (uvs[2] - uvs[0]);
+
+	float opacity = texImage.SampleLevel(samImage, uv, 0.0).a;
+	if (opacity < 0.33)
+	{
+		IgnoreHit();
+	}
+}
+
+[shader("miss")]
+void MissProcessor(inout HitData payload : SV_RayPayload)
+{
+	float3 col = SkyColor(WorldRayDirection()) * cbScene.skyPower;
+	payload.material_color = float4(col, 1);
+	payload.is_hit = 0;
+}
+
+[shader("miss")]
+void MissShadowProcessor(inout HitData payload : SV_RayPayload)
+{
+	payload.material_color = (1.0).xxxx;
+}
+#endif
+
 
 // EOF
