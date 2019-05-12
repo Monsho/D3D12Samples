@@ -6,7 +6,7 @@
   <ItemDefinitionGroup>
     <Link>
       <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)External\DirectXTex\DirectXTex\Bin\Desktop_2015_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
       <AdditionalIncludeDirectories>$(SolutionDir)External\DirectXTex\DirectXTex;$(SolutionDir)External\imgui;$(SolutionDir)SampleLib12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

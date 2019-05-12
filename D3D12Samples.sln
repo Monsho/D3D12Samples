@@ -79,6 +79,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sample012", "Sample012\Samp
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DirectXTex", "External\DirectXTex\DirectXTex\DirectXTex_Desktop_2017_Win10.vcxproj", "{371B9FA9-4C90-4AC6-A123-ACED756D6C77}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sample013", "Sample013\Sample013.vcxproj", "{62301340-21DA-41F6-8351-50D411E3D519}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -231,6 +233,16 @@ Global
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Release|x64.Build.0 = Release|x64
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Release|x86.ActiveCfg = Release|Win32
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Release|x86.Build.0 = Release|Win32
+		{62301340-21DA-41F6-8351-50D411E3D519}.Debug|x64.ActiveCfg = Debug|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Debug|x64.Build.0 = Debug|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Debug|x86.ActiveCfg = Debug|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Profile|x64.ActiveCfg = Release|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Profile|x64.Build.0 = Release|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Profile|x86.ActiveCfg = Release|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Profile|x86.Build.0 = Release|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Release|x64.ActiveCfg = Release|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Release|x64.Build.0 = Release|x64
+		{62301340-21DA-41F6-8351-50D411E3D519}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

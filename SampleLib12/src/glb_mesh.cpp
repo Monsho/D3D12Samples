@@ -74,7 +74,7 @@ namespace sl12
 		}
 
 		// 頂点バッファ作成
-		auto CreateVB = [&](BufferBundle<VertexBufferView>& bb, const char* bufferName)
+		auto CreateVB = [&](BufferBundle<VertexBufferView>& bb, const char* bufferName, int* verticesCount = nullptr)
 		{
 			std::string accessorId;
 			if (mesh.TryGetAttributeAccessorId(bufferName, accessorId))
@@ -109,12 +109,17 @@ namespace sl12
 				auto p = bb.buffer_.Map(nullptr);
 				memcpy(p, data.data(), count * sizeof(float));
 				bb.buffer_.Unmap();
+
+				if (verticesCount)
+				{
+					*verticesCount = count / elem_count;
+				}
 			}
 
 			return true;
 		};
 		{
-			if (!CreateVB(positionBuffer_, "POSITION"))
+			if (!CreateVB(positionBuffer_, "POSITION", &verticesCount_))
 			{
 				return false;
 			}

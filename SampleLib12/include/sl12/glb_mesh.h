@@ -107,6 +107,11 @@ namespace sl12
 			return materialIndex_;
 		}
 
+		int GetVerticesCount() const
+		{
+			return verticesCount_;
+		}
+
 		int GetIndicesCount() const
 		{
 			return indicesCount_;
@@ -123,6 +128,7 @@ namespace sl12
 		BufferBundle<IndexBufferView>	indexBuffer_;
 
 		int								materialIndex_ = -1;
+		int								verticesCount_ = 0;
 		int								indicesCount_ = 0;
 	};	// class GlbSubmesh
 
