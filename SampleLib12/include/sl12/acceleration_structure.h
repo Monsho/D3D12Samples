@@ -25,6 +25,18 @@ namespace sl12
 			UINT				indexCount,
 			DXGI_FORMAT			indexFormat);
 
+		void InitializeAsTriangle(
+			sl12::Buffer*		pVertexBuffer,
+			sl12::Buffer*		pIndexBuffer,
+			sl12::Buffer*		pTransformBuffer,
+			UINT64				vertexStride,
+			UINT				vertexCount,
+			UINT64				vertexOffset,
+			DXGI_FORMAT			vertexFormat,
+			UINT				indexCount,
+			UINT64				indexOffset,
+			DXGI_FORMAT			indexFormat);
+
 		void InitializeAsAABB(
 			sl12::Buffer*		pAABBBuffer,
 			UINT64				bufferStride,

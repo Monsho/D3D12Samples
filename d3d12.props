@@ -5,11 +5,11 @@
   <PropertyGroup />
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;d3dcompiler.lib;UVAtlas.lib;DirectXMesh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;$(SolutionDir)External\UVAtlas\UVAtlas\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)External\DirectXMesh\DirectXMesh\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir)External\DirectXTex\DirectXTex;$(SolutionDir)External\imgui;$(SolutionDir)SampleLib12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)External\DirectXTex\DirectXTex;$(SolutionDir)External\imgui;$(SolutionDir)SampleLib12\include;$(SolutionDir)External\UVAtlas\UVAtlas\inc;$(SolutionDir)External\DirectXMesh\DirectXMesh;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup />

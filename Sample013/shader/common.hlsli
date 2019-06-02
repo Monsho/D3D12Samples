@@ -3,6 +3,7 @@
 
 struct SceneCB
 {
+	float4x4	mtxWorld;
 	float4x4	mtxWorldToProj;
 	float4x4	mtxProjToWorld;
 	float4		camPos;

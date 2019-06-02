@@ -29,15 +29,17 @@ namespace sl12
 		template <typename View>
 		struct BufferBundle
 		{
-			Buffer			buffer_;
-			BufferView		buffer_view_;
-			View			view_;
+			Buffer					buffer_;
+			BufferView				buffer_view_;
+			View					view_;
+			std::unique_ptr<u8[]>	source_data_;
 
 			~BufferBundle()
 			{
 				view_.Destroy();
 				buffer_view_.Destroy();
 				buffer_.Destroy();
+				source_data_.release();
 			}
 		};	// struct BufferBundle
 
@@ -62,6 +64,10 @@ namespace sl12
 		{
 			return positionBuffer_.view_;
 		}
+		const DirectX::XMFLOAT3* GetPositionSourceData()
+		{
+			return reinterpret_cast<DirectX::XMFLOAT3*>(positionBuffer_.source_data_.get());
+		}
 
 		Buffer& GetNormalB()
 		{
@@ -74,6 +80,10 @@ namespace sl12
 		VertexBufferView& GetNormalVBV()
 		{
 			return normalBuffer_.view_;
+		}
+		const DirectX::XMFLOAT3* GetNormalSourceData()
+		{
+			return reinterpret_cast<DirectX::XMFLOAT3*>(normalBuffer_.source_data_.get());
 		}
 
 		Buffer& GetTexcoordB()
@@ -88,6 +98,27 @@ namespace sl12
 		{
 			return texcoordBuffer_.view_;
 		}
+		const DirectX::XMFLOAT2* GetTexcoordSourceData()
+		{
+			return reinterpret_cast<DirectX::XMFLOAT2*>(texcoordBuffer_.source_data_.get());
+		}
+
+		Buffer& GetUniqueUvB()
+		{
+			return uniqueUvBuffer_.buffer_;
+		}
+		BufferView& GetUniqueUvBV()
+		{
+			return uniqueUvBuffer_.buffer_view_;
+		}
+		VertexBufferView& GetUniqueUvVBV()
+		{
+			return uniqueUvBuffer_.view_;
+		}
+		const DirectX::XMFLOAT2* GetUniqueUvSourceData()
+		{
+			return reinterpret_cast<DirectX::XMFLOAT2*>(uniqueUvBuffer_.source_data_.get());
+		}
 
 		Buffer& GetIndexB()
 		{
@@ -100,6 +131,10 @@ namespace sl12
 		IndexBufferView& GetIndexIBV()
 		{
 			return indexBuffer_.view_;
+		}
+		const u32* GetIndexSourceData()
+		{
+			return reinterpret_cast<u32*>(indexBuffer_.source_data_.get());
 		}
 
 		int GetMaterialIndex() const
@@ -121,10 +156,13 @@ namespace sl12
 		bool Initialize(Device* pDev, const Microsoft::glTF::Document& doc, const Microsoft::glTF::MeshPrimitive& mesh, Microsoft::glTF::GLTFResourceReader& resReader);
 		void Destroy();
 
+		bool CreateBuffers(Device* pDev);
+
 	private:
 		BufferBundle<VertexBufferView>	positionBuffer_;
 		BufferBundle<VertexBufferView>	normalBuffer_;
 		BufferBundle<VertexBufferView>	texcoordBuffer_;
+		BufferBundle<VertexBufferView>	uniqueUvBuffer_;
 		BufferBundle<IndexBufferView>	indexBuffer_;
 
 		int								materialIndex_ = -1;
@@ -197,6 +235,8 @@ namespace sl12
 
 		bool Initialize(Device* pDev, CommandList* pCmdList, const char* pathname, const char* filename);
 		void Destroy();
+
+		bool GenerateAtlas(Device* pDev, size_t texWidth, size_t texHeight, bool use_uv_for_imt, int options);
 
 		// getter
 		int GetSubmeshCount() const

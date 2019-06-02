@@ -185,6 +185,9 @@ void RayGenerator()
 	float3 worldPos = SourcePosition[index];
 	float3 normal = SourceNormal[index];
 
+	worldPos = mul(cbScene.mtxWorld, float4(worldPos, 1)).xyz;
+	normal = normalize(mul((float3x3)cbScene.mtxWorld, normal));
+
 	// äJénéûÇÃÉåÉCÇê∂ê¨Ç∑ÇÈ
 	float rnd = GetRandom();
 	uint sampleCnt = (cbTime.loopCount + uint(rnd * MaxSample)) % MaxSample;
@@ -257,7 +260,7 @@ void ClosestHitProcessor(inout HitData payload : SV_RayPayload, in BuiltInTriang
 	float3 normal = VertexNormal[indices.x] +
 		attr.barycentrics.x * (VertexNormal[indices.y] - VertexNormal[indices.x]) +
 		attr.barycentrics.y * (VertexNormal[indices.z] - VertexNormal[indices.x]);
-	normal = normalize(normal);
+	normal = normalize(mul((float3x3)cbScene.mtxWorld, normal));
 
 	float minT = RayTCurrent();
 	float rnd = GetRandom();

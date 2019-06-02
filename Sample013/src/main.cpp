@@ -53,6 +53,7 @@ class SampleApplication
 {
 	struct SceneCB
 	{
+		DirectX::XMFLOAT4X4	mtxWorld;
 		DirectX::XMFLOAT4X4	mtxWorldToProj;
 		DirectX::XMFLOAT4X4	mtxProjToWorld;
 		DirectX::XMFLOAT4	camPos;
@@ -1250,7 +1251,7 @@ private:
 
 		sl12::TopInstanceDesc topInstance{};
 		DirectX::XMFLOAT4X4 mtx;
-		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(20.0f, 20.0f, 20.0f);
+		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(meshScale_, meshScale_, meshScale_);
 		DirectX::XMStoreFloat4x4(&mtx, scale);
 		topInstance.Initialize(mtx, &bottomAS_);
 
@@ -1334,11 +1335,6 @@ private:
 		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(60.0f), (float)kScreenWidth / (float)kScreenHeight, 0.01f, 100.0f);
 		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
 		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
-
-		DirectX::XMFLOAT4 lightDir = { 0.0f, -1.0f, 0.0f, 0.0f };
-		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
-
-		DirectX::XMFLOAT4 lightColor = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		for (int i = 0; i < 2; i++)
 		{
@@ -1554,18 +1550,19 @@ private:
 			DirectX::XMLoadFloat4(&upVec_));
 		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(60.0f), (float)kScreenWidth / (float)kScreenHeight, 0.01f, 10000.0f);
 		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
-		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
 
-		DirectX::XMFLOAT4 lightDir = { 0.1f, -1.0f, 0.1f, 0.0f };
+		DirectX::XMFLOAT4 lightDir = { 0.1f, -1.0f, 0.3f, 0.0f };
 		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
 
 		DirectX::XMFLOAT4 lightColor = { lightColor_[0] * lightPower_, lightColor_[1] * lightPower_, lightColor_[2] * lightPower_, 1.0f };
 
-		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(20.0f, 20.0f, 20.0f);
+		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(meshScale_, meshScale_, meshScale_);
 		mtxWorldToClip = scale * mtxWorldToClip;
+		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
 
 		{
 			auto cb = reinterpret_cast<SceneCB*>(sceneCBs_[frameIndex].Map(nullptr));
+			DirectX::XMStoreFloat4x4(&cb->mtxWorld, scale);
 			DirectX::XMStoreFloat4x4(&cb->mtxWorldToProj, mtxWorldToClip);
 			DirectX::XMStoreFloat4x4(&cb->mtxProjToWorld, mtxClipToWorld);
 			DirectX::XMStoreFloat4(&cb->camPos, cp);
@@ -1605,6 +1602,7 @@ private:
 	sl12::Buffer				seedBuffer_;
 	sl12::UnorderedAccessView	seedBufferUAV_;
 
+	float					meshScale_ = 20.0f;
 	sl12::GlbMesh			glbMesh_;
 	sl12::Sampler			imageSampler_;
 

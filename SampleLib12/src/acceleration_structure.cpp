@@ -29,6 +29,31 @@ namespace sl12
 		dxrDesc.Triangles.IndexFormat = indexFormat;
 		dxrDesc.Triangles.Transform3x4 = pTransformBuffer ? pTransformBuffer->GetResourceDep()->GetGPUVirtualAddress() : 0;
 	}
+	void GeometryStructureDesc::InitializeAsTriangle(
+		sl12::Buffer*		pVertexBuffer,
+		sl12::Buffer*		pIndexBuffer,
+		sl12::Buffer*		pTransformBuffer,
+		UINT64				vertexStride,
+		UINT				vertexCount,
+		UINT64				vertexOffset,
+		DXGI_FORMAT			vertexFormat,
+		UINT				indexCount,
+		UINT64				indexOffset,
+		DXGI_FORMAT			indexFormat)
+	{
+		if (!pVertexBuffer || !pIndexBuffer)
+			return;
+
+		dxrDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		dxrDesc.Triangles.VertexBuffer.StartAddress = pVertexBuffer->GetResourceDep()->GetGPUVirtualAddress() + vertexOffset;
+		dxrDesc.Triangles.VertexBuffer.StrideInBytes = vertexStride;
+		dxrDesc.Triangles.VertexCount = vertexCount;
+		dxrDesc.Triangles.VertexFormat = vertexFormat;
+		dxrDesc.Triangles.IndexBuffer = pIndexBuffer->GetResourceDep()->GetGPUVirtualAddress() + indexOffset;
+		dxrDesc.Triangles.IndexCount = indexCount;
+		dxrDesc.Triangles.IndexFormat = indexFormat;
+		dxrDesc.Triangles.Transform3x4 = pTransformBuffer ? pTransformBuffer->GetResourceDep()->GetGPUVirtualAddress() : 0;
+	}
 
 	//-------------------------------------------------------------------
 	// Geometry Desc‚ğAABB‚Æ‚µ‚Ä‰Šú‰»
