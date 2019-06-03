@@ -196,7 +196,7 @@ void RayGenerator()
 	float4 qRot = QuatFromTwoVector(float3(0, 0, 1), normal);
 	float3 traceDir = QuatRotVector(localDir, qRot);
 
-	float3 origin = worldPos;
+	float3 origin = worldPos + normal * 1.0;
 	float3 direction = traceDir;
 
 	// Let's ÉåÉCÉgÉåÅI

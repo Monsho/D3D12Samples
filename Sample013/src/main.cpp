@@ -1550,15 +1550,15 @@ private:
 			DirectX::XMLoadFloat4(&upVec_));
 		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(60.0f), (float)kScreenWidth / (float)kScreenHeight, 0.01f, 10000.0f);
 		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
+		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
 
-		DirectX::XMFLOAT4 lightDir = { 0.1f, -1.0f, 0.3f, 0.0f };
+		DirectX::XMFLOAT4 lightDir = { 0.1f, -1.0f, 0.1f, 0.0f };
 		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
 
 		DirectX::XMFLOAT4 lightColor = { lightColor_[0] * lightPower_, lightColor_[1] * lightPower_, lightColor_[2] * lightPower_, 1.0f };
 
 		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(meshScale_, meshScale_, meshScale_);
 		mtxWorldToClip = scale * mtxWorldToClip;
-		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
 
 		{
 			auto cb = reinterpret_cast<SceneCB*>(sceneCBs_[frameIndex].Map(nullptr));

@@ -27,6 +27,5 @@ float4 main(PSInput In) : SV_TARGET0
 	float LoN = saturate(dot(normal, -cbScene.lightDir.rgb));
 	float3 directColor = cbScene.lightColor.rgb * LoN * occlude.r;
 	float3 indirectColor = In.color;
-	return float4(indirectColor, 1);
-	//return float4((directColor + indirectColor) * baseColor.rgb, 1);
+	return float4((directColor + indirectColor) * baseColor.rgb, 1);
 }
