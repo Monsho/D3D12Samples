@@ -13,6 +13,7 @@
 #include <sl12/default_states.h>
 #include <sl12/root_signature.h>
 #include <sl12/pipeline_state.h>
+#include <sl12/descriptor_set.h>
 #include <sl12/shader.h>
 #include <sl12/gui.h>
 #include <DirectXTex.h>
@@ -73,20 +74,17 @@ namespace
 	sl12::BufferView		g_src_vbSRVs_[2];
 	sl12::UnorderedAccessView	g_dst_vbUAVs_[2];
 
-	//File	g_VShader_, g_PShader_, g_CShader_[2];
 	sl12::Shader			g_VShader_, g_PShader_, g_CShader_[2];
 
 	sl12::RootSignature		g_rootSig_;
 	sl12::GraphicsPipelineState	g_compressPipeline_;
 	sl12::GraphicsPipelineState	g_noCompressPipeline_;
-	//ID3D12PipelineState*	g_pCompressPipeline_ = nullptr;
-	//ID3D12PipelineState*	g_pNoCompressPipeline_ = nullptr;
 
 	sl12::RootSignature		g_worldRootSig_;
 	sl12::ComputePipelineState	g_worldCompressPipeline_;
 	sl12::ComputePipelineState	g_worldNoCompressPipeline_;
-	//ID3D12PipelineState*	g_pWorldCompressPipeline_ = nullptr;
-	//ID3D12PipelineState*	g_pWorldNoCompressPipeline_ = nullptr;
+
+	sl12::DescriptorSet		g_descSet_;
 
 	ID3D12QueryHeap*		g_pTimestampQuery_[sl12::Swapchain::kMaxBuffer] = { nullptr };
 	ID3D12Resource*			g_pTimestampBuffer_[sl12::Swapchain::kMaxBuffer] = { nullptr };
@@ -345,31 +343,13 @@ bool InitializeAssets()
 
 	// ルートシグネチャを作成
 	{
-		sl12::RootParameter params[] = {
-			sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::Vertex, 0),
-		};
-
-		sl12::RootSignatureDesc desc{};
-		desc.numParameters = _countof(params);
-		desc.pParameters = params;
-
-		if (!g_rootSig_.Initialize(&g_Device_, desc))
+		if (!g_rootSig_.Initialize(&g_Device_, &g_VShader_, &g_PShader_, nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
 	}
 	{
-		sl12::RootParameter params[] = {
-			sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::Compute, 0),
-			sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::Compute, 0),
-			sl12::RootParameter(sl12::RootParameterType::UnorderedAccess, sl12::ShaderVisibility::Compute, 0),
-		};
-
-		sl12::RootSignatureDesc desc{};
-		desc.numParameters = _countof(params);
-		desc.pParameters = params;
-
-		if (!g_worldRootSig_.Initialize(&g_Device_, desc))
+		if (!g_worldRootSig_.Initialize(&g_Device_, &g_CShader_[0]))
 		{
 			return false;
 		}
@@ -443,23 +423,6 @@ bool InitializeAssets()
 		{
 			return false;
 		}
-		//D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {};
-		//desc.pRootSignature = g_worldRootSig_.GetRootSignature();
-		//desc.CS = { reinterpret_cast<UINT8*>(g_CShader_[0].GetData()), g_CShader_[0].GetSize() };
-
-		//auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pWorldCompressPipeline_));
-		//if (FAILED(hr))
-		//{
-		//	return false;
-		//}
-
-		//desc.CS = { reinterpret_cast<UINT8*>(g_CShader_[1].GetData()), g_CShader_[1].GetSize() };
-
-		//hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pWorldNoCompressPipeline_));
-		//if (FAILED(hr))
-		//{
-		//	return false;
-		//}
 	}
 
 	// タイムスタンプクエリとバッファ
@@ -639,18 +602,14 @@ void RenderScene()
 		{
 			pCmdList->SetPipelineState(g_worldNoCompressPipeline_.GetPSO());
 		}
-		pCmdList->SetComputeRootSignature(g_worldRootSig_.GetRootSignature());
 
-		// DescriptorHeapを設定
 		int index = !g_IsNoCompressVertex ? 0 : 1;
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetComputeRootDescriptorTable(0, cbWorldDesc.GetGpuHandle());
-		pCmdList->SetComputeRootDescriptorTable(1, g_src_vbSRVs_[index].GetDesc()->GetGpuHandle());
-		pCmdList->SetComputeRootDescriptorTable(2, g_dst_vbUAVs_[index].GetDesc()->GetGpuHandle());
+		g_descSet_.Reset();
+		g_descSet_.SetCsCbv(0, g_CBWorldViews_[frameIndex].GetDescInfo().cpuHandle);
+		g_descSet_.SetCsSrv(0, g_src_vbSRVs_[index].GetDescInfo().cpuHandle);
+		g_descSet_.SetCsUav(0, g_dst_vbUAVs_[index].GetDescInfo().cpuHandle);
+
+		g_pNextCmdList_->SetComputeRootSignatureAndDescriptorSet(&g_worldRootSig_, &g_descSet_);
 
 		// ディスパッチ
 		sl12::u32 vertexCount = kMaxTriangle * 3;
@@ -709,16 +668,10 @@ void RenderScene()
 			pCmdList->SetPipelineState(g_noCompressPipeline_.GetPSO());
 		}
 
-		// ルートシグネチャを設定
-		pCmdList->SetGraphicsRootSignature(g_rootSig_.GetRootSignature());
+		g_descSet_.Reset();
+		g_descSet_.SetVsCbv(0, g_CBSceneViews_[frameIndex].GetDescInfo().cpuHandle);
 
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc0.GetGpuHandle());
+		g_pNextCmdList_->SetGraphicsRootSignatureAndDescriptorSet(&g_rootSig_, &g_descSet_);
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views0[] = { g_vbufferViews_[0].GetView() };

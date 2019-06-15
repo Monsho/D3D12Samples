@@ -945,6 +945,59 @@ public:
 	{
 		device_.WaitPresent();
 
+		// ƒJƒƒ‰‘€ìŒn“ü—Í
+		const float kRotAngle = 1.0f;
+		const float kMoveSpeed = 0.2f;
+		camRotX_ = camRotY_ = camMoveForward_ = camMoveLeft_ = 0.0f;
+		if (GetKeyState(VK_UP) < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camRotX_ = kRotAngle;
+		}
+		else if (GetKeyState(VK_DOWN) < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camRotX_ = -kRotAngle;
+		}
+		if (GetKeyState(VK_LEFT) < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camRotY_ = -kRotAngle;
+		}
+		else if (GetKeyState(VK_RIGHT) < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camRotY_ = kRotAngle;
+		}
+		if (GetKeyState('W') < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camMoveForward_ = kMoveSpeed;
+		}
+		else if (GetKeyState('S') < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camMoveForward_ = -kMoveSpeed;
+		}
+		if (GetKeyState('A') < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camMoveLeft_ = kMoveSpeed;
+		}
+		else if (GetKeyState('D') < 0)
+		{
+			isClearTarget_ = true;
+			shadowLoopCount_ = 0;
+			camMoveLeft_ = -kMoveSpeed;
+		}
+
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
 		auto prevFrameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 2) % sl12::Swapchain::kMaxBuffer;
 		auto&& cmdList = cmdLists_[frameIndex];
@@ -959,11 +1012,6 @@ public:
 
 		// GUI
 		{
-			if (ImGui::SliderAngle("Camera Angle", &camRotAngle_))
-			{
-				isClearTarget_ = true;
-				shadowLoopCount_ = 0;
-			}
 			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
 			{
 				bakeLoopCount_ = 0;
@@ -1989,13 +2037,21 @@ private:
 
 	void UpdateSceneCB(int frameIndex)
 	{
-		auto mtxRot = DirectX::XMMatrixRotationY(camRotAngle_);
 		auto cp = DirectX::XMLoadFloat4(&camPos_);
-		cp = DirectX::XMVector4Transform(cp, mtxRot);
+		auto tp = DirectX::XMLoadFloat4(&tgtPos_);
+		auto c_forward = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(tp, cp));
+		auto c_right = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(c_forward, DirectX::XMLoadFloat4(&upVec_)));
+		auto mtxRot = DirectX::XMMatrixMultiply(DirectX::XMMatrixRotationAxis(c_right, DirectX::XMConvertToRadians(camRotX_)), DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(camRotY_)));
+		c_forward = DirectX::XMVector4Transform(c_forward, mtxRot);
+		cp = DirectX::XMVectorAdd(cp, DirectX::XMVectorScale(c_forward, camMoveForward_));
+		cp = DirectX::XMVectorAdd(cp, DirectX::XMVectorScale(c_right, camMoveLeft_));
+		tp = DirectX::XMVectorAdd(cp, c_forward);
+		DirectX::XMStoreFloat4(&camPos_, cp);
+		DirectX::XMStoreFloat4(&tgtPos_, tp);
 
 		auto mtxWorldToView = DirectX::XMMatrixLookAtLH(
 			cp,
-			DirectX::XMLoadFloat4(&tgtPos_),
+			tp,
 			DirectX::XMLoadFloat4(&upVec_));
 		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(60.0f), (float)kScreenWidth / (float)kScreenHeight, 0.01f, 10000.0f);
 		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
@@ -2140,11 +2196,15 @@ private:
 	uint32_t				shadowLoopCount_ = 0;
 	uint32_t				bakeLoopCount_ = 0;
 	uint32_t				blockIndex_ = 0;
-	float					camRotAngle_ = 0.0f;
 	bool					isClearTarget_ = true;
 	bool					enablePosNml_ = false;
 	bool					isDisplayAtlas_ = false;
 	bool					enableDenoise_ = true;
+
+	float					camRotX_ = 0.0f;
+	float					camRotY_ = 0.0f;
+	float					camMoveForward_ = 0.0f;
+	float					camMoveLeft_ = 0.0f;
 
 	int		frameIndex_ = 0;
 };	// class SampleApplication

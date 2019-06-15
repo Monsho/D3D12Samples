@@ -115,8 +115,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetViewDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateShaderResourceView(pTex->GetResourceDep(), &viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateShaderResourceView(pTex->GetResourceDep(), &viewDesc, descInfo_.cpuHandle);
 
 		return true;
 	}
@@ -124,6 +130,7 @@ namespace sl12
 	//----
 	void TextureView::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 
@@ -198,8 +205,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetRtvDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateRenderTargetView(pTex->GetResourceDep(), &viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateRenderTargetView(pTex->GetResourceDep(), &viewDesc, descInfo_.cpuHandle);
 		format_ = viewDesc.Format;
 
 		return true;
@@ -208,6 +221,7 @@ namespace sl12
 	//----
 	void RenderTargetView::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 
@@ -274,8 +288,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetDsvDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateDepthStencilView(pTex->GetResourceDep(), &viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateDepthStencilView(pTex->GetResourceDep(), &viewDesc, descInfo_.cpuHandle);
 		format_ = viewDesc.Format;
 
 		return true;
@@ -284,6 +304,7 @@ namespace sl12
 	//----
 	void DepthStencilView::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 
@@ -349,8 +370,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetViewDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateUnorderedAccessView(pTex->GetResourceDep(), nullptr, &viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateUnorderedAccessView(pTex->GetResourceDep(), nullptr, &viewDesc, descInfo_.cpuHandle);
 
 		return true;
 	}
@@ -385,8 +412,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetViewDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateUnorderedAccessView(pBuff->GetResourceDep(), nullptr, &viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateUnorderedAccessView(pBuff->GetResourceDep(), nullptr, &viewDesc, descInfo_.cpuHandle);
 
 		return true;
 	}
@@ -394,6 +427,7 @@ namespace sl12
 	//----
 	void UnorderedAccessView::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 

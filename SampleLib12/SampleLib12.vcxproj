@@ -97,6 +97,7 @@
     <ClInclude Include="include\sl12\default_states.h" />
     <ClInclude Include="include\sl12\descriptor.h" />
     <ClInclude Include="include\sl12\descriptor_heap.h" />
+    <ClInclude Include="include\sl12\descriptor_set.h" />
     <ClInclude Include="include\sl12\device.h" />
     <ClInclude Include="include\sl12\fence.h" />
     <ClInclude Include="include\sl12\file.h" />

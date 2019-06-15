@@ -29,11 +29,17 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetViewDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		D3D12_CONSTANT_BUFFER_VIEW_DESC viewDesc{};
 		viewDesc.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
 		viewDesc.SizeInBytes = static_cast<u32>(pBuffer->GetResourceDesc().Width);
 		pDev->GetDeviceDep()->CreateConstantBufferView(&viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateConstantBufferView(&viewDesc, descInfo_.cpuHandle);
 
 		return true;
 	}
@@ -41,6 +47,7 @@ namespace sl12
 	//----
 	void ConstantBufferView::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 
@@ -122,8 +129,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetViewDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateShaderResourceView(pBuffer->GetResourceDep(), &viewDesc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateShaderResourceView(pBuffer->GetResourceDep(), &viewDesc, descInfo_.cpuHandle);
 
 		return true;
 	}
@@ -131,6 +144,7 @@ namespace sl12
 	//----
 	void BufferView::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 

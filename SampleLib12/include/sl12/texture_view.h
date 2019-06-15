@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <sl12/util.h>
+#include <sl12/descriptor_heap.h>
 #include <DirectXTex.h>
 
 
@@ -26,10 +27,12 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
-		Descriptor*	pDesc_{ nullptr };
+		DescriptorInfo	descInfo_;
+		Descriptor*		pDesc_{ nullptr };
 	};	// class TextureView
 
 
@@ -48,12 +51,14 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		Descriptor* GetDesc() { return pDesc_; }
 		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
-		Descriptor*	pDesc_{ nullptr };
-		DXGI_FORMAT	format_{ DXGI_FORMAT_UNKNOWN };
+		DescriptorInfo	descInfo_;
+		Descriptor*		pDesc_{ nullptr };
+		DXGI_FORMAT		format_{ DXGI_FORMAT_UNKNOWN };
 	};	// class RenderTargetView
 	
 
@@ -72,12 +77,14 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		Descriptor* GetDesc() { return pDesc_; }
 		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
-		Descriptor*	pDesc_{ nullptr };
-		DXGI_FORMAT	format_{ DXGI_FORMAT_UNKNOWN };
+		DescriptorInfo	descInfo_;
+		Descriptor*		pDesc_{ nullptr };
+		DXGI_FORMAT		format_{ DXGI_FORMAT_UNKNOWN };
 	};	// class DepthStencilView
 
 
@@ -97,10 +104,12 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
-		Descriptor*	pDesc_{ nullptr };
+		DescriptorInfo	descInfo_;
+		Descriptor*		pDesc_{ nullptr };
 	};	// class UnorderdAccessView
 
 }	// namespace sl12

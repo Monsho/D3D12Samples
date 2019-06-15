@@ -16,6 +16,9 @@ namespace sl12
 	class Shader;
 	class Sampler;
 	class CommandList;
+	class RootSignature;
+	class GraphicsPipelineState;
+	class DescriptorSet;
 
 	struct MouseButton
 	{
@@ -72,16 +75,10 @@ namespace sl12
 		VertexBufferView*		pVertexBufferViews_{ nullptr };
 		Buffer*					pIndexBuffers_{ nullptr };
 		IndexBufferView*		pIndexBufferViews_{ nullptr };
-		//vk::DeviceSize	nonCoherentAtomSize_;
 
-		ID3D12RootSignature*	pRootSig_{ nullptr };
-		ID3D12PipelineState*	pPipelineState_{ nullptr };
-		//vk::DescriptorSetLayout	descSetLayout_;
-		//vk::DescriptorPool		descPool_;
-		//vk::DescriptorSet		descSet_;
-		//vk::PipelineLayout		pipelineLayout_;
-		//vk::Pipeline			pipeline_;
-		//vk::RenderPassBeginInfo	passBeginInfo_;
+		DescriptorSet*			pDescSet_{ nullptr };
+		RootSignature*			pRootSig_{ nullptr };
+		GraphicsPipelineState*	pPipelineState_{ nullptr };
 
 		u32	frameIndex_{ 0 };
 

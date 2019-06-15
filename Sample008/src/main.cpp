@@ -18,6 +18,8 @@
 #include <sl12/file.h>
 #include <sl12/root_signature_manager.h>
 #include <sl12/render_resource_manager.h>
+#include <sl12/descriptor_set.h>
+#include <sl12/timestamp.h>
 
 #include "file.h"
 
@@ -171,8 +173,16 @@ namespace
 	sl12::ComputePipelineState	g_clearHashPso_;
 	sl12::ComputePipelineState	g_projectHashPso_;
 
+	sl12::DescriptorSet			g_descSet_;
+
 	sl12::File			g_meshFile_;
 	sl12::MeshInstance	g_mesh_;
+
+	sl12::Timestamp		g_gpuTimestamp_[sl12::Swapchain::kMaxBuffer];
+
+	LARGE_INTEGER		g_frequency_;
+	LARGE_INTEGER		g_perfCount_;
+	LARGE_INTEGER		g_perfCountMax_;
 
 	struct RenderID
 	{
@@ -910,6 +920,14 @@ bool InitializeAssets()
 		return false;
 	}
 
+	for (int i = 0; i < ARRAYSIZE(g_gpuTimestamp_); ++i)
+	{
+		if (!g_gpuTimestamp_[i].Initialize(&g_Device_, 2))
+		{
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -1061,6 +1079,7 @@ void RenderScene()
 {
 	sl12::s32 frameIndex = g_Device_.GetSwapchain().GetFrameIndex();
 	sl12::s32 nextFrameIndex = (frameIndex + 1) % sl12::Swapchain::kMaxBuffer;
+	sl12::s32 prevFrameIndex = (frameIndex + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
 
 	sl12::CommandList& mainCmdList = g_mainCmdLists_[frameIndex];
 
@@ -1074,6 +1093,19 @@ void RenderScene()
 		ImGui::Checkbox("Fresnel Enable", &g_enableFresnel);
 		ImGui::Checkbox("Gap Bleed", &g_gapBleed);
 		ImGui::Checkbox("Scene Pause", &g_scenePause);
+
+		g_perfCountMax_.QuadPart = std::max(g_perfCount_.QuadPart, g_perfCountMax_.QuadPart);
+		auto us = g_perfCount_.QuadPart * 1000000 / g_frequency_.QuadPart;
+		auto max_us = g_perfCountMax_.QuadPart * 1000000 / g_frequency_.QuadPart;
+		ImGui::Text("CPU Time : %lld (us)", us);
+		ImGui::Text("CPU Time Max : %lld (us)", max_us);
+
+		uint64_t timestamp[2];
+		g_gpuTimestamp_[prevFrameIndex].GetTimestamp(0, 2, timestamp);
+		uint64_t gpu_time = timestamp[1] - timestamp[0];
+		uint64_t freq = g_Device_.GetGraphicsQueue().GetTimestampFrequency();
+		float gpu_us = (float)gpu_time / ((float)freq / 1000000.0f);
+		ImGui::Text("GPU Time: %f (us)", gpu_us);
 	}
 
 	// グラフィクスコマンドロードの開始
@@ -1165,6 +1197,13 @@ void RenderScene()
 
 	int passNo = 0;
 
+	LARGE_INTEGER start_time, end_time;
+
+	QueryPerformanceCounter(&start_time);
+
+	g_gpuTimestamp_[frameIndex].Reset();
+	g_gpuTimestamp_[frameIndex].Query(&mainCmdList);
+
 	// BasePass
 	{
 		auto thisProd = g_rrProducers_[passNo++];
@@ -1195,38 +1234,39 @@ void RenderScene()
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(_countof(rtvs), rtvs, false, &dsv);
 
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-
-		// PSOとルートシグネチャを設定
-		pCmdList->SetPipelineState(g_basePassPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_basePassSig_.GetRootSignature()->GetRootSignature());
-
-		// デスクリプタテーブル設定
-		g_basePassSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_basePassSig_.SetDescriptor(mainCmdList, "CbMesh", g_MeshCB_.cbv_);
-
-		// DrawCall
-		auto submeshCount = g_mesh_.GetSubmeshCount();
-		for (sl12::s32 i = 0; i < submeshCount; ++i)
+		for (int i = 0; i < 100; ++i)
 		{
-			sl12::DrawSubmeshInfo info = g_mesh_.GetDrawSubmeshInfo(i);
+			// PSOとルートシグネチャを設定
+			pCmdList->SetPipelineState(g_basePassPso_.GetPSO());
 
-			D3D12_VERTEX_BUFFER_VIEW views[] = {
-				info.pShape->GetPositionView()->GetView(),
-				info.pShape->GetNormalView()->GetView(),
-				info.pShape->GetTexcoordView()->GetView(),
-			};
-			pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			pCmdList->IASetVertexBuffers(0, _countof(views), views);
-			pCmdList->IASetIndexBuffer(&info.pSubmesh->GetIndexBufferView()->GetView());
-			pCmdList->DrawIndexedInstanced(info.numIndices, 1, 0, 0, 0);
+			// デスクリプタテーブル設定
+			g_descSet_.Reset();
+			g_basePassSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+			g_basePassSig_.SetDescriptor(&g_descSet_, "CbMesh", g_MeshCB_.cbv_);
+
+			mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_basePassSig_.GetRootSignature(), &g_descSet_);
+
+			// DrawCall
+			auto submeshCount = g_mesh_.GetSubmeshCount();
+			for (sl12::s32 i = 0; i < submeshCount; ++i)
+			{
+				sl12::DrawSubmeshInfo info = g_mesh_.GetDrawSubmeshInfo(i);
+
+				D3D12_VERTEX_BUFFER_VIEW views[] = {
+					info.pShape->GetPositionView()->GetView(),
+					info.pShape->GetNormalView()->GetView(),
+					info.pShape->GetTexcoordView()->GetView(),
+				};
+				pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				pCmdList->IASetVertexBuffers(0, _countof(views), views);
+				pCmdList->IASetIndexBuffer(&info.pSubmesh->GetIndexBufferView()->GetView());
+				pCmdList->DrawIndexedInstanced(info.numIndices, 1, 0, 0, 0);
+			}
 		}
 	}
+
+	g_gpuTimestamp_[frameIndex].Query(&mainCmdList);
+	g_gpuTimestamp_[frameIndex].Resolve(&mainCmdList);
 
 	// LinearDepthPass
 	{
@@ -1244,11 +1284,13 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_linearDepthPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_linearDepthSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_linearDepthSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_linearDepthSig_.SetDescriptor(mainCmdList, "texDepth", *pInput->GetSrv());
+		g_descSet_.Reset();
+		g_linearDepthSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+		g_linearDepthSig_.SetDescriptor(&g_descSet_, "texDepth", *pInput->GetSrv());
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_linearDepthSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1273,18 +1315,20 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_tiledLightPso_.GetPSO());
-		pCmdList->SetComputeRootSignature(g_tiledLightSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "CbLightInfo", g_LightCB_.cbv_);
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "texGBuffer0", *pInputs[0]->GetSrv());
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "texGBuffer1", *pInputs[1]->GetSrv());
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "texGBuffer2", *pInputs[2]->GetSrv());
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[3]->GetSrv());
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "rLightPosBuffer", curLightPosBV);
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "rLightColorBuffer", g_LightColorBV_);
-		g_tiledLightSig_.SetDescriptor(mainCmdList, "rwFinal", *pOutput->GetUav(0));
+		g_descSet_.Reset();
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "CbLightInfo", g_LightCB_.cbv_);
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "texGBuffer0", *pInputs[0]->GetSrv());
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "texGBuffer1", *pInputs[1]->GetSrv());
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "texGBuffer2", *pInputs[2]->GetSrv());
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "texLinearDepth", *pInputs[3]->GetSrv());
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "rLightPosBuffer", curLightPosBV);
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "rLightColorBuffer", g_LightColorBV_);
+		g_tiledLightSig_.SetDescriptor(&g_descSet_, "rwFinal", *pOutput->GetUav(0));
+
+		mainCmdList.SetComputeRootSignatureAndDescriptorSet(g_tiledLightSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		pCmdList->Dispatch(kWindowWidth / kTileWidth, kWindowHeight / kTileWidth, 1);
@@ -1303,11 +1347,13 @@ void RenderScene()
 		{
 			// PSOとルートシグネチャを設定
 			pCmdList->SetPipelineState(g_clearHashPso_.GetPSO());
-			pCmdList->SetComputeRootSignature(g_clearHashSig_.GetRootSignature()->GetRootSignature());
 
 			// デスクリプタテーブル設定
-			g_clearHashSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-			g_clearHashSig_.SetDescriptor(mainCmdList, "rwProjectHash", *pOutput->GetUav());
+			g_descSet_.Reset();
+			g_clearHashSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+			g_clearHashSig_.SetDescriptor(&g_descSet_, "rwProjectHash", *pOutput->GetUav());
+
+			mainCmdList.SetComputeRootSignatureAndDescriptorSet(g_clearHashSig_.GetRootSignature(), &g_descSet_);
 
 			// DrawCall
 			pCmdList->Dispatch(kWindowWidth / kTileWidth, kWindowHeight / kTileWidth, 1);
@@ -1317,13 +1363,15 @@ void RenderScene()
 		{
 			// PSOとルートシグネチャを設定
 			pCmdList->SetPipelineState(g_projectHashPso_.GetPSO());
-			pCmdList->SetComputeRootSignature(g_projectHashSig_.GetRootSignature()->GetRootSignature());
 
 			// デスクリプタテーブル設定
-			g_projectHashSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-			g_projectHashSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
-			g_projectHashSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInput->GetSrv());
-			g_projectHashSig_.SetDescriptor(mainCmdList, "rwProjectHash", *pOutput->GetUav());
+			g_descSet_.Reset();
+			g_projectHashSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+			g_projectHashSig_.SetDescriptor(&g_descSet_, "CbWaterInfo", curWaterCB.cbv_);
+			g_projectHashSig_.SetDescriptor(&g_descSet_, "texLinearDepth", *pInput->GetSrv());
+			g_projectHashSig_.SetDescriptor(&g_descSet_, "rwProjectHash", *pOutput->GetUav());
+
+			mainCmdList.SetComputeRootSignatureAndDescriptorSet(g_projectHashSig_.GetRootSignature(), &g_descSet_);
 
 			// DrawCall
 			pCmdList->Dispatch(kWindowWidth / kTileWidth, kWindowHeight / kTileWidth, 1);
@@ -1352,13 +1400,15 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_resolveHashPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_resolveHashSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_resolveHashSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_resolveHashSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
-		g_resolveHashSig_.SetDescriptor(mainCmdList, "texSceneColor", *pInputs[0]->GetSrv());
-		g_resolveHashSig_.SetDescriptor(mainCmdList, "texProjectHash", *pInputs[1]->GetSrv());
+		g_descSet_.Reset();
+		g_resolveHashSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+		g_resolveHashSig_.SetDescriptor(&g_descSet_, "CbWaterInfo", curWaterCB.cbv_);
+		g_resolveHashSig_.SetDescriptor(&g_descSet_, "texSceneColor", *pInputs[0]->GetSrv());
+		g_resolveHashSig_.SetDescriptor(&g_descSet_, "texProjectHash", *pInputs[1]->GetSrv());
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_resolveHashSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1386,13 +1436,15 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_reprojectPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_reprojectSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_reprojectSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_reprojectSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
-		g_reprojectSig_.SetDescriptor(mainCmdList, "texPrevReflection", *pInputs[0]->GetSrv());
-		g_reprojectSig_.SetDescriptor(mainCmdList, "texProjectHash", *pInputs[1]->GetSrv());
+		g_descSet_.Reset();
+		g_reprojectSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+		g_reprojectSig_.SetDescriptor(&g_descSet_, "CbWaterInfo", curWaterCB.cbv_);
+		g_reprojectSig_.SetDescriptor(&g_descSet_, "texPrevReflection", *pInputs[0]->GetSrv());
+		g_reprojectSig_.SetDescriptor(&g_descSet_, "texProjectHash", *pInputs[1]->GetSrv());
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_reprojectSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		auto vb = g_WaterVBV_.GetView();
@@ -1423,14 +1475,16 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_waterPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_waterSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_waterSig_.SetDescriptor(mainCmdList, "CbScene", curCB.cbv_);
-		g_waterSig_.SetDescriptor(mainCmdList, "CbWaterInfo", curWaterCB.cbv_);
-		g_waterSig_.SetDescriptor(mainCmdList, "texSSPR", *pInput->GetSrv());
-		g_waterSig_.SetDescriptor(mainCmdList, "texNormal", g_WaveNormalTex_.srv_);
-		g_waterSig_.SetDescriptor(mainCmdList, "samLinear", g_sampler_);
+		g_descSet_.Reset();
+		g_waterSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+		g_waterSig_.SetDescriptor(&g_descSet_, "CbWaterInfo", curWaterCB.cbv_);
+		g_waterSig_.SetDescriptor(&g_descSet_, "texSSPR", *pInput->GetSrv());
+		g_waterSig_.SetDescriptor(&g_descSet_, "texNormal", g_WaveNormalTex_.srv_);
+		g_waterSig_.SetDescriptor(&g_descSet_, "samLinear", g_sampler_);
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_waterSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		auto vb = g_WaterVBV_.GetView();
@@ -1463,13 +1517,15 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_blurXPassPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_blurXPassSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_blurXPassSig_.SetDescriptor(mainCmdList, "CbGaussBlur", g_BlurCB_.cbv_);
-		g_blurXPassSig_.SetDescriptor(mainCmdList, "texSource", *pInputs[0]->GetSrv());
-		g_blurXPassSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[1]->GetSrv());
-		g_blurXPassSig_.SetDescriptor(mainCmdList, "samLinearClamp", g_samLinearClamp_);
+		g_descSet_.Reset();
+		g_blurXPassSig_.SetDescriptor(&g_descSet_, "CbGaussBlur", g_BlurCB_.cbv_);
+		g_blurXPassSig_.SetDescriptor(&g_descSet_, "texSource", *pInputs[0]->GetSrv());
+		g_blurXPassSig_.SetDescriptor(&g_descSet_, "texLinearDepth", *pInputs[1]->GetSrv());
+		g_blurXPassSig_.SetDescriptor(&g_descSet_, "samLinearClamp", g_samLinearClamp_);
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_blurXPassSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1491,13 +1547,15 @@ void RenderScene()
 
 		// PSOとルートシグネチャを設定
 		pCmdList->SetPipelineState(g_blurYPassPso_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_blurYPassSig_.GetRootSignature()->GetRootSignature());
 
 		// デスクリプタテーブル設定
-		g_blurYPassSig_.SetDescriptor(mainCmdList, "CbGaussBlur", g_BlurCB_.cbv_);
-		g_blurYPassSig_.SetDescriptor(mainCmdList, "texSource", *pTemp->GetSrv());
-		g_blurYPassSig_.SetDescriptor(mainCmdList, "texLinearDepth", *pInputs[1]->GetSrv());
-		g_blurYPassSig_.SetDescriptor(mainCmdList, "samLinearClamp", g_samLinearClamp_);
+		g_descSet_.Reset();
+		g_blurYPassSig_.SetDescriptor(&g_descSet_, "CbGaussBlur", g_BlurCB_.cbv_);
+		g_blurYPassSig_.SetDescriptor(&g_descSet_, "texSource", *pTemp->GetSrv());
+		g_blurYPassSig_.SetDescriptor(&g_descSet_, "texLinearDepth", *pInputs[1]->GetSrv());
+		g_blurYPassSig_.SetDescriptor(&g_descSet_, "samLinearClamp", g_samLinearClamp_);
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_blurYPassSig_.GetRootSignature(), &g_descSet_);
 
 		// DrawCall
 		pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1505,6 +1563,9 @@ void RenderScene()
 		pCmdList->IASetIndexBuffer(nullptr);
 		pCmdList->DrawInstanced(3, 1, 0, 0);
 	}
+
+	QueryPerformanceCounter(&end_time);
+	g_perfCount_.QuadPart = end_time.QuadPart - start_time.QuadPart;
 
 	ImGui::Render();
 
@@ -1533,6 +1594,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	ret = InitializeRenderResource();
 	assert(ret);
 
+	QueryPerformanceFrequency(&g_frequency_);
+
 	// メインループ
 	MSG msg = { 0 };
 	while (true)
@@ -1546,6 +1609,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 			if (msg.message == WM_QUIT)
 				break;
 		}
+
+		g_Device_.WaitPresent();
 
 		RenderScene();
 

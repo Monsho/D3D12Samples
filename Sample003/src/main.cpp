@@ -13,6 +13,7 @@
 #include <sl12/default_states.h>
 #include <sl12/root_signature.h>
 #include <sl12/pipeline_state.h>
+#include <sl12/descriptor_set.h>
 #include <sl12/shader.h>
 #include <sl12/gui.h>
 #include <DirectXTex.h>
@@ -65,10 +66,7 @@ namespace
 	sl12::RootSignature		g_rootSig_;
 	sl12::GraphicsPipelineState		g_compressPipeline_;
 	sl12::GraphicsPipelineState		g_noCompressPipeline_;
-	//ID3D12RootSignature*	g_pRootSig_ = nullptr;
-
-	//ID3D12PipelineState*	g_pCompressPipeline_ = nullptr;
-	//ID3D12PipelineState*	g_pNoCompressPipeline_ = nullptr;
+	sl12::DescriptorSet		g_descSet_;
 
 	ID3D12QueryHeap*		g_pTimestampQuery_[sl12::Swapchain::kMaxBuffer] = { nullptr };
 	ID3D12Resource*			g_pTimestampBuffer_[sl12::Swapchain::kMaxBuffer] = { nullptr };
@@ -272,59 +270,11 @@ bool InitializeAssets()
 
 	// ルートシグネチャを作成
 	{
-		sl12::RootParameter params[] = {
-			sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::Vertex, 0),
-		};
-
-		sl12::RootSignatureDesc rsd{};
-		rsd.numParameters = _countof(params);
-		rsd.pParameters = params;
-
-		if (!g_rootSig_.Initialize(&g_Device_, rsd))
+		if (!g_rootSig_.Initialize(&g_Device_, &g_VShader_, &g_PShader_, nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
 	}
-	//{
-	//	D3D12_DESCRIPTOR_RANGE ranges[1];
-	//	D3D12_ROOT_PARAMETER rootParameters[1];
-
-	//	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-	//	ranges[0].NumDescriptors = 1;
-	//	ranges[0].BaseShaderRegister = 0;
-	//	ranges[0].RegisterSpace = 0;
-	//	ranges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	//	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	//	rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
-	//	rootParameters[0].DescriptorTable.pDescriptorRanges = &ranges[0];
-	//	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-
-	//	D3D12_ROOT_SIGNATURE_DESC desc;
-	//	desc.NumParameters = _countof(rootParameters);
-	//	desc.pParameters = rootParameters;
-	//	desc.NumStaticSamplers = 0;
-	//	desc.pStaticSamplers = nullptr;
-	//	desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-	//	ID3DBlob* pSignature{ nullptr };
-	//	ID3DBlob* pError{ nullptr };
-	//	auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-	//	if (FAILED(hr))
-	//	{
-	//		sl12::SafeRelease(pSignature);
-	//		sl12::SafeRelease(pError);
-	//		return false;
-	//	}
-
-	//	hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSig_));
-	//	sl12::SafeRelease(pSignature);
-	//	sl12::SafeRelease(pError);
-	//	if (FAILED(hr))
-	//	{
-	//		return false;
-	//	}
-	//}
 
 	// PSOを作成
 	{
@@ -376,55 +326,6 @@ bool InitializeAssets()
 			return false;
 		}
 	}
-	//{
-	//	D3D12_INPUT_ELEMENT_DESC elementDescs0[] = {
-	//		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	//		{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	//	};
-	//	D3D12_INPUT_ELEMENT_DESC elementDescs1[] = {
-	//		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	//		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	//	};
-
-	//	D3D12_RASTERIZER_DESC rasterDesc = sl12::DefaultRasterizerStateStandard();
-	//	rasterDesc.CullMode = D3D12_CULL_MODE_NONE;
-
-	//	D3D12_BLEND_DESC blendDesc{};
-	//	blendDesc.AlphaToCoverageEnable = false;
-	//	blendDesc.IndependentBlendEnable = false;
-	//	blendDesc.RenderTarget[0] = sl12::DefaultRenderTargetBlendNone();
-
-	//	D3D12_DEPTH_STENCIL_DESC dsDesc = sl12::DefaultDepthStateEnableEnable();
-
-	//	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-	//	desc.InputLayout = { elementDescs0, _countof(elementDescs0) };
-	//	desc.pRootSignature = g_pRootSig_;
-	//	desc.VS = { reinterpret_cast<UINT8*>(g_VShader_.GetData()), g_VShader_.GetSize() };
-	//	desc.PS = { reinterpret_cast<UINT8*>(g_PShader_.GetData()), g_PShader_.GetSize() };
-	//	desc.RasterizerState = rasterDesc;
-	//	desc.BlendState = blendDesc;
-	//	desc.DepthStencilState = dsDesc;
-	//	desc.SampleMask = UINT_MAX;
-	//	desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	//	desc.NumRenderTargets = 1;
-	//	desc.RTVFormats[0] = g_Device_.GetSwapchain().GetRenderTarget(0)->GetDesc().Format;
-	//	desc.DSVFormat = g_DepthBuffer_.GetTextureDesc().format;
-	//	desc.SampleDesc.Count = 1;
-
-	//	auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pCompressPipeline_));
-	//	if (FAILED(hr))
-	//	{
-	//		return false;
-	//	}
-
-	//	desc.InputLayout = { elementDescs1, _countof(elementDescs1) };
-
-	//	hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pNoCompressPipeline_));
-	//	if (FAILED(hr))
-	//	{
-	//		return false;
-	//	}
-	//}
 
 	// タイムスタンプクエリとバッファ
 	for (int i = 0; i < sl12::Swapchain::kMaxBuffer; ++i)
@@ -487,10 +388,6 @@ void DestroyAssets()
 	for (auto& v : g_pTimestampBuffer_) sl12::SafeRelease(v);
 	for (auto& v : g_pTimestampQuery_) sl12::SafeRelease(v);
 
-	//sl12::SafeRelease(g_pNoCompressPipeline_);
-	//sl12::SafeRelease(g_pCompressPipeline_);
-
-	//sl12::SafeRelease(g_pRootSig_);
 	g_noCompressPipeline_.Destroy();
 	g_compressPipeline_.Destroy();
 	g_rootSig_.Destroy();
@@ -605,16 +502,10 @@ void RenderScene()
 			pCmdList->SetPipelineState(g_noCompressPipeline_.GetPSO());
 		}
 
-		// ルートシグネチャを設定
-		pCmdList->SetGraphicsRootSignature(g_rootSig_.GetRootSignature());
+		g_descSet_.Reset();
+		g_descSet_.SetVsCbv(0, g_CBSceneViews_[frameIndex].GetDescInfo().cpuHandle);
 
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc0.GetGpuHandle());
+		g_pNextCmdList_->SetGraphicsRootSignatureAndDescriptorSet(&g_rootSig_, &g_descSet_);
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views0[] = { g_vbufferViews_[0].GetView() };

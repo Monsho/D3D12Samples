@@ -222,7 +222,6 @@ public:
 		d3dCmdList->SetComputeRootDescriptorTable(0, resultTextureView_.GetDesc()->GetGpuHandle());
 		d3dCmdList->SetComputeRootDescriptorTable(1, sceneCBVs_[frameIndex].GetDesc()->GetGpuHandle());
 		d3dCmdList->SetComputeRootShaderResourceView(2, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
-		//d3dCmdList->SetComputeRootShaderResourceView(1, topAS_.GetResourceDep()->GetGPUVirtualAddress());
 
 		// レイトレースを実行
 		D3D12_DISPATCH_RAYS_DESC desc{};

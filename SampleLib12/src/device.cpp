@@ -75,7 +75,7 @@ namespace sl12
 		}
 
 		// デバイスの生成
-		hr = D3D12CreateDevice(pAdapter_, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&pDevice_));
+		hr = D3D12CreateDevice(pAdapter_, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pDevice_));
 		if (FAILED(hr))
 		{
 			return false;
@@ -89,6 +89,26 @@ namespace sl12
 			if (isDxrSupported_)
 			{
 				pDevice_->QueryInterface(IID_PPV_ARGS(&pDxrDevice_));
+			}
+
+			// COPY_DESCRIPTORS_INVALID_RANGESエラーを回避
+			ID3D12InfoQueue* pD3DInfoQueue;
+			if (SUCCEEDED(pDevice_->QueryInterface(__uuidof(ID3D12InfoQueue), reinterpret_cast<void**>(&pD3DInfoQueue))))
+			{
+#if 0
+				// エラー等が出たときに止めたい場合は有効にする
+				pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
+				pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+				pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
+#endif
+
+				D3D12_MESSAGE_ID blockedIds[] = { D3D12_MESSAGE_ID_COPY_DESCRIPTORS_INVALID_RANGES };
+				D3D12_INFO_QUEUE_FILTER filter = {};
+				filter.DenyList.pIDList = blockedIds;
+				filter.DenyList.NumIDs = _countof(blockedIds);
+				pD3DInfoQueue->AddRetrievalFilterEntries(&filter);
+				pD3DInfoQueue->AddStorageFilterEntries(&filter);
+				pD3DInfoQueue->Release();
 			}
 		}
 
@@ -124,6 +144,53 @@ namespace sl12
 				1
 			};
 			if (!pDescHeaps_[i].Initialize(this, desc))
+			{
+				return false;
+			}
+		}
+		{
+			D3D12_DESCRIPTOR_HEAP_DESC desc{};
+			desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+			desc.NumDescriptors = 500000;
+			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+			desc.NodeMask = 1;
+			pGlobalViewDescHeap_ = new GlobalDescriptorHeap();
+			if (!pGlobalViewDescHeap_->Initialize(this, desc))
+			{
+				return false;
+			}
+
+			desc.NumDescriptors = numDescs[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV];
+			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+			pViewDescHeap_ = new DescriptorAllocator();
+			if (!pViewDescHeap_->Initialize(this, desc))
+			{
+				return false;
+			}
+
+			desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+			desc.NumDescriptors = numDescs[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER];
+			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+			pSamplerDescHeap_ = new DescriptorAllocator();
+			if (!pSamplerDescHeap_->Initialize(this, desc))
+			{
+				return false;
+			}
+
+			desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+			desc.NumDescriptors = numDescs[D3D12_DESCRIPTOR_HEAP_TYPE_RTV];
+			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+			pRtvDescHeap_ = new DescriptorAllocator();
+			if (!pRtvDescHeap_->Initialize(this, desc))
+			{
+				return false;
+			}
+
+			desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+			desc.NumDescriptors = numDescs[D3D12_DESCRIPTOR_HEAP_TYPE_DSV];
+			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+			pDsvDescHeap_ = new DescriptorAllocator();
+			if (!pDsvDescHeap_->Initialize(this, desc))
 			{
 				return false;
 			}
@@ -165,6 +232,11 @@ namespace sl12
 
 		SafeDelete(pSwapchain_);
 
+		SafeDelete(pDsvDescHeap_);
+		SafeDelete(pRtvDescHeap_);
+		SafeDelete(pSamplerDescHeap_);
+		SafeDelete(pViewDescHeap_);
+		SafeDelete(pGlobalViewDescHeap_);
 		SafeDeleteArray(pDescHeaps_);
 
 		SafeDelete(pGraphicsQueue_);

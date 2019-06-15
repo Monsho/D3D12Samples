@@ -10,6 +10,9 @@
 #include <sl12/descriptor.h>
 #include <sl12/descriptor_heap.h>
 #include <sl12/swapchain.h>
+#include <sl12/root_signature.h>
+#include <sl12/pipeline_state.h>
+#include <sl12/descriptor_set.h>
 #include <sl12/VSGui.h>
 #include <sl12/PSGui.h>
 
@@ -51,8 +54,6 @@ namespace sl12
 
 		pOwner_ = pDevice;
 		guiHandle_ = this;
-
-		//nonCoherentAtomSize_ = owner.GetPhysicalDevice().getProperties().limits.nonCoherentAtomSize;
 
 		// imguiのコンテキスト作成
 		ImGui::CreateContext();
@@ -97,120 +98,58 @@ namespace sl12
 
 		// ルートシグニチャ作成
 		{
-			D3D12_DESCRIPTOR_RANGE ranges[] = {
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			};
-			D3D12_ROOT_PARAMETER rootParameters[3];
-
-			rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
-			rootParameters[0].DescriptorTable.pDescriptorRanges = &ranges[0];
-			rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-
-			rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
-			rootParameters[1].DescriptorTable.pDescriptorRanges = &ranges[1];
-			rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-			rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
-			rootParameters[2].DescriptorTable.pDescriptorRanges = &ranges[2];
-			rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-			D3D12_ROOT_SIGNATURE_DESC desc;
-			desc.NumParameters = _countof(rootParameters);
-			desc.pParameters = rootParameters;
-			desc.NumStaticSamplers = 0;
-			desc.pStaticSamplers = nullptr;
-			desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-			ID3DBlob* pSignature{ nullptr };
-			ID3DBlob* pError{ nullptr };
-			auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-			if (FAILED(hr))
-			{
-				sl12::SafeRelease(pSignature);
-				sl12::SafeRelease(pError);
-				return false;
-			}
-
-			hr = pDevice->GetDeviceDep()->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&pRootSig_));
-			sl12::SafeRelease(pSignature);
-			sl12::SafeRelease(pError);
-			if (FAILED(hr))
+			pRootSig_ = new RootSignature();
+			if (!pRootSig_->Initialize(pDevice, pVShader_, pPShader_, nullptr, nullptr, nullptr))
 			{
 				return false;
 			}
+
+			pDescSet_ = new DescriptorSet();
 		}
 
 		// パイプラインステート作成
 		{
 			D3D12_INPUT_ELEMENT_DESC elementDescs[] = {
-				{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-				{ "COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, sizeof(float) * 4, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+				{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,   0, 0,                 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,   0, sizeof(float) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+				{ "COLOR",    0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, sizeof(float) * 4, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			};
 
-			D3D12_RASTERIZER_DESC rasterDesc{};
-			rasterDesc.FillMode = D3D12_FILL_MODE_SOLID;
-			rasterDesc.CullMode = D3D12_CULL_MODE_NONE;
-			rasterDesc.FrontCounterClockwise = false;
-			rasterDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-			rasterDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-			rasterDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-			rasterDesc.DepthClipEnable = true;
-			rasterDesc.MultisampleEnable = false;
-			rasterDesc.AntialiasedLineEnable = false;
-			rasterDesc.ForcedSampleCount = 0;
-			rasterDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+			GraphicsPipelineStateDesc desc{};
 
-			D3D12_BLEND_DESC blendDesc{};
-			blendDesc.AlphaToCoverageEnable = false;
-			blendDesc.IndependentBlendEnable = false;
-			blendDesc.RenderTarget[0].BlendEnable = true;
-			blendDesc.RenderTarget[0].LogicOpEnable = false;
-			blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-			blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-			blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-			blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-			blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-			blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-			blendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-			blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+			desc.blend.sampleMask = UINT_MAX;
+			desc.blend.rtDesc[0].isBlendEnable = true;
+			desc.blend.rtDesc[0].srcBlendColor = D3D12_BLEND_SRC_ALPHA;
+			desc.blend.rtDesc[0].dstBlendColor = D3D12_BLEND_INV_SRC_ALPHA;
+			desc.blend.rtDesc[0].blendOpColor = D3D12_BLEND_OP_ADD;
+			desc.blend.rtDesc[0].srcBlendAlpha = D3D12_BLEND_ONE;
+			desc.blend.rtDesc[0].dstBlendAlpha = D3D12_BLEND_ZERO;
+			desc.blend.rtDesc[0].blendOpAlpha = D3D12_BLEND_OP_ADD;
+			desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-			D3D12_DEPTH_STENCIL_DESC dsDesc{};
-			D3D12_DEPTH_STENCILOP_DESC stencilWDesc{};
-			stencilWDesc.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-			stencilWDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-			stencilWDesc.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
-			stencilWDesc.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-			dsDesc.DepthEnable = (dsFormat != DXGI_FORMAT_UNKNOWN);
-			dsDesc.DepthWriteMask = (dsFormat != DXGI_FORMAT_UNKNOWN) ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
-			dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-			dsDesc.StencilEnable = false;
-			dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
-			dsDesc.FrontFace = stencilWDesc;
-			dsDesc.BackFace = stencilWDesc;
+			desc.depthStencil.isDepthEnable = (dsFormat != DXGI_FORMAT_UNKNOWN);
+			desc.depthStencil.isDepthWriteEnable = (dsFormat != DXGI_FORMAT_UNKNOWN);
+			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
-			D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-			desc.InputLayout = { elementDescs, _countof(elementDescs) };
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+			desc.rasterizer.isFrontCCW = false;
+			desc.rasterizer.isDepthClipEnable = true;
+			desc.multisampleCount = 1;
+
+			desc.inputLayout.numElements = ARRAYSIZE(elementDescs);
+			desc.inputLayout.pElements = elementDescs;
+
 			desc.pRootSignature = pRootSig_;
-			desc.VS = { pVShader_->GetData(), pVShader_->GetSize() };
-			desc.PS = { pPShader_->GetData(), pPShader_->GetSize() };
-			desc.RasterizerState = rasterDesc;
-			desc.BlendState = blendDesc;
-			desc.DepthStencilState = dsDesc;
-			desc.SampleMask = UINT_MAX;
-			desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-			desc.NumRenderTargets = 1;
-			desc.RTVFormats[0] = rtFormat;
-			desc.DSVFormat = dsFormat;
-			desc.SampleDesc.Count = 1;
+			desc.pVS = pVShader_;
+			desc.pPS = pPShader_;
+			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+			desc.numRTVs = 0;
+			desc.rtvFormats[desc.numRTVs++] = rtFormat;
+			desc.dsvFormat = dsFormat;
 
-			auto hr = pDevice->GetDeviceDep()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pPipelineState_));
-			if (FAILED(hr))
+			pPipelineState_ = new GraphicsPipelineState();
+			if (!pPipelineState_->Initialize(pDevice, desc))
 			{
 				return false;
 			}
@@ -267,8 +206,9 @@ namespace sl12
 			sl12::SafeDeleteArray(pIndexBufferViews_);
 			sl12::SafeDeleteArray(pIndexBuffers_);
 
-			sl12::SafeRelease(pRootSig_);
-			sl12::SafeRelease(pPipelineState_);
+			sl12::SafeDelete(pRootSig_);
+			sl12::SafeDelete(pPipelineState_);
+			sl12::SafeDelete(pDescSet_);
 
 			ImGui::DestroyContext();
 
@@ -398,21 +338,17 @@ namespace sl12
 
 		// パイプラインステート設定
 		ID3D12GraphicsCommandList* pNativeCmdList = pCmdList->GetCommandList();
-		pNativeCmdList->SetPipelineState(pThis->pPipelineState_);
+		pNativeCmdList->SetPipelineState(pThis->pPipelineState_->GetPSO());
 
-		// ルートシグネチャを設定
-		pNativeCmdList->SetGraphicsRootSignature(pThis->pRootSig_);
-
-		// DescriptorHeapを設定
+		// DescriptorSet設定
 		ConstantBufferView& cbView = pThis->pConstantBufferViews_[frameIndex];
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			pDevice->GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			pDevice->GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pNativeCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pNativeCmdList->SetGraphicsRootDescriptorTable(0, cbView.GetDesc()->GetGpuHandle());
-		pNativeCmdList->SetGraphicsRootDescriptorTable(1, pThis->pFontTextureView_->GetDesc()->GetGpuHandle());
-		pNativeCmdList->SetGraphicsRootDescriptorTable(2, pThis->pFontSampler_->GetDesc()->GetGpuHandle());
+		pThis->pDescSet_->Reset();
+		pThis->pDescSet_->SetVsCbv(0, cbView.GetDescInfo().cpuHandle);
+		pThis->pDescSet_->SetPsSrv(0, pThis->pFontTextureView_->GetDescInfo().cpuHandle);
+		pThis->pDescSet_->SetPsSampler(0, pThis->pFontSampler_->GetDescInfo().cpuHandle);
+
+		// RootSigとDescSetを設定
+		pCmdList->SetGraphicsRootSignatureAndDescriptorSet(pThis->pRootSig_, pThis->pDescSet_);
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { vbView.GetView() };

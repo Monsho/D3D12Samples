@@ -15,6 +15,7 @@
 #include <sl12/mesh.h>
 #include <sl12/root_signature.h>
 #include <sl12/pipeline_state.h>
+#include <sl12/descriptor_set.h>
 #include <sl12/file.h>
 #include <DirectXTex.h>
 #include <windowsx.h>
@@ -65,6 +66,7 @@ namespace
 
 	sl12::RootSignature			g_rootSigMesh_;
 	sl12::GraphicsPipelineState	g_psoMesh_;
+	sl12::DescriptorSet			g_descSet_;
 
 	sl12::File			g_meshFile_;
 	sl12::MeshInstance	g_mesh_;
@@ -212,15 +214,19 @@ bool InitializeAssets()
 
 	// ルートシグネチャを作成
 	{
-		sl12::RootParameter params[] = {
-			sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::Vertex, 0),
-		};
+		//sl12::RootParameter params[] = {
+		//	sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::Vertex, 0),
+		//};
 
-		sl12::RootSignatureDesc desc;
-		desc.numParameters = _countof(params);
-		desc.pParameters = params;
+		//sl12::RootSignatureDesc desc;
+		//desc.numParameters = _countof(params);
+		//desc.pParameters = params;
 
-		if (!g_rootSigMesh_.Initialize(&g_Device_, desc))
+		//if (!g_rootSigMesh_.Initialize(&g_Device_, desc))
+		//{
+		//	return false;
+		//}
+		if (!g_rootSigMesh_.Initialize(&g_Device_, &g_VShader_, &g_PShader_, nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
@@ -371,17 +377,21 @@ void RenderScene()
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
 
-		// PSOとルートシグネチャを設定
+		// PSOを設定
 		pCmdList->SetPipelineState(g_psoMesh_.GetPSO());
-		pCmdList->SetGraphicsRootSignature(g_rootSigMesh_.GetRootSignature());
 
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc.GetGpuHandle());
+		g_descSet_.Reset();
+		g_descSet_.SetVsCbv(0, g_CBSceneViews_[frameIndex].GetDescInfo().cpuHandle);
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(&g_rootSigMesh_, &g_descSet_);
+		//pCmdList->SetGraphicsRootSignature(g_rootSigMesh_.GetRootSignature());
+
+		//// DescriptorHeapを設定
+		//ID3D12DescriptorHeap* pDescHeaps[] = {
+		//	g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
+		//	g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
+		//};
+		//pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
+		//pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc.GetGpuHandle());
 
 		// DrawCall
 		auto submeshCount = g_mesh_.GetSubmeshCount();

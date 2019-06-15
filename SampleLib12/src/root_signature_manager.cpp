@@ -3,6 +3,7 @@
 #include <d3dcompiler.h>
 #include <sl12/crc.h>
 #include <sl12/descriptor.h>
+#include <sl12/descriptor_set.h>
 
 
 namespace sl12
@@ -23,7 +24,7 @@ namespace sl12
 	//-------------------------------------------------
 	// CBVデスクリプタを設定する
 	//-------------------------------------------------
-	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, ConstantBufferView& cbv)
+	bool RootSignatureHandle::SetDescriptor(DescriptorSet* pDescSet, const char* name, ConstantBufferView& cbv)
 	{
 		assert(IsValid());
 
@@ -31,12 +32,17 @@ namespace sl12
 		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
-			for (auto index : it->second)
+			if (isGraphics)
 			{
-				if (isGraphics)
-					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, cbv.GetDesc()->GetGpuHandle());
-				else
-					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, cbv.GetDesc()->GetGpuHandle());
+				if (it->second.vs >= 0) pDescSet->SetVsCbv(it->second.vs, cbv.GetDescInfo().cpuHandle);
+				if (it->second.ps >= 0) pDescSet->SetPsCbv(it->second.ps, cbv.GetDescInfo().cpuHandle);
+				if (it->second.gs >= 0) pDescSet->SetGsCbv(it->second.gs, cbv.GetDescInfo().cpuHandle);
+				if (it->second.hs >= 0) pDescSet->SetHsCbv(it->second.hs, cbv.GetDescInfo().cpuHandle);
+				if (it->second.ds >= 0) pDescSet->SetDsCbv(it->second.ds, cbv.GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				if (it->second.cs >= 0) pDescSet->SetCsCbv(it->second.cs, cbv.GetDescInfo().cpuHandle);
 			}
 			return true;
 		}
@@ -46,7 +52,7 @@ namespace sl12
 	//-------------------------------------------------
 	// テクスチャSRVデスクリプタを設定する
 	//-------------------------------------------------
-	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, TextureView& srv)
+	bool RootSignatureHandle::SetDescriptor(DescriptorSet* pDescSet, const char* name, TextureView& srv)
 	{
 		assert(IsValid());
 
@@ -54,12 +60,17 @@ namespace sl12
 		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
-			for (auto index : it->second)
+			if (isGraphics)
 			{
-				if (isGraphics)
-					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
-				else
-					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+				if (it->second.vs >= 0) pDescSet->SetVsSrv(it->second.vs, srv.GetDescInfo().cpuHandle);
+				if (it->second.ps >= 0) pDescSet->SetPsSrv(it->second.ps, srv.GetDescInfo().cpuHandle);
+				if (it->second.gs >= 0) pDescSet->SetGsSrv(it->second.gs, srv.GetDescInfo().cpuHandle);
+				if (it->second.hs >= 0) pDescSet->SetHsSrv(it->second.hs, srv.GetDescInfo().cpuHandle);
+				if (it->second.ds >= 0) pDescSet->SetDsSrv(it->second.ds, srv.GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				if (it->second.cs >= 0) pDescSet->SetCsSrv(it->second.cs, srv.GetDescInfo().cpuHandle);
 			}
 			return true;
 		}
@@ -69,7 +80,7 @@ namespace sl12
 	//-------------------------------------------------
 	// バッファSRVデスクリプタを設定する
 	//-------------------------------------------------
-	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, BufferView& srv)
+	bool RootSignatureHandle::SetDescriptor(DescriptorSet* pDescSet, const char* name, BufferView& srv)
 	{
 		assert(IsValid());
 
@@ -77,12 +88,17 @@ namespace sl12
 		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
-			for (auto index : it->second)
+			if (isGraphics)
 			{
-				if (isGraphics)
-					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
-				else
-					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, srv.GetDesc()->GetGpuHandle());
+				if (it->second.vs >= 0) pDescSet->SetVsSrv(it->second.vs, srv.GetDescInfo().cpuHandle);
+				if (it->second.ps >= 0) pDescSet->SetPsSrv(it->second.ps, srv.GetDescInfo().cpuHandle);
+				if (it->second.gs >= 0) pDescSet->SetGsSrv(it->second.gs, srv.GetDescInfo().cpuHandle);
+				if (it->second.hs >= 0) pDescSet->SetHsSrv(it->second.hs, srv.GetDescInfo().cpuHandle);
+				if (it->second.ds >= 0) pDescSet->SetDsSrv(it->second.ds, srv.GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				if (it->second.cs >= 0) pDescSet->SetCsSrv(it->second.cs, srv.GetDescInfo().cpuHandle);
 			}
 			return true;
 		}
@@ -92,7 +108,7 @@ namespace sl12
 	//-------------------------------------------------
 	// サンプラーデスクリプタを設定する
 	//-------------------------------------------------
-	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, Sampler& sam)
+	bool RootSignatureHandle::SetDescriptor(DescriptorSet* pDescSet, const char* name, Sampler& sam)
 	{
 		assert(IsValid());
 
@@ -100,12 +116,17 @@ namespace sl12
 		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
-			for (auto index : it->second)
+			if (isGraphics)
 			{
-				if (isGraphics)
-					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, sam.GetDesc()->GetGpuHandle());
-				else
-					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, sam.GetDesc()->GetGpuHandle());
+				if (it->second.vs >= 0) pDescSet->SetVsSampler(it->second.vs, sam.GetDescInfo().cpuHandle);
+				if (it->second.ps >= 0) pDescSet->SetPsSampler(it->second.ps, sam.GetDescInfo().cpuHandle);
+				if (it->second.gs >= 0) pDescSet->SetGsSampler(it->second.gs, sam.GetDescInfo().cpuHandle);
+				if (it->second.hs >= 0) pDescSet->SetHsSampler(it->second.hs, sam.GetDescInfo().cpuHandle);
+				if (it->second.ds >= 0) pDescSet->SetDsSampler(it->second.ds, sam.GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				if (it->second.cs >= 0) pDescSet->SetCsSampler(it->second.cs, sam.GetDescInfo().cpuHandle);
 			}
 			return true;
 		}
@@ -115,7 +136,7 @@ namespace sl12
 	//-------------------------------------------------
 	// UAVデスクリプタを設定する
 	//-------------------------------------------------
-	bool RootSignatureHandle::SetDescriptor(CommandList& cmdList, const char* name, UnorderedAccessView& uav)
+	bool RootSignatureHandle::SetDescriptor(DescriptorSet* pDescSet, const char* name, UnorderedAccessView& uav)
 	{
 		assert(IsValid());
 
@@ -123,12 +144,13 @@ namespace sl12
 		auto isGraphics = pInstance_->isGraphics_;
 		if (it != pInstance_->slotMap_.end())
 		{
-			for (auto index : it->second)
+			if (isGraphics)
 			{
-				if (isGraphics)
-					cmdList.GetCommandList()->SetGraphicsRootDescriptorTable(index, uav.GetDesc()->GetGpuHandle());
-				else
-					cmdList.GetCommandList()->SetComputeRootDescriptorTable(index, uav.GetDesc()->GetGpuHandle());
+				if (it->second.ps >= 0) pDescSet->SetPsUav(it->second.ps, uav.GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				if (it->second.cs >= 0) pDescSet->SetCsUav(it->second.cs, uav.GetDescInfo().cpuHandle);
 			}
 			return true;
 		}
@@ -191,7 +213,19 @@ namespace sl12
 		}
 
 		std::vector<RootParameter> rootParams;
-		std::map<std::string, std::vector<int>> paramMap;
+		std::map<std::string, RootSignatureInstance::Slot> paramMap;
+		auto SetRegIndex = [](RootSignatureInstance::Slot& slot, u32 bindPoint, u32 shaderVisibility)
+		{
+			switch (shaderVisibility)
+			{
+			case ShaderVisibility::Vertex:   slot.vs = bindPoint; break;
+			case ShaderVisibility::Pixel:    slot.ps = bindPoint; break;
+			case ShaderVisibility::Geometry: slot.gs = bindPoint; break;
+			case ShaderVisibility::Hull:     slot.hs = bindPoint; break;
+			case ShaderVisibility::Domain:   slot.ds = bindPoint; break;
+			case ShaderVisibility::Compute:  slot.cs = bindPoint; break;
+			}
+		};
 		auto ReflectShader = [&](Shader* pShader, u32 shaderVisibility)
 		{
 			ID3D12ShaderReflection* pReflection = nullptr;
@@ -239,45 +273,13 @@ namespace sl12
 				auto findIt = paramMap.find(bd.Name);
 				if (findIt != paramMap.end())
 				{
-					// すでに存在している
-					bool isStored = false;
-					for (auto index : findIt->second)
-					{
-						auto&& param = rootParams[index];
-						if (param.type != paramType)
-						{
-							// 同名のリソースは同一タイプのみを許容
-							return false;
-						}
-						if (param.registerIndex == bd.BindPoint)
-						{
-							param.shaderVisibility |= shaderVisibility;
-							isStored = true;
-							break;
-						}
-					}
-					if (!isStored)
-					{
-						RootParameter param;
-						param.type = paramType;
-						param.shaderVisibility = shaderVisibility;
-						param.registerIndex = bd.BindPoint;
-						findIt->second.push_back((int)rootParams.size());
-						rootParams.push_back(param);
-					}
+					SetRegIndex(findIt->second, bd.BindPoint, shaderVisibility);
 				}
 				else
 				{
-					// 新規追加
-					RootParameter param;
-					param.type = paramType;
-					param.shaderVisibility = shaderVisibility;
-					param.registerIndex = bd.BindPoint;
-
-					std::vector<int> indices;
-					indices.push_back((int)rootParams.size());
-					paramMap[bd.Name] = indices;
-					rootParams.push_back(param);
+					RootSignatureInstance::Slot slot;
+					SetRegIndex(slot, bd.BindPoint, shaderVisibility);
+					paramMap[bd.Name] = slot;
 				}
 			}
 			return true;
@@ -325,10 +327,21 @@ namespace sl12
 		RootSignatureDesc rsDesc;
 		rsDesc.numParameters = (u32)rootParams.size();
 		rsDesc.pParameters = rootParams.data();
-		if (!pNewInstance->rootSig_.Initialize(pDevice_, rsDesc))
+		if (isGraphics)
 		{
-			delete pNewInstance;
-			return RootSignatureHandle(nullptr, 0, nullptr);
+			if (!pNewInstance->rootSig_.Initialize(pDevice_, desc.pVS, desc.pPS, desc.pGS, desc.pHS, desc.pDS))
+			{
+				delete pNewInstance;
+				return RootSignatureHandle(nullptr, 0, nullptr);
+			}
+		}
+		else
+		{
+			if (!pNewInstance->rootSig_.Initialize(pDevice_, desc.pCS))
+			{
+				delete pNewInstance;
+				return RootSignatureHandle(nullptr, 0, nullptr);
+			}
 		}
 
 		// マップに登録

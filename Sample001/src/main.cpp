@@ -10,6 +10,10 @@
 #include <sl12/fence.h>
 #include <sl12/buffer.h>
 #include <sl12/buffer_view.h>
+#include <sl12/root_signature.h>
+#include <sl12/pipeline_state.h>
+#include <sl12/descriptor_set.h>
+#include <sl12/shader.h>
 #include <DirectXTex.h>
 
 #include "file.h"
@@ -56,13 +60,15 @@ namespace
 	sl12::TextureView		g_textureView_;
 	sl12::Sampler			g_sampler_;
 
-	File	g_VShader_, g_PShader_;
-	File	g_VSScreenShader_, g_PSDispDepthShader_;
+	sl12::Shader			g_VShader_, g_PShader_;
+	sl12::Shader			g_VSScreenShader_, g_PSDispDepthShader_;
 
-	ID3D12RootSignature*	g_pRootSig_ = nullptr;
+	sl12::RootSignature		g_rootSig_;
 
-	ID3D12PipelineState*	g_pPipelineWriteS_ = nullptr;
-	ID3D12PipelineState*	g_pPipelineUseS_ = nullptr;
+	sl12::GraphicsPipelineState	g_psoWriteS_;
+	sl12::GraphicsPipelineState	g_psoUseS_;
+
+	sl12::DescriptorSet		g_descSet_;
 
 }
 
@@ -312,82 +318,26 @@ bool InitializeAssets()
 	}
 
 	// シェーダロード
-	if (!g_VShader_.ReadFile("data/VSSample.cso"))
+	if (!g_VShader_.Initialize(&g_Device_, sl12::ShaderType::Vertex, "data/VSSample.cso"))
 	{
 		return false;
 	}
-	if (!g_PShader_.ReadFile("data/PSSample.cso"))
+	if (!g_PShader_.Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/PSSample.cso"))
 	{
 		return false;
 	}
-	if (!g_VSScreenShader_.ReadFile("data/VSScreen.cso"))
+	if (!g_VSScreenShader_.Initialize(&g_Device_, sl12::ShaderType::Vertex, "data/VSScreen.cso"))
 	{
 		return false;
 	}
-	if (!g_PSDispDepthShader_.ReadFile("data/PSDispDepth.cso"))
+	if (!g_PSDispDepthShader_.Initialize(&g_Device_, sl12::ShaderType::Pixel, "data/PSDispDepth.cso"))
 	{
 		return false;
 	}
 
 	// ルートシグネチャを作成
 	{
-		D3D12_DESCRIPTOR_RANGE ranges[3];
-		D3D12_ROOT_PARAMETER rootParameters[3];
-
-		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-		ranges[0].NumDescriptors = 1;
-		ranges[0].BaseShaderRegister = 0;
-		ranges[0].RegisterSpace = 0;
-		ranges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		ranges[1].NumDescriptors = 1;
-		ranges[1].BaseShaderRegister = 0;
-		ranges[1].RegisterSpace = 0;
-		ranges[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-		ranges[2].NumDescriptors = 1;
-		ranges[2].BaseShaderRegister = 0;
-		ranges[2].RegisterSpace = 0;
-		ranges[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-		rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
-		rootParameters[0].DescriptorTable.pDescriptorRanges = &ranges[0];
-		rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-
-		rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
-		rootParameters[1].DescriptorTable.pDescriptorRanges = &ranges[1];
-		rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
-		rootParameters[2].DescriptorTable.pDescriptorRanges = &ranges[2];
-		rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		D3D12_ROOT_SIGNATURE_DESC desc;
-		desc.NumParameters = _countof(rootParameters);
-		desc.pParameters = rootParameters;
-		desc.NumStaticSamplers = 0;
-		desc.pStaticSamplers = nullptr;
-		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-		ID3DBlob* pSignature{ nullptr };
-		ID3DBlob* pError{ nullptr };
-		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-		if (FAILED(hr))
-		{
-			sl12::SafeRelease(pSignature);
-			sl12::SafeRelease(pError);
-			return false;
-		}
-
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSig_));
-		sl12::SafeRelease(pSignature);
-		sl12::SafeRelease(pError);
-		if (FAILED(hr))
+		if (!g_rootSig_.Initialize(&g_Device_, &g_VShader_, &g_PShader_, nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
@@ -401,89 +351,53 @@ bool InitializeAssets()
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		};
 
-		D3D12_RASTERIZER_DESC rasterDesc{};
-		rasterDesc.FillMode = D3D12_FILL_MODE_SOLID;
-		rasterDesc.CullMode = D3D12_CULL_MODE_NONE;
-		rasterDesc.FrontCounterClockwise = false;
-		rasterDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-		rasterDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-		rasterDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-		rasterDesc.DepthClipEnable = true;
-		rasterDesc.MultisampleEnable = false;
-		rasterDesc.AntialiasedLineEnable = false;
-		rasterDesc.ForcedSampleCount = 0;
-		rasterDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+		sl12::GraphicsPipelineStateDesc desc{};
 
-		D3D12_BLEND_DESC blendDesc{};
-		blendDesc.AlphaToCoverageEnable = false;
-		blendDesc.IndependentBlendEnable = false;
-		blendDesc.RenderTarget[0].BlendEnable = false;
-		blendDesc.RenderTarget[0].LogicOpEnable = false;
-		blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-		blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+		desc.rasterizer.isFrontCCW = false;
+		desc.rasterizer.isDepthClipEnable = true;
+		desc.multisampleCount = 1;
 
-		D3D12_DEPTH_STENCIL_DESC dsDesc{};
-		D3D12_DEPTH_STENCILOP_DESC stencilWDesc{};
-		stencilWDesc.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilWDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilWDesc.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
-		stencilWDesc.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		dsDesc.DepthEnable = true;
-		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		dsDesc.StencilEnable = false;
-		dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
-		dsDesc.FrontFace = stencilWDesc;
-		dsDesc.BackFace = stencilWDesc;
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].srcBlendColor = D3D12_BLEND_ONE;
+		desc.blend.rtDesc[0].dstBlendColor = D3D12_BLEND_ZERO;
+		desc.blend.rtDesc[0].blendOpColor = D3D12_BLEND_OP_ADD;
+		desc.blend.rtDesc[0].srcBlendAlpha = D3D12_BLEND_ONE;
+		desc.blend.rtDesc[0].dstBlendAlpha = D3D12_BLEND_ZERO;
+		desc.blend.rtDesc[0].blendOpAlpha = D3D12_BLEND_OP_ADD;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-		desc.InputLayout = { elementDescs, _countof(elementDescs) };
-		desc.pRootSignature = g_pRootSig_;
-		desc.VS = { reinterpret_cast<UINT8*>(g_VShader_.GetData()), g_VShader_.GetSize() };
-		desc.PS = { reinterpret_cast<UINT8*>(g_PShader_.GetData()), g_PShader_.GetSize() };
-		desc.RasterizerState = rasterDesc;
-		desc.BlendState = blendDesc;
-		desc.DepthStencilState = dsDesc;
-		desc.SampleMask = UINT_MAX;
-		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		desc.NumRenderTargets = 1;
-		desc.RTVFormats[0] = g_RenderTarget_.GetTextureDesc().format;
-		desc.DSVFormat = g_DepthBuffer_.GetTextureDesc().format;
-		desc.SampleDesc.Count = 1;
+		desc.depthStencil.isDepthEnable = true;
+		desc.depthStencil.isDepthWriteEnable = true;
+		desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
-		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineWriteS_));
-		if (FAILED(hr))
+		desc.pRootSignature = &g_rootSig_;
+		desc.pVS = &g_VShader_;
+		desc.pPS = &g_PShader_;
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.inputLayout.numElements = _countof(elementDescs);
+		desc.inputLayout.pElements = elementDescs;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = g_RenderTarget_.GetTextureDesc().format;
+		desc.dsvFormat = g_DepthBuffer_.GetTextureDesc().format;
+
+		if (!g_psoWriteS_.Initialize(&g_Device_, desc))
 		{
 			return false;
 		}
 
-		D3D12_DEPTH_STENCILOP_DESC stencilUDesc{};
-		stencilUDesc.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilUDesc.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-		stencilUDesc.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-		stencilUDesc.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
-		desc.InputLayout = { nullptr, 0 };
-		desc.VS = { reinterpret_cast<UINT8*>(g_VSScreenShader_.GetData()), g_VSScreenShader_.GetSize() };
-		desc.PS = { reinterpret_cast<UINT8*>(g_PSDispDepthShader_.GetData()), g_PSDispDepthShader_.GetSize() };
-		dsDesc.DepthEnable = false;
-		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		dsDesc.StencilEnable = false;
-		dsDesc.StencilReadMask = dsDesc.StencilWriteMask = 0xff;
-		dsDesc.FrontFace = stencilUDesc;
-		dsDesc.BackFace = stencilUDesc;
-		desc.DepthStencilState = dsDesc;
-		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+		desc.inputLayout.numElements = 0;
+		desc.inputLayout.pElements = nullptr;
+		desc.pVS = &g_VSScreenShader_;
+		desc.pPS = &g_PSDispDepthShader_;
+		desc.depthStencil.isDepthEnable = false;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
 
-		hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineUseS_));
-		if (FAILED(hr))
+		if (!g_psoUseS_.Initialize(&g_Device_, desc))
 		{
 			return false;
 		}
@@ -494,11 +408,13 @@ bool InitializeAssets()
 
 void DestroyAssets()
 {
-	sl12::SafeRelease(g_pPipelineWriteS_);
-	sl12::SafeRelease(g_pPipelineUseS_);
+	g_psoWriteS_.Destroy();
+	g_psoUseS_.Destroy();
 
-	sl12::SafeRelease(g_pRootSig_);
+	g_rootSig_.Destroy();
 
+	g_VSScreenShader_.Destroy();
+	g_PSDispDepthShader_.Destroy();
 	g_VShader_.Destroy();
 	g_PShader_.Destroy();
 
@@ -547,12 +463,17 @@ void RenderScene()
 
 	g_pNextCmdList_->Reset();
 
-	g_pNextCmdList_->TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	for (auto& v : g_vbuffers_)
+	static bool s_InitFrame = true;
+	if (s_InitFrame)
 	{
-		g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		g_pNextCmdList_->TransitionBarrier(&g_texture_, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		for (auto& v : g_vbuffers_)
+		{
+			g_pNextCmdList_->TransitionBarrier(&v, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		}
+		g_pNextCmdList_->TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+		s_InitFrame = false;
 	}
-	g_pNextCmdList_->TransitionBarrier(&g_ibuffer_, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
 	auto scTex = g_Device_.GetSwapchain().GetCurrentTexture(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle(1);
@@ -560,9 +481,9 @@ void RenderScene()
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
 	ID3D12GraphicsCommandList* pCmdList = g_pNextCmdList_->GetCommandList();
 
-	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	g_pNextCmdList_->TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_pNextCmdList_->TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
@@ -577,8 +498,8 @@ void RenderScene()
 	pCmdList->RSSetScissorRects(1, &scissor);
 
 	// Scene定数バッファを更新
-	sl12::Descriptor& cbSceneDesc0 = *g_CBSceneViews_[frameIndex].GetDesc();
-	sl12::Descriptor& cbSceneDesc1 = *g_CBSceneViews_[frameIndex + sl12::Swapchain::kMaxBuffer].GetDesc();
+	auto&& cbScene = g_CBSceneViews_[frameIndex];
+	auto&& cbPrevScene = g_CBSceneViews_[frameIndex + sl12::Swapchain::kMaxBuffer];
 	{
 		static float sAngle = 0.0f;
 		void* p0 = g_pCBSceneBuffers_[frameIndex];
@@ -606,22 +527,14 @@ void RenderScene()
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvOffHandle, false, &dsvHandle);
 
-		// PSO設定
-		pCmdList->SetPipelineState(g_pPipelineWriteS_);
-		pCmdList->OMSetStencilRef(0xf);
+		pCmdList->SetPipelineState(g_psoWriteS_.GetPSO());
 
-		// ルートシグネチャを設定
-		pCmdList->SetGraphicsRootSignature(g_pRootSig_);
+		g_descSet_.Reset();
+		g_descSet_.SetVsCbv(0, cbScene.GetDescInfo().cpuHandle);
+		g_descSet_.SetPsSrv(0, g_textureView_.GetDescInfo().cpuHandle);
+		g_descSet_.SetPsSampler(0, g_sampler_.GetDescInfo().cpuHandle);
 
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc0.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+		g_pNextCmdList_->SetGraphicsRootSignatureAndDescriptorSet(&g_rootSig_, &g_descSet_);
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
@@ -631,32 +544,23 @@ void RenderScene()
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
-	g_pNextCmdList_->TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_GENERIC_READ);
-	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	g_pNextCmdList_->TransitionBarrier(&g_RenderTarget_, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	{
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
 		//pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
 
-		// PSO設定
-		pCmdList->SetPipelineState(g_pPipelineUseS_);
+		pCmdList->SetPipelineState(g_psoUseS_.GetPSO());
 		pCmdList->OMSetStencilRef(0xf);
 
-		// ルートシグネチャを設定
-		pCmdList->SetGraphicsRootSignature(g_pRootSig_);
+		g_descSet_.Reset();
+		g_descSet_.SetVsCbv(0, cbPrevScene.GetDescInfo().cpuHandle);
+		g_descSet_.SetPsSrv(0, g_DepthBufferTexView_.GetDescInfo().cpuHandle);
+		g_descSet_.SetPsSampler(0, g_sampler_.GetDescInfo().cpuHandle);
 
-		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc1.GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(1, g_DepthBufferTexView_.GetDesc()->GetGpuHandle());
-		//pCmdList->SetGraphicsRootDescriptorTable(1, g_RenderTargetTexView_.GetDesc()->GetGpuHandle());
-		//pCmdList->SetGraphicsRootDescriptorTable(1, g_textureView_.GetDesc()->GetGpuHandle());
-		pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+		g_pNextCmdList_->SetGraphicsRootSignatureAndDescriptorSet(&g_rootSig_, &g_descSet_);
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
@@ -666,7 +570,7 @@ void RenderScene()
 		pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
-	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT);
+	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 
 	g_pNextCmdList_->Close();
 }
@@ -705,6 +609,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 				break;
 		}
 
+		g_Device_.WaitPresent();
 		RenderScene();
 		g_Device_.Present();
 		g_Device_.WaitDrawDone();

@@ -14,8 +14,14 @@ namespace sl12
 		{
 			return false;
 		}
+		descInfo_ = pDev->GetSamplerDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
 
 		pDev->GetDeviceDep()->CreateSampler(&desc, pDesc_->GetCpuHandle());
+		pDev->GetDeviceDep()->CreateSampler(&desc, descInfo_.cpuHandle);
 
 		samplerDesc_ = desc;
 
@@ -25,6 +31,7 @@ namespace sl12
 	//----
 	void Sampler::Destroy()
 	{
+		descInfo_.Free();
 		SafeRelease(pDesc_);
 	}
 

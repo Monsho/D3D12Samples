@@ -11,6 +11,9 @@
 #include <sl12/buffer.h>
 #include <sl12/buffer_view.h>
 #include <sl12/shader.h>
+#include <sl12/root_signature.h>
+#include <sl12/pipeline_state.h>
+#include <sl12/descriptor_set.h>
 #include <sl12/gui.h>
 #include <DirectXTex.h>
 #include <windowsx.h>
@@ -124,15 +127,17 @@ namespace
 	sl12::Shader			g_FFTShaders_[FFTKind::Max];
 	sl12::Shader			g_FFTFilterShader_;
 
-	ID3D12RootSignature*	g_pRootSigTex_ = nullptr;
-	ID3D12RootSignature*	g_pRootSigFFT_ = nullptr;
-	ID3D12RootSignature*	g_pComputeRootSig_ = nullptr;
-	ID3D12RootSignature*	g_pComputeFilterRootSig_ = nullptr;
+	sl12::RootSignature		g_rootSigTex_;
+	sl12::RootSignature		g_rootSigFFT_;
+	sl12::RootSignature		g_rootSigCompute_;
+	sl12::RootSignature		g_rootSigComputeFilter_;
 
-	ID3D12PipelineState*	g_pPipelineStateTex_ = nullptr;
-	ID3D12PipelineState*	g_pPipelineStateFFT_ = nullptr;
-	ID3D12PipelineState*	g_pFFTPipelineStates_[4] = { nullptr };
-	ID3D12PipelineState*	g_pPipelineStateFilterFFT_ = nullptr;
+	sl12::GraphicsPipelineState	g_psoTex_;
+	sl12::GraphicsPipelineState	g_psoFFT_;
+	sl12::ComputePipelineState	g_psoComputeFFTs_[4];
+	sl12::ComputePipelineState	g_psoComputeFilter_;
+
+	sl12::DescriptorSet		g_descSet_;
 
 	sl12::Gui	g_Gui_;
 	sl12::InputData	g_InputData_{};
@@ -468,188 +473,19 @@ bool InitializeAssets()
 
 	// ルートシグネチャを作成
 	{
-		D3D12_DESCRIPTOR_RANGE ranges[3];
-		D3D12_ROOT_PARAMETER rootParameters[3];
-
-		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-		ranges[0].NumDescriptors = 1;
-		ranges[0].BaseShaderRegister = 0;
-		ranges[0].RegisterSpace = 0;
-		ranges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		ranges[1].NumDescriptors = 1;
-		ranges[1].BaseShaderRegister = 0;
-		ranges[1].RegisterSpace = 0;
-		ranges[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-		ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-		ranges[2].NumDescriptors = 1;
-		ranges[2].BaseShaderRegister = 0;
-		ranges[2].RegisterSpace = 0;
-		ranges[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-		rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
-		rootParameters[0].DescriptorTable.pDescriptorRanges = &ranges[0];
-		rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-
-		rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
-		rootParameters[1].DescriptorTable.pDescriptorRanges = &ranges[1];
-		rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
-		rootParameters[2].DescriptorTable.pDescriptorRanges = &ranges[2];
-		rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		D3D12_ROOT_SIGNATURE_DESC desc;
-		desc.NumParameters = _countof(rootParameters);
-		desc.pParameters = rootParameters;
-		desc.NumStaticSamplers = 0;
-		desc.pStaticSamplers = nullptr;
-		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-		ID3DBlob* pSignature{ nullptr };
-		ID3DBlob* pError{ nullptr };
-		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-		if (FAILED(hr))
-		{
-			sl12::SafeRelease(pSignature);
-			sl12::SafeRelease(pError);
-			return false;
-		}
-
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSigTex_));
-		sl12::SafeRelease(pSignature);
-		sl12::SafeRelease(pError);
-		if (FAILED(hr))
+		if (!g_rootSigTex_.Initialize(&g_Device_, &g_VShader_, &g_PShader_, nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
-	}
-	{
-		D3D12_DESCRIPTOR_RANGE ranges[]{
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-		};
-		D3D12_ROOT_PARAMETER rootParameters[]{
-			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX },
-			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL },
-			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL },
-			{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[3], D3D12_SHADER_VISIBILITY_PIXEL },
-		};
-
-		D3D12_ROOT_SIGNATURE_DESC desc;
-		desc.NumParameters = _countof(rootParameters);
-		desc.pParameters = rootParameters;
-		desc.NumStaticSamplers = 0;
-		desc.pStaticSamplers = nullptr;
-		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-		ID3DBlob* pSignature{ nullptr };
-		ID3DBlob* pError{ nullptr };
-		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-		if (FAILED(hr))
-		{
-			sl12::SafeRelease(pSignature);
-			sl12::SafeRelease(pError);
-			return false;
-		}
-
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pRootSigFFT_));
-		sl12::SafeRelease(pSignature);
-		sl12::SafeRelease(pError);
-		if (FAILED(hr))
+		if (!g_rootSigFFT_.Initialize(&g_Device_, &g_VShader_, &g_PShader_, nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
-	}
-	{
-		D3D12_DESCRIPTOR_RANGE ranges[4];
-		D3D12_ROOT_PARAMETER rootParameters[4];
-
-		for (int i = 0; i < _countof(ranges); i++)
-		{
-			ranges[i].RangeType = (i < 2) ? D3D12_DESCRIPTOR_RANGE_TYPE_SRV : D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-			ranges[i].NumDescriptors = 1;
-			ranges[i].BaseShaderRegister = i % 2;
-			ranges[i].RegisterSpace = 0;
-			ranges[i].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-			rootParameters[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			rootParameters[i].DescriptorTable.NumDescriptorRanges = 1;
-			rootParameters[i].DescriptorTable.pDescriptorRanges = &ranges[i];
-			rootParameters[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-		}
-
-		D3D12_ROOT_SIGNATURE_DESC desc;
-		desc.NumParameters = _countof(rootParameters);
-		desc.pParameters = rootParameters;
-		desc.NumStaticSamplers = 0;
-		desc.pStaticSamplers = nullptr;
-		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-		ID3DBlob* pSignature{ nullptr };
-		ID3DBlob* pError{ nullptr };
-		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-		if (FAILED(hr))
-		{
-			sl12::SafeRelease(pSignature);
-			sl12::SafeRelease(pError);
-			return false;
-		}
-
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pComputeRootSig_));
-		sl12::SafeRelease(pSignature);
-		sl12::SafeRelease(pError);
-		if (FAILED(hr))
+		if (!g_rootSigCompute_.Initialize(&g_Device_, &g_FFTShaders_[0]))
 		{
 			return false;
 		}
-	}
-	{
-		D3D12_DESCRIPTOR_RANGE ranges[] = {
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-		};
-
-		D3D12_ROOT_PARAMETER rootParameters[_countof(ranges)];
-		for (int i = 0; i < _countof(ranges); i++)
-		{
-			rootParameters[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			rootParameters[i].DescriptorTable.NumDescriptorRanges = 1;
-			rootParameters[i].DescriptorTable.pDescriptorRanges = &ranges[i];
-			rootParameters[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-		}
-
-		D3D12_ROOT_SIGNATURE_DESC desc;
-		desc.NumParameters = _countof(rootParameters);
-		desc.pParameters = rootParameters;
-		desc.NumStaticSamplers = 0;
-		desc.pStaticSamplers = nullptr;
-		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-		ID3DBlob* pSignature{ nullptr };
-		ID3DBlob* pError{ nullptr };
-		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
-		if (FAILED(hr))
-		{
-			sl12::SafeRelease(pSignature);
-			sl12::SafeRelease(pError);
-			return false;
-		}
-
-		hr = pDev->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(&g_pComputeFilterRootSig_));
-		sl12::SafeRelease(pSignature);
-		sl12::SafeRelease(pError);
-		if (FAILED(hr))
+		if (!g_rootSigComputeFilter_.Initialize(&g_Device_, &g_FFTFilterShader_))
 		{
 			return false;
 		}
@@ -663,89 +499,61 @@ bool InitializeAssets()
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		};
 
-		D3D12_RASTERIZER_DESC rasterDesc{};
-		rasterDesc.FillMode = D3D12_FILL_MODE_SOLID;
-		rasterDesc.CullMode = D3D12_CULL_MODE_NONE;
-		rasterDesc.FrontCounterClockwise = false;
-		rasterDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-		rasterDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-		rasterDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-		rasterDesc.DepthClipEnable = true;
-		rasterDesc.MultisampleEnable = false;
-		rasterDesc.AntialiasedLineEnable = false;
-		rasterDesc.ForcedSampleCount = 0;
-		rasterDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+		sl12::GraphicsPipelineStateDesc desc{};
 
-		D3D12_BLEND_DESC blendDesc{};
-		blendDesc.AlphaToCoverageEnable = false;
-		blendDesc.IndependentBlendEnable = false;
-		blendDesc.RenderTarget[0].BlendEnable = false;
-		blendDesc.RenderTarget[0].LogicOpEnable = false;
-		blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-		blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+		desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+		desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+		desc.rasterizer.isDepthClipEnable = true;
 
-		D3D12_DEPTH_STENCIL_DESC dsDesc{};
-		dsDesc.DepthEnable = true;
-		dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		dsDesc.StencilEnable = false;
+		desc.blend.sampleMask = UINT_MAX;
+		desc.blend.rtDesc[0].isBlendEnable = false;
+		desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-		desc.InputLayout = { elementDescs, _countof(elementDescs) };
-		desc.pRootSignature = g_pRootSigTex_;
-		desc.VS = { g_VShader_.GetData(), g_VShader_.GetSize() };
-		desc.PS = { g_PShader_.GetData(), g_PShader_.GetSize() };
-		desc.RasterizerState = rasterDesc;
-		desc.BlendState = blendDesc;
-		desc.DepthStencilState = dsDesc;
-		desc.SampleMask = UINT_MAX;
-		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		desc.NumRenderTargets = 1;
-		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.DSVFormat = g_DepthBuffer_.GetTextureDesc().format;
-		desc.SampleDesc.Count = 1;
+		desc.depthStencil.isDepthEnable = true;
+		desc.depthStencil.isDepthWriteEnable = true;
+		desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
-		auto hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateTex_));
-		if (FAILED(hr))
+		desc.inputLayout.numElements = _countof(elementDescs);
+		desc.inputLayout.pElements = elementDescs;
+
+		desc.pRootSignature = &g_rootSigTex_;
+		desc.pVS = &g_VShader_;
+		desc.pPS = &g_PShader_;
+		desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		desc.numRTVs = 0;
+		desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.dsvFormat = g_DepthBuffer_.GetTextureDesc().format;
+		desc.multisampleCount = 1;
+
+		if (!g_psoTex_.Initialize(&g_Device_, desc))
 		{
 			return false;
 		}
 
 		// FFT確認用
-		desc.pRootSignature = g_pRootSigFFT_;
-		desc.PS = { g_FFTViewShader_.GetData(), g_FFTViewShader_.GetSize() };
+		desc.pRootSignature = &g_rootSigFFT_;
+		desc.pPS = &g_FFTViewShader_;
 
-		hr = pDev->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateFFT_));
-		if (FAILED(hr))
+		if (!g_psoFFT_.Initialize(&g_Device_, desc))
 		{
 			return false;
 		}
 	}
 	{
-		D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
-		desc.pRootSignature = g_pComputeRootSig_;
-		for (int i = 0; i < _countof(g_pFFTPipelineStates_); i++)
+		sl12::ComputePipelineStateDesc desc{};
+		desc.pRootSignature = &g_rootSigCompute_;
+		for (int i = 0; i < _countof(g_psoComputeFFTs_); i++)
 		{
-			desc.CS = { g_FFTShaders_[i].GetData(), g_FFTShaders_[i].GetSize() };
-			auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pFFTPipelineStates_[i]));
-			if (FAILED(hr))
+			desc.pCS = &g_FFTShaders_[i];
+			if (!g_psoComputeFFTs_[i].Initialize(&g_Device_, desc))
 			{
 				return false;
 			}
 		}
-	}
-	{
-		D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
-		desc.pRootSignature = g_pComputeFilterRootSig_;
-		desc.CS = { g_FFTFilterShader_.GetData(), g_FFTFilterShader_.GetSize() };
-		auto hr = pDev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&g_pPipelineStateFilterFFT_));
-		if (FAILED(hr))
+
+		desc.pRootSignature = &g_rootSigComputeFilter_;
+		desc.pCS = &g_FFTFilterShader_;
+		if (!g_psoComputeFilter_.Initialize(&g_Device_, desc))
 		{
 			return false;
 		}
@@ -768,18 +576,15 @@ void DestroyAssets()
 {
 	g_Gui_.Destroy();
 
-	sl12::SafeRelease(g_pPipelineStateFilterFFT_);
-	for (auto& v : g_pFFTPipelineStates_)
-	{
-		sl12::SafeRelease(v);
-	}
-	sl12::SafeRelease(g_pPipelineStateTex_);
-	sl12::SafeRelease(g_pPipelineStateFFT_);
+	g_psoComputeFilter_.Destroy();
+	for (auto&& v : g_psoComputeFFTs_) v.Destroy();
+	g_psoTex_.Destroy();
+	g_psoFFT_.Destroy();
 
-	sl12::SafeRelease(g_pComputeFilterRootSig_);
-	sl12::SafeRelease(g_pComputeRootSig_);
-	sl12::SafeRelease(g_pRootSigTex_);
-	sl12::SafeRelease(g_pRootSigFFT_);
+	g_rootSigComputeFilter_.Destroy();
+	g_rootSigCompute_.Destroy();
+	g_rootSigFFT_.Destroy();
+	g_rootSigTex_.Destroy();
 
 	for (auto&& v : g_FilterCb_) v.Destroy();
 	g_srcTarget_.Destroy();
@@ -826,20 +631,14 @@ void MakeFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, TextureSet* pTex)
 {
 	ID3D12GraphicsCommandList* pCmdList = cmdList.GetCommandList();
 
-	// デスクリプタヒープの設定
-	ID3D12DescriptorHeap* pDescHeaps[] = {
-		g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-		g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-	};
-	pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-
 	// row pass
-	pCmdList->SetPipelineState(g_pFFTPipelineStates_[0]);
-	pCmdList->SetComputeRootSignature(g_pComputeRootSig_);
-	pCmdList->SetComputeRootDescriptorTable(0, pTex->srv_.GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(1, pTex->srv_.GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(2, pTarget->uav_[0].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(3, pTarget->uav_[1].GetDesc()->GetGpuHandle());
+	pCmdList->SetPipelineState(g_psoComputeFFTs_[0].GetPSO());
+	g_descSet_.Reset();
+	g_descSet_.SetCsSrv(0, pTex->srv_.GetDescInfo().cpuHandle);
+	g_descSet_.SetCsSrv(1, pTex->srv_.GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(0, pTarget->uav_[0].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(1, pTarget->uav_[1].GetDescInfo().cpuHandle);
+	cmdList.SetComputeRootSignatureAndDescriptorSet(&g_rootSigCompute_, &g_descSet_);
 	pCmdList->Dispatch(1, pTex->tex_.GetTextureDesc().height, 1);
 
 	// バリアを張る
@@ -847,12 +646,13 @@ void MakeFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, TextureSet* pTex)
 	cmdList.UAVBarrier(&pTarget->tex_[1]);
 
 	// collumn pass
-	pCmdList->SetPipelineState(g_pFFTPipelineStates_[1]);
-	pCmdList->SetComputeRootSignature(g_pComputeRootSig_);
-	pCmdList->SetComputeRootDescriptorTable(0, pTarget->uav_[0].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(1, pTarget->uav_[1].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(2, pTarget->uav_[2].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(3, pTarget->uav_[3].GetDesc()->GetGpuHandle());
+	pCmdList->SetPipelineState(g_psoComputeFFTs_[1].GetPSO());
+	g_descSet_.Reset();
+	g_descSet_.SetCsSrv(0, pTarget->uav_[0].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsSrv(1, pTarget->uav_[1].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(0, pTarget->uav_[2].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(1, pTarget->uav_[3].GetDescInfo().cpuHandle);
+	cmdList.SetComputeRootSignatureAndDescriptorSet(&g_rootSigCompute_, &g_descSet_);
 	pCmdList->Dispatch(1, pTex->tex_.GetTextureDesc().width, 1);
 
 	// バリアを張る
@@ -864,23 +664,17 @@ void MakeFilterFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, ConstantSet* 
 {
 	ID3D12GraphicsCommandList* pCmdList = cmdList.GetCommandList();
 
-	// デスクリプタヒープの設定
-	ID3D12DescriptorHeap* pDescHeaps[] = {
-		g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-		g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-	};
-	pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-
 	auto desc = pTarget->tex_[0].GetTextureDesc();
 
 	// row pass
-	pCmdList->SetPipelineState(g_pPipelineStateFilterFFT_);
-	pCmdList->SetComputeRootSignature(g_pComputeFilterRootSig_);
-	pCmdList->SetComputeRootDescriptorTable(0, pConst->cbv_.GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(1, pTarget->srv_[2].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(2, pTarget->srv_[3].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(3, pTarget->uav_[6].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(4, pTarget->uav_[7].GetDesc()->GetGpuHandle());
+	pCmdList->SetPipelineState(g_psoComputeFilter_.GetPSO());
+	g_descSet_.Reset();
+	g_descSet_.SetCsCbv(0, pConst->cbv_.GetDescInfo().cpuHandle);
+	g_descSet_.SetCsSrv(0, pTarget->uav_[2].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsSrv(1, pTarget->uav_[3].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(0, pTarget->uav_[6].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(1, pTarget->uav_[7].GetDescInfo().cpuHandle);
+	cmdList.SetComputeRootSignatureAndDescriptorSet(&g_rootSigCompute_, &g_descSet_);
 	pCmdList->Dispatch(desc.width / 32, desc.height / 32, 1);
 
 	// バリアを張る
@@ -892,20 +686,14 @@ void MakeIFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, TextureSet* pTex)
 {
 	ID3D12GraphicsCommandList* pCmdList = cmdList.GetCommandList();
 
-	// デスクリプタヒープの設定
-	ID3D12DescriptorHeap* pDescHeaps[] = {
-		g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-		g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-	};
-	pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-
 	// invert row pass
-	pCmdList->SetPipelineState(g_pFFTPipelineStates_[2]);
-	pCmdList->SetComputeRootSignature(g_pComputeRootSig_);
-	pCmdList->SetComputeRootDescriptorTable(0, pTarget->uav_[6].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(1, pTarget->uav_[7].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(2, pTarget->uav_[0].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(3, pTarget->uav_[1].GetDesc()->GetGpuHandle());
+	pCmdList->SetPipelineState(g_psoComputeFFTs_[2].GetPSO());
+	g_descSet_.Reset();
+	g_descSet_.SetCsSrv(0, pTarget->uav_[6].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsSrv(1, pTarget->uav_[7].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(0, pTarget->uav_[0].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(1, pTarget->uav_[1].GetDescInfo().cpuHandle);
+	cmdList.SetComputeRootSignatureAndDescriptorSet(&g_rootSigCompute_, &g_descSet_);
 	pCmdList->Dispatch(1, pTex->tex_.GetTextureDesc().height, 1);
 
 	// バリアを張る
@@ -913,12 +701,13 @@ void MakeIFFT(sl12::CommandList& cmdList, FFTTarget* pTarget, TextureSet* pTex)
 	cmdList.UAVBarrier(&pTarget->tex_[1]);
 
 	// invert collumn pass
-	pCmdList->SetPipelineState(g_pFFTPipelineStates_[3]);
-	pCmdList->SetComputeRootSignature(g_pComputeRootSig_);
-	pCmdList->SetComputeRootDescriptorTable(0, pTarget->uav_[0].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(1, pTarget->uav_[1].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(2, pTarget->uav_[4].GetDesc()->GetGpuHandle());
-	pCmdList->SetComputeRootDescriptorTable(3, pTarget->uav_[5].GetDesc()->GetGpuHandle());
+	pCmdList->SetPipelineState(g_psoComputeFFTs_[3].GetPSO());
+	g_descSet_.Reset();
+	g_descSet_.SetCsSrv(0, pTarget->uav_[0].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsSrv(1, pTarget->uav_[1].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(0, pTarget->uav_[4].GetDescInfo().cpuHandle);
+	g_descSet_.SetCsUav(1, pTarget->uav_[5].GetDescInfo().cpuHandle);
+	cmdList.SetComputeRootSignatureAndDescriptorSet(&g_rootSigCompute_, &g_descSet_);
 	pCmdList->Dispatch(1, pTex->tex_.GetTextureDesc().width, 1);
 
 	// バリアを張る
@@ -1024,45 +813,39 @@ void RenderScene()
 		pCmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
 
 		// PSOとルートシグネチャを設定
+		auto pRootSig = &g_rootSigTex_;
 		if ((g_fftViewType_ != FFTViewType::FFT_Result) && (g_fftViewType_ != FFTViewType::Filter_Result))
 		{
-			pCmdList->SetPipelineState(g_pPipelineStateTex_);
-			pCmdList->SetGraphicsRootSignature(g_pRootSigTex_);
+			pCmdList->SetPipelineState(g_psoTex_.GetPSO());
 		}
 		else
 		{
-			pCmdList->SetPipelineState(g_pPipelineStateFFT_);
-			pCmdList->SetGraphicsRootSignature(g_pRootSigFFT_);
+			pCmdList->SetPipelineState(g_psoFFT_.GetPSO());
+			pRootSig = &g_rootSigFFT_;
 		}
 
 		// DescriptorHeapを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			g_Device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		pCmdList->SetDescriptorHeaps(_countof(pDescHeaps), pDescHeaps);
-		pCmdList->SetGraphicsRootDescriptorTable(0, cbSceneDesc.GetGpuHandle());
+		g_descSet_.Reset();
+		g_descSet_.SetVsCbv(0, g_CBSceneViews_[frameIndex].GetDescInfo().cpuHandle);
+		g_descSet_.SetPsSampler(0, g_sampler_.GetDescInfo().cpuHandle);
 		switch (g_fftViewType_)
 		{
 		case FFTViewType::Source:
-			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTexture_.srv_.GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+			g_descSet_.SetPsSrv(0, g_srcTexture_.srv_.GetDescInfo().cpuHandle);
 			break;
 		case FFTViewType::FFT_Result:
-			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[2].GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(2, g_srcTarget_.srv_[3].GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(3, g_sampler_.GetDesc()->GetGpuHandle());
+			g_descSet_.SetPsSrv(0, g_srcTarget_.srv_[2].GetDescInfo().cpuHandle);
+			g_descSet_.SetPsSrv(1, g_srcTarget_.srv_[3].GetDescInfo().cpuHandle);
 			break;
 		case FFTViewType::Filter_Result:
-			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[6].GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(2, g_srcTarget_.srv_[7].GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(3, g_sampler_.GetDesc()->GetGpuHandle());
+			g_descSet_.SetPsSrv(0, g_srcTarget_.srv_[6].GetDescInfo().cpuHandle);
+			g_descSet_.SetPsSrv(1, g_srcTarget_.srv_[7].GetDescInfo().cpuHandle);
 			break;
 		case FFTViewType::IFFT_Result:
-			pCmdList->SetGraphicsRootDescriptorTable(1, g_srcTarget_.srv_[4].GetDesc()->GetGpuHandle());
-			pCmdList->SetGraphicsRootDescriptorTable(2, g_sampler_.GetDesc()->GetGpuHandle());
+			g_descSet_.SetPsSrv(0, g_srcTarget_.srv_[4].GetDescInfo().cpuHandle);
 			break;
 		}
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(pRootSig, &g_descSet_);
 
 		// DrawCall
 		D3D12_VERTEX_BUFFER_VIEW views[] = { g_vbufferViews_[0].GetView(), g_vbufferViews_[1].GetView(), g_vbufferViews_[2].GetView() };
@@ -1116,6 +899,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 			if (msg.message == WM_QUIT)
 				break;
 		}
+
+		g_Device_.WaitPresent();
 
 		RenderScene();
 

@@ -6,6 +6,11 @@
 
 namespace sl12
 {
+	namespace
+	{
+		const u32	kMaxSamplerDesc = 2048;		// Samplerの最大数
+	}
+
 	//----
 	bool DescriptorHeap::Initialize(Device* pDev, const D3D12_DESCRIPTOR_HEAP_DESC& desc)
 	{
@@ -81,6 +86,313 @@ namespace sl12
 		p->pPrev_ = pUnusedList_;
 		p->pNext_ = next;
 		take_num_--;
+	}
+
+
+	//----
+	void DescriptorInfo::Free()
+	{
+		if (IsValid())
+		{
+			pAllocator->Free(*this);
+			pAllocator = nullptr;
+		}
+	}
+
+	//----
+	bool DescriptorAllocator::Initialize(Device* pDev, const D3D12_DESCRIPTOR_HEAP_DESC& desc)
+	{
+		auto hr = pDev->GetDeviceDep()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pHeap_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		pUseFlags_ = new u8[desc.NumDescriptors];
+		memset(pUseFlags_, 0, sizeof(u8) * desc.NumDescriptors);
+
+		cpuHandleStart_ = pHeap_->GetCPUDescriptorHandleForHeapStart();
+		gpuHandleStart_ = pHeap_->GetGPUDescriptorHandleForHeapStart();
+
+		heapDesc_ = desc;
+		descSize_ = pDev->GetDeviceDep()->GetDescriptorHandleIncrementSize(desc.Type);
+		allocCount_ = 0;
+		currentPosition_ = 0;
+
+		return true;
+	}
+
+	//----
+	void DescriptorAllocator::Destroy()
+	{
+		assert(allocCount_ == 0);
+
+		SafeRelease(pHeap_);
+		SafeDeleteArray(pUseFlags_);
+	}
+
+	//----
+	DescriptorInfo DescriptorAllocator::Allocate()
+	{
+		DescriptorInfo ret;
+
+		std::lock_guard<std::mutex> lock(mutex_);
+
+		if (allocCount_ == heapDesc_.NumDescriptors)
+			return ret;
+
+		auto cp = currentPosition_;
+		for (u32 i = 0; i < heapDesc_.NumDescriptors; i++, cp++)
+		{
+			cp = cp % heapDesc_.NumDescriptors;
+			if (!pUseFlags_[cp])
+			{
+				pUseFlags_[cp] = 1;
+				ret.pAllocator = this;
+				ret.cpuHandle = cpuHandleStart_;
+				ret.gpuHandle = gpuHandleStart_;
+				ret.cpuHandle.ptr += descSize_ * cp;
+				ret.gpuHandle.ptr += descSize_ * cp;
+				ret.index = cp;
+
+				currentPosition_ = cp + 1;
+				allocCount_++;
+				break;
+			}
+		}
+
+		return ret;
+	}
+
+	//----
+	void DescriptorAllocator::Free(DescriptorInfo info)
+	{
+		assert(info.pAllocator == this);
+		assert(pUseFlags_[info.index] != 0);
+
+		std::lock_guard<std::mutex> lock(mutex_);
+		pUseFlags_[info.index] = 0;
+		allocCount_--;
+	}
+
+
+	//----
+	bool DescriptorStack::Allocate(u32 count, D3D12_CPU_DESCRIPTOR_HANDLE& cpuHandle, D3D12_GPU_DESCRIPTOR_HANDLE& gpuHandle)
+	{
+		if (stackPosition_ + count > stackMax_)
+			return false;
+
+		u32 prev = stackPosition_;
+		stackPosition_ += count;
+
+		cpuHandle = cpuHandleStart_;
+		cpuHandle.ptr += prev * descSize_;
+		gpuHandle = gpuHandleStart_;
+		gpuHandle.ptr += prev * descSize_;
+
+		return true;
+	}
+
+	//----
+	bool DescriptorStackList::Initialilze(GlobalDescriptorHeap* parent)
+	{
+		pParentHeap_ = parent;
+		stackIndex_ = 0;
+
+		return AddStack();
+	}
+
+	//----
+	void DescriptorStackList::Allocate(u32 count, D3D12_CPU_DESCRIPTOR_HANDLE& cpuHandle, D3D12_GPU_DESCRIPTOR_HANDLE& gpuHandle)
+	{
+		if (stacks_[stackIndex_].Allocate(count, cpuHandle, gpuHandle))
+			return;
+
+		if (!AddStack())
+			assert(!"[ERROR] Stack Empty!!");
+
+		stackIndex_++;
+		if (!stacks_[stackIndex_].Allocate(count, cpuHandle, gpuHandle))
+			assert(!"[ERROR] Stack Empty!!");
+	}
+
+	//----
+	void DescriptorStackList::Reset()
+	{
+		for (auto&& stack : stacks_) stack.Reset();
+		stackIndex_ = 0;
+	}
+
+	//----
+	bool DescriptorStackList::AddStack()
+	{
+		DescriptorStack stack;
+		stacks_.push_back(stack);
+
+		auto&& s = stacks_.back();
+		return pParentHeap_->AllocateStack(s, 2000);
+	}
+
+	//----
+	bool GlobalDescriptorHeap::Initialize(Device* pDev, const D3D12_DESCRIPTOR_HEAP_DESC& desc)
+	{
+		auto hr = pDev->GetDeviceDep()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pHeap_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		cpuHandleStart_ = pHeap_->GetCPUDescriptorHandleForHeapStart();
+		gpuHandleStart_ = pHeap_->GetGPUDescriptorHandleForHeapStart();
+
+		heapDesc_ = desc;
+		descSize_ = pDev->GetDeviceDep()->GetDescriptorHandleIncrementSize(desc.Type);
+		allocCount_ = 0;
+
+		return true;
+	}
+
+	//----
+	void GlobalDescriptorHeap::Destroy()
+	{
+		SafeRelease(pHeap_);
+	}
+
+	//----
+	bool GlobalDescriptorHeap::AllocateStack(DescriptorStack& stack, u32 count)
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+
+		if (allocCount_ + count > heapDesc_.NumDescriptors)
+			return false;
+
+		stack.cpuHandleStart_ = cpuHandleStart_;
+		stack.cpuHandleStart_.ptr += descSize_ * allocCount_;
+		stack.gpuHandleStart_ = gpuHandleStart_;
+		stack.gpuHandleStart_.ptr += descSize_ * allocCount_;
+		stack.descSize_ = descSize_;
+		stack.stackMax_ = count;
+		stack.stackPosition_ = 0;
+
+		allocCount_ += count;
+
+		return true;
+	}
+
+
+	//----
+	bool SamplerDescriptorHeap::Initialize(Device* pDev)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC desc{};
+		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+		desc.NumDescriptors = kMaxSamplerDesc;
+		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		desc.NodeMask = 1;
+
+		auto hr = pDev->GetDeviceDep()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pHeap_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		cpuHandleStart_ = pHeap_->GetCPUDescriptorHandleForHeapStart();
+		gpuHandleStart_ = pHeap_->GetGPUDescriptorHandleForHeapStart();
+
+		descSize_ = pDev->GetDeviceDep()->GetDescriptorHandleIncrementSize(desc.Type);
+		allocCount_ = 0;
+
+		return true;
+	}
+
+	//----
+	void SamplerDescriptorHeap::Destroy()
+	{
+		SafeRelease(pHeap_);
+	}
+
+	//----
+	bool SamplerDescriptorHeap::Allocate(u32 count, D3D12_CPU_DESCRIPTOR_HANDLE& cpuHandle, D3D12_GPU_DESCRIPTOR_HANDLE& gpuHandle)
+	{
+		if (allocCount_ + count > kMaxSamplerDesc)
+			return false;
+
+		cpuHandle = cpuHandleStart_;
+		cpuHandle.ptr += descSize_ * allocCount_;
+		gpuHandle = gpuHandleStart_;
+		gpuHandle.ptr += descSize_ * allocCount_;
+
+		allocCount_ += count;
+
+		return true;
+	}
+
+	//----
+	bool SamplerDescriptorCache::Initialize(Device* pDev)
+	{
+		pParentDevice_ = pDev;
+
+		return AddHeap();
+	}
+
+	//----
+	void SamplerDescriptorCache::Destroy()
+	{
+		heapList_.clear();
+	}
+
+	//----
+	bool SamplerDescriptorCache::AddHeap()
+	{
+		auto p = new SamplerDescriptorHeap();
+		if (!p->Initialize(pParentDevice_))
+			return false;
+
+		pCurrentHeap_ = p;
+		heapList_.push_back(std::unique_ptr<SamplerDescriptorHeap>(p));
+		return true;
+	}
+
+	//----
+	bool SamplerDescriptorCache::AllocateAndCopy(u32 count, D3D12_CPU_DESCRIPTOR_HANDLE* cpuHandles, D3D12_GPU_DESCRIPTOR_HANDLE& gpuHandle)
+	{
+		// キャッシュが存在するかどうか検索
+		auto hash = CalcFnv1a32(cpuHandles, sizeof(D3D12_CPU_DESCRIPTOR_HANDLE) * count);
+		auto findIt = descCache_.find(hash);
+		if (findIt != descCache_.end())
+		{
+			gpuHandle = findIt->second.gpuHandle;
+			pLastAllocateHeap_ = findIt->second.pHeap;
+			return true;
+		}
+
+		// 新しくDescriptorを確保
+		D3D12_CPU_DESCRIPTOR_HANDLE ch;
+		if (!pCurrentHeap_->Allocate(count, ch, gpuHandle))
+		{
+			// 確保できなかったので新しいHeapを作成
+			if (!AddHeap())
+				return false;
+
+			if (!pCurrentHeap_->Allocate(count, ch, gpuHandle))
+				return false;
+		}
+
+		// 確保したDescriptorにコピー処理
+		pParentDevice_->GetDeviceDep()->CopyDescriptors(
+			1, &ch, &count,
+			count, cpuHandles, nullptr,
+			D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+		// キャッシュに保存しておく
+		MapItem item;
+		item.pHeap = pCurrentHeap_;
+		item.cpuHandle = ch;
+		item.gpuHandle = gpuHandle;
+		descCache_[hash] = item;
+
+		pLastAllocateHeap_ = pCurrentHeap_;
+
+		return true;
 	}
 
 }	// namespace sl12

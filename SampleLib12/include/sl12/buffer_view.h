@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <sl12/util.h>
+#include <sl12/descriptor_heap.h>
 
 
 namespace sl12
@@ -24,10 +25,12 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
-		Descriptor*	pDesc_{ nullptr };
+		DescriptorInfo	descInfo_;
+		Descriptor*		pDesc_{ nullptr };
 	};	// class ConstantBufferView
 
 
@@ -90,10 +93,12 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
-		Descriptor*	pDesc_{ nullptr };
+		DescriptorInfo	descInfo_;
+		Descriptor*		pDesc_{ nullptr };
 	};	// class BufferView
 
 }	// namespace sl12

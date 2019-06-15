@@ -9,6 +9,8 @@ namespace sl12
 	class CommandQueue;
 	class Swapchain;
 	class DescriptorHeap;
+	class DescriptorAllocator;
+	class GlobalDescriptorHeap;
 
 	class Device
 	{
@@ -58,6 +60,26 @@ namespace sl12
 			return *pCopyQueue_;
 		}
 		DescriptorHeap&	GetDescriptorHeap(u32 no);
+		GlobalDescriptorHeap& GetGlobalViewDescriptorHeap()
+		{
+			return *pGlobalViewDescHeap_;
+		}
+		DescriptorAllocator& GetViewDescriptorHeap()
+		{
+			return *pViewDescHeap_;
+		}
+		DescriptorAllocator& GetSamplerDescriptorHeap()
+		{
+			return *pSamplerDescHeap_;
+		}
+		DescriptorAllocator& GetRtvDescriptorHeap()
+		{
+			return *pRtvDescHeap_;
+		}
+		DescriptorAllocator& GetDsvDescriptorHeap()
+		{
+			return *pDsvDescHeap_;
+		}
 		Swapchain&		GetSwapchain()
 		{
 			return *pSwapchain_;
@@ -77,6 +99,11 @@ namespace sl12
 		CommandQueue*	pCopyQueue_{ nullptr };
 
 		DescriptorHeap*	pDescHeaps_{ nullptr };
+		GlobalDescriptorHeap*	pGlobalViewDescHeap_ = nullptr;
+		DescriptorAllocator*	pViewDescHeap_ = nullptr;
+		DescriptorAllocator*	pSamplerDescHeap_ = nullptr;
+		DescriptorAllocator*	pRtvDescHeap_ = nullptr;
+		DescriptorAllocator*	pDsvDescHeap_ = nullptr;
 
 		Swapchain*		pSwapchain_{ nullptr };
 

@@ -14,6 +14,8 @@
 
 namespace sl12
 {
+	class DescriptorSet;
+
 	/*************************************************//**
 	 * @brief ルートシグネチャ生成記述子
 	*****************************************************/
@@ -35,6 +37,16 @@ namespace sl12
 		friend class RootSignatureManager;
 		friend class RootSignatureHandle;
 
+		struct Slot
+		{
+			int		vs = -1;
+			int		ps = -1;
+			int		gs = -1;
+			int		hs = -1;
+			int		ds = -1;
+			int		cs = -1;
+		};	// struct Slot
+
 	private:
 		~RootSignatureInstance()
 		{
@@ -42,10 +54,10 @@ namespace sl12
 		}
 
 	private:
-		RootSignature								rootSig_;
-		std::map<std::string, std::vector<int>>		slotMap_;
-		std::atomic<int>							referenceCounter_ = 0;
-		bool										isGraphics_ = true;
+		RootSignature					rootSig_;
+		std::map<std::string, Slot>		slotMap_;
+		std::atomic<int>				referenceCounter_ = 0;
+		bool							isGraphics_ = true;
 	};	// struct RootSignatureInstance
 
 	/*************************************************//**
@@ -91,11 +103,11 @@ namespace sl12
 
 		void Invalid();
 
-		bool SetDescriptor(CommandList& cmdList, const char* name, ConstantBufferView& cbv);
-		bool SetDescriptor(CommandList& cmdList, const char* name, TextureView& srv);
-		bool SetDescriptor(CommandList& cmdList, const char* name, BufferView& srv);
-		bool SetDescriptor(CommandList& cmdList, const char* name, Sampler& sam);
-		bool SetDescriptor(CommandList& cmdList, const char* name, UnorderedAccessView& uav);
+		bool SetDescriptor(DescriptorSet* pDescSet, const char* name, ConstantBufferView& cbv);
+		bool SetDescriptor(DescriptorSet* pDescSet, const char* name, TextureView& srv);
+		bool SetDescriptor(DescriptorSet* pDescSet, const char* name, BufferView& srv);
+		bool SetDescriptor(DescriptorSet* pDescSet, const char* name, Sampler& sam);
+		bool SetDescriptor(DescriptorSet* pDescSet, const char* name, UnorderedAccessView& uav);
 
 		RootSignature* GetRootSignature()
 		{
@@ -114,9 +126,9 @@ namespace sl12
 		}
 
 	private:
-		RootSignatureManager*		pManager_;
-		u32							crc_;
-		RootSignatureInstance*		pInstance_;
+		RootSignatureManager*		pManager_ = nullptr;
+		u32							crc_ = 0;
+		RootSignatureInstance*		pInstance_ = nullptr;
 	};	// class RootSignatureHandle
 
 	/*************************************************//**

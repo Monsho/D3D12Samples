@@ -4,6 +4,9 @@
 #include <sl12/command_queue.h>
 #include <sl12/texture.h>
 #include <sl12/buffer.h>
+#include <sl12/descriptor_heap.h>
+#include <sl12/descriptor_set.h>
+#include <sl12/root_signature.h>
 
 namespace sl12
 {
@@ -33,6 +36,25 @@ namespace sl12
 
 		pCmdList_->Close();
 
+		if (pQueue->listType_ == D3D12_COMMAND_LIST_TYPE_DIRECT || pQueue->listType_ == D3D12_COMMAND_LIST_TYPE_COMPUTE)
+		{
+			pViewDescStack_ = new DescriptorStackList();
+			if (!pViewDescStack_->Initialilze(&pDev->GetGlobalViewDescriptorHeap()))
+			{
+				return false;
+			}
+
+			pSamplerDescCache_ = new SamplerDescriptorCache();
+			if (!pSamplerDescCache_->Initialize(pDev))
+			{
+				return false;
+			}
+
+			pCurrentSamplerHeap_ = pPrevSamplerHeap_ = nullptr;
+		}
+		changeHeap_ = true;
+
+		pParentDevice_ = pDev;
 		pParentQueue_ = pQueue;
 		return true;
 	}
@@ -41,6 +63,8 @@ namespace sl12
 	void CommandList::Destroy()
 	{
 		pParentQueue_ = nullptr;
+		SafeDelete(pSamplerDescCache_);
+		SafeDelete(pViewDescStack_);
 		SafeRelease(pDxrCmdList_);
 		SafeRelease(pCmdList_);
 		SafeRelease(pCmdAllocator_);
@@ -54,6 +78,11 @@ namespace sl12
 
 		hr = pCmdList_->Reset(pCmdAllocator_, nullptr);
 		assert(SUCCEEDED(hr));
+
+		if (pViewDescStack_)
+			pViewDescStack_->Reset();
+
+		changeHeap_ = true;
 	}
 
 	//----
@@ -178,6 +207,186 @@ namespace sl12
 			barrier.UAV.pResource = p->pResource_;
 			GetCommandList()->ResourceBarrier(1, &barrier);
 		}
+	}
+
+	//----
+	void CommandList::SetGraphicsRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet)
+	{
+		auto pCmdList = GetCommandList();
+
+		auto&& input_index = pRS->GetInputIndex();
+		pCmdList->SetGraphicsRootSignature(pRS->GetRootSignature());
+
+		// サンプラーステートのハンドルを確保する
+		D3D12_GPU_DESCRIPTOR_HANDLE samplerGpuHandle;
+		D3D12_CPU_DESCRIPTOR_HANDLE sampler_handles[16 * 5];
+		u32 sampler_count = 0;
+		for (u32 i = 0; i < pDSet->GetVsSampler().maxCount; ++i)
+		{
+			sampler_handles[sampler_count++] = pDSet->GetVsSampler().cpuHandles[i];
+		}
+		for (u32 i = 0; i < pDSet->GetPsSampler().maxCount; ++i)
+		{
+			sampler_handles[sampler_count++] = pDSet->GetPsSampler().cpuHandles[i];
+		}
+		for (u32 i = 0; i < pDSet->GetGsSampler().maxCount; ++i)
+		{
+			sampler_handles[sampler_count++] = pDSet->GetGsSampler().cpuHandles[i];
+		}
+		for (u32 i = 0; i < pDSet->GetHsSampler().maxCount; ++i)
+		{
+			sampler_handles[sampler_count++] = pDSet->GetHsSampler().cpuHandles[i];
+		}
+		for (u32 i = 0; i < pDSet->GetDsSampler().maxCount; ++i)
+		{
+			sampler_handles[sampler_count++] = pDSet->GetDsSampler().cpuHandles[i];
+		}
+		if (sampler_count > 0)
+		{
+			bool isSuccess = pSamplerDescCache_->AllocateAndCopy(sampler_count, sampler_handles, samplerGpuHandle);
+			assert(isSuccess);
+
+			pCurrentSamplerHeap_ = pSamplerDescCache_->GetHeap();
+			if (pCurrentSamplerHeap_ != pPrevSamplerHeap_)
+			{
+				pPrevSamplerHeap_ = pCurrentSamplerHeap_;
+				changeHeap_ = true;
+			}
+		}
+
+		// Heapが変更されている場合はここで設定し直す
+		if (changeHeap_)
+		{
+			ID3D12DescriptorHeap* pDescHeaps[2];
+			int heap_cnt = 0;
+			if (pParentDevice_->GetGlobalViewDescriptorHeap().GetHeap())
+				pDescHeaps[heap_cnt++] = pParentDevice_->GetGlobalViewDescriptorHeap().GetHeap();
+			if (pCurrentSamplerHeap_)
+				pDescHeaps[heap_cnt++] = pCurrentSamplerHeap_;
+			pCmdList->SetDescriptorHeaps(heap_cnt, pDescHeaps);
+			changeHeap_ = false;
+		}
+
+		if (sampler_count > 0)
+		{
+			// サンプラーステートのハンドルを登録する
+			auto sampler_desc_size = pParentDevice_->GetDeviceDep()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+			auto SetSamplerDesc = [&](u32 count, u8 index)
+			{
+				if (count > 0)
+				{
+					pCmdList->SetGraphicsRootDescriptorTable(index, samplerGpuHandle);
+					samplerGpuHandle.ptr += sampler_desc_size * count;
+				}
+			};
+			SetSamplerDesc(pDSet->GetVsSampler().maxCount, input_index.vsSamplerIndex_);
+			SetSamplerDesc(pDSet->GetPsSampler().maxCount, input_index.psSamplerIndex_);
+			SetSamplerDesc(pDSet->GetGsSampler().maxCount, input_index.gsSamplerIndex_);
+			SetSamplerDesc(pDSet->GetHsSampler().maxCount, input_index.hsSamplerIndex_);
+			SetSamplerDesc(pDSet->GetDsSampler().maxCount, input_index.dsSamplerIndex_);
+		}
+
+		// CBV, SRV, UAVの登録
+		auto SetViewDesc = [&](u32 count, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, u8 index)
+		{
+			if (count > 0)
+			{
+				D3D12_CPU_DESCRIPTOR_HANDLE dst_cpu;
+				D3D12_GPU_DESCRIPTOR_HANDLE dst_gpu;
+				pViewDescStack_->Allocate(count, dst_cpu, dst_gpu);
+				pParentDevice_->GetDeviceDep()->CopyDescriptors(
+					1, &dst_cpu, &count,
+					count, handles, nullptr,
+					D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				pCmdList->SetGraphicsRootDescriptorTable(index, dst_gpu);
+			}
+		};
+		SetViewDesc(pDSet->GetVsCbv().maxCount, pDSet->GetVsCbv().cpuHandles, input_index.vsCbvIndex_);
+		SetViewDesc(pDSet->GetVsSrv().maxCount, pDSet->GetVsSrv().cpuHandles, input_index.vsSrvIndex_);
+		SetViewDesc(pDSet->GetPsCbv().maxCount, pDSet->GetPsCbv().cpuHandles, input_index.psCbvIndex_);
+		SetViewDesc(pDSet->GetPsSrv().maxCount, pDSet->GetPsSrv().cpuHandles, input_index.psSrvIndex_);
+		SetViewDesc(pDSet->GetPsUav().maxCount, pDSet->GetPsUav().cpuHandles, input_index.psUavIndex_);
+		SetViewDesc(pDSet->GetGsCbv().maxCount, pDSet->GetGsCbv().cpuHandles, input_index.gsCbvIndex_);
+		SetViewDesc(pDSet->GetGsSrv().maxCount, pDSet->GetGsSrv().cpuHandles, input_index.gsSrvIndex_);
+		SetViewDesc(pDSet->GetHsCbv().maxCount, pDSet->GetHsCbv().cpuHandles, input_index.hsCbvIndex_);
+		SetViewDesc(pDSet->GetHsSrv().maxCount, pDSet->GetHsSrv().cpuHandles, input_index.hsSrvIndex_);
+		SetViewDesc(pDSet->GetDsCbv().maxCount, pDSet->GetDsCbv().cpuHandles, input_index.dsCbvIndex_);
+		SetViewDesc(pDSet->GetDsSrv().maxCount, pDSet->GetDsSrv().cpuHandles, input_index.dsSrvIndex_);
+	}
+
+	//----
+	void CommandList::SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet)
+	{
+		auto pCmdList = GetCommandList();
+
+		auto&& input_index = pRS->GetInputIndex();
+		pCmdList->SetComputeRootSignature(pRS->GetRootSignature());
+
+		D3D12_GPU_DESCRIPTOR_HANDLE samplerGpuHandle;
+		D3D12_CPU_DESCRIPTOR_HANDLE sampler_handles[16];
+		u32 sampler_count = 0;
+		for (u32 i = 0; i < pDSet->GetCsSampler().maxCount; ++i)
+		{
+			sampler_handles[sampler_count++] = pDSet->GetCsSampler().cpuHandles[i];
+		}
+		if (sampler_count > 0)
+		{
+			bool isSuccess = pSamplerDescCache_->AllocateAndCopy(sampler_count, sampler_handles, samplerGpuHandle);
+			assert(isSuccess);
+
+			pCurrentSamplerHeap_ = pSamplerDescCache_->GetHeap();
+			if (pCurrentSamplerHeap_ != pPrevSamplerHeap_)
+			{
+				pPrevSamplerHeap_ = pCurrentSamplerHeap_;
+				changeHeap_ = true;
+			}
+		}
+
+		if (changeHeap_)
+		{
+			ID3D12DescriptorHeap* pDescHeaps[2];
+			int heap_cnt = 0;
+			if (pParentDevice_->GetGlobalViewDescriptorHeap().GetHeap())
+				pDescHeaps[heap_cnt++] = pParentDevice_->GetGlobalViewDescriptorHeap().GetHeap();
+			if (pCurrentSamplerHeap_)
+				pDescHeaps[heap_cnt++] = pCurrentSamplerHeap_;
+			pCmdList->SetDescriptorHeaps(heap_cnt, pDescHeaps);
+			changeHeap_ = false;
+		}
+
+		if (sampler_count > 0)
+		{
+			// サンプラーステートのハンドルを登録する
+			auto sampler_desc_size = pParentDevice_->GetDeviceDep()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+			auto SetSamplerDesc = [&](u32 count, u8 index)
+			{
+				if (count > 0)
+				{
+					pCmdList->SetGraphicsRootDescriptorTable(index, samplerGpuHandle);
+					samplerGpuHandle.ptr += sampler_desc_size * count;
+				}
+			};
+			SetSamplerDesc(pDSet->GetCsSampler().maxCount, input_index.csSamplerIndex_);
+		}
+
+		// CBV, SRV, UAVの登録
+		auto SetViewDesc = [&](u32 count, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, u8 index)
+		{
+			if (count > 0)
+			{
+				D3D12_CPU_DESCRIPTOR_HANDLE dst_cpu;
+				D3D12_GPU_DESCRIPTOR_HANDLE dst_gpu;
+				pViewDescStack_->Allocate(count, dst_cpu, dst_gpu);
+				pParentDevice_->GetDeviceDep()->CopyDescriptors(
+					1, &dst_cpu, &count,
+					count, handles, nullptr,
+					D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				pCmdList->SetComputeRootDescriptorTable(index, dst_gpu);
+			}
+		};
+		SetViewDesc(pDSet->GetCsCbv().maxCount, pDSet->GetCsCbv().cpuHandles, input_index.csCbvIndex_);
+		SetViewDesc(pDSet->GetCsSrv().maxCount, pDSet->GetCsSrv().cpuHandles, input_index.csSrvIndex_);
+		SetViewDesc(pDSet->GetCsUav().maxCount, pDSet->GetCsUav().cpuHandles, input_index.csUavIndex_);
 	}
 
 }	// namespace sl12
