@@ -933,6 +933,8 @@ bool InitializeAssets()
 
 void DestroyAssets()
 {
+	for (auto&& v : g_gpuTimestamp_) v.Destroy();
+
 	g_Gui_.Destroy();
 
 	g_mesh_.Destroy();
@@ -1234,34 +1236,31 @@ void RenderScene()
 		// レンダーターゲット設定
 		pCmdList->OMSetRenderTargets(_countof(rtvs), rtvs, false, &dsv);
 
-		for (int i = 0; i < 100; ++i)
+		// PSOとルートシグネチャを設定
+		pCmdList->SetPipelineState(g_basePassPso_.GetPSO());
+
+		// デスクリプタテーブル設定
+		g_descSet_.Reset();
+		g_basePassSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
+		g_basePassSig_.SetDescriptor(&g_descSet_, "CbMesh", g_MeshCB_.cbv_);
+
+		mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_basePassSig_.GetRootSignature(), &g_descSet_);
+
+		// DrawCall
+		auto submeshCount = g_mesh_.GetSubmeshCount();
+		for (sl12::s32 i = 0; i < submeshCount; ++i)
 		{
-			// PSOとルートシグネチャを設定
-			pCmdList->SetPipelineState(g_basePassPso_.GetPSO());
+			sl12::DrawSubmeshInfo info = g_mesh_.GetDrawSubmeshInfo(i);
 
-			// デスクリプタテーブル設定
-			g_descSet_.Reset();
-			g_basePassSig_.SetDescriptor(&g_descSet_, "CbScene", curCB.cbv_);
-			g_basePassSig_.SetDescriptor(&g_descSet_, "CbMesh", g_MeshCB_.cbv_);
-
-			mainCmdList.SetGraphicsRootSignatureAndDescriptorSet(g_basePassSig_.GetRootSignature(), &g_descSet_);
-
-			// DrawCall
-			auto submeshCount = g_mesh_.GetSubmeshCount();
-			for (sl12::s32 i = 0; i < submeshCount; ++i)
-			{
-				sl12::DrawSubmeshInfo info = g_mesh_.GetDrawSubmeshInfo(i);
-
-				D3D12_VERTEX_BUFFER_VIEW views[] = {
-					info.pShape->GetPositionView()->GetView(),
-					info.pShape->GetNormalView()->GetView(),
-					info.pShape->GetTexcoordView()->GetView(),
-				};
-				pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-				pCmdList->IASetVertexBuffers(0, _countof(views), views);
-				pCmdList->IASetIndexBuffer(&info.pSubmesh->GetIndexBufferView()->GetView());
-				pCmdList->DrawIndexedInstanced(info.numIndices, 1, 0, 0, 0);
-			}
+			D3D12_VERTEX_BUFFER_VIEW views[] = {
+				info.pShape->GetPositionView()->GetView(),
+				info.pShape->GetNormalView()->GetView(),
+				info.pShape->GetTexcoordView()->GetView(),
+			};
+			pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			pCmdList->IASetVertexBuffers(0, _countof(views), views);
+			pCmdList->IASetIndexBuffer(&info.pSubmesh->GetIndexBufferView()->GetView());
+			pCmdList->DrawIndexedInstanced(info.numIndices, 1, 0, 0, 0);
 		}
 	}
 
