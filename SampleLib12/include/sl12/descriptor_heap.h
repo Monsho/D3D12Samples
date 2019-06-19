@@ -242,8 +242,14 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, u32 asCount,
-			u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+		bool Initialize(
+			Device* pDev,
+			u32 bufferCount,
+			u32 asCount,
+			u32 globalCbvCount,
+			u32 globalSrvCount,
+			u32 globalUavCount,
+			u32 globalSamplerCount,
 			u32 materialCount);
 		void Destroy();
 
@@ -259,6 +265,7 @@ namespace sl12
 		ID3D12DescriptorHeap* GetSamplerHeap() { return pSamplerHeap_; }
 		u32 GetViewDescSize() const { return viewDescSize_; }
 		u32 GetSamplerDescSize() const { return samplerDescSize_; }
+		u32 GetBufferCount() const { return bufferCount_; }
 		u32 GetASCount() const { return asCount_; }
 		u32 GetGlobalCbvCount() const { return globalCbvCount_; }
 		u32 GetGlobalSrvCount() const { return globalSrvCount_; }
@@ -289,6 +296,7 @@ namespace sl12
 		u32							viewDescSize_ = 0;
 		u32							samplerDescSize_ = 0;
 
+		u32		bufferCount_ = 0;
 		u32		asCount_ = 0;
 		u32		globalCbvCount_ = 0;
 		u32		globalSrvCount_ = 0;
@@ -344,8 +352,14 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, u32 asCount,
-			u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+		bool Initialize(
+			Device* pDev,
+			u32 renderCount,
+			u32 asCount,
+			u32 globalCbvCount,
+			u32 globalSrvCount,
+			u32 globalUavCount,
+			u32 globalSamplerCount,
 			u32 materialCount);
 		void Destroy();
 

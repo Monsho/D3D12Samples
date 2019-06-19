@@ -13,6 +13,7 @@ namespace sl12
 	class SamplerDescriptorCache;
 	class RootSignature;
 	class DescriptorSet;
+	class RaytracingDescriptorManager;
 
 	class CommandList
 	{
@@ -33,12 +34,15 @@ namespace sl12
 
 		void Execute();
 
+		// こちらのリソース遷移バリアは基本的に使わないで！
 		void TransitionBarrier(Texture* p, D3D12_RESOURCE_STATES nextState);
 		void TransitionBarrier(Buffer* p, D3D12_RESOURCE_STATES nextState);
 
+		// リソースの状態遷移バリア
 		void TransitionBarrier(Texture* p, D3D12_RESOURCE_STATES prevState, D3D12_RESOURCE_STATES nextState);
 		void TransitionBarrier(Buffer* p, D3D12_RESOURCE_STATES prevState, D3D12_RESOURCE_STATES nextState);
 
+		// UAVの処理完了バリア
 		void UAVBarrier(Texture* p);
 		void UAVBarrier(Buffer* p);
 
@@ -46,8 +50,17 @@ namespace sl12
 		{
 			changeHeap_ = true;
 		}
+		// RootSignatureとDescriptorをコマンドリストに積み込む
 		void SetGraphicsRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
 		void SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
+
+		// Raytracing用のGlobal RootSignatureとDescriptorをコマンドに積み込む
+		void SetRaytracingGlobalRootSignatureAndDescriptorSet(
+			RootSignature* pRS,
+			DescriptorSet* pDSet,
+			RaytracingDescriptorManager* pRtDescMan,
+			D3D12_GPU_VIRTUAL_ADDRESS* asAddress,
+			u32 asAddressCount);
 
 		// getter
 		CommandQueue* GetParentQueue() { return pParentQueue_; }

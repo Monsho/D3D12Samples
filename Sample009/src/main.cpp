@@ -82,54 +82,6 @@ public:
 		}
 
 		// ルートシグネチャの初期化
-		{
-			D3D12_DESCRIPTOR_RANGE ranges[] = {
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			};
-
-			D3D12_ROOT_PARAMETER params[3];
-			params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-			params[0].DescriptorTable.NumDescriptorRanges = 1;
-			params[0].DescriptorTable.pDescriptorRanges = &ranges[0];
-			params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-			params[1].DescriptorTable.NumDescriptorRanges = 1;
-			params[1].DescriptorTable.pDescriptorRanges = &ranges[1];
-			params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
-			params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-			params[2].Descriptor.ShaderRegister = 0;
-			params[2].Descriptor.RegisterSpace = 0;
-
-			D3D12_ROOT_SIGNATURE_DESC sigDesc{};
-			sigDesc.NumParameters = ARRAYSIZE(params);
-			sigDesc.pParameters = params;
-			sigDesc.NumStaticSamplers = 0;
-			sigDesc.pStaticSamplers = nullptr;
-			sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-			if (!globalRootSig_.Initialize(&device_, sigDesc))
-			{
-				return false;
-			}
-		}
-		{
-			sl12::RootParameter params[] = {
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 1),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 2),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 3),
-				sl12::RootParameter(sl12::RootParameterType::Sampler, sl12::ShaderVisibility::All, 0),
-			};
-			sl12::RootSignatureDesc desc;
-			desc.pParameters = params;
-			desc.numParameters = ARRAYSIZE(params);
-			desc.flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			if (!localRootSig_.Initialize(&device_, desc))
-			{
-				return false;
-			}
-		}
 		if (!CreateRaytracingRootSignature(1, 1, 0, 1, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
 		{
 			return false;
@@ -176,7 +128,7 @@ public:
 
 		// Raytracing用DescriptorHeapの初期化
 		{
-			if (!rtDescMan_.Initialize(&device_, 1, 1, 0, 1, 0, glbMesh_.GetSubmeshCount()))
+			if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 0, 1, 0, glbMesh_.GetSubmeshCount()))
 			{
 				return false;
 			}
@@ -195,8 +147,7 @@ public:
 		}
 
 		// シェーダテーブルを生成する
-		//if (!CreateShaderTable())
-		if (!CreateShaderTableNew())
+		if (!CreateShaderTable())
 		{
 			return false;
 		}
@@ -222,21 +173,17 @@ public:
 		float color[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 		d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDesc()->GetCpuHandle(), color, 0, nullptr);
 
-#if 0
-		// グローバルルートシグネチャを設定
-		d3dCmdList->SetComputeRootSignature(globalRootSig_.GetRootSignature());
+		// デスクリプタを設定
+		rtGlobalDescSet_.Reset();
+		rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+		rtGlobalDescSet_.SetCsUav(0, resultTextureView_.GetDescInfo().cpuHandle);
 
-		// デスクリプタヒープを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
+#if 1
+		// コピーしつつコマンドリストに積む
+		D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
+			topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
 		};
-		d3dCmdList->SetDescriptorHeaps(ARRAYSIZE(pDescHeaps), pDescHeaps);
-
-		// グローバル設定のシェーダリソースを設定する
-		d3dCmdList->SetComputeRootDescriptorTable(0, resultTextureView_.GetDesc()->GetGpuHandle());
-		d3dCmdList->SetComputeRootDescriptorTable(1, sceneCBVs_[frameIndex].GetDesc()->GetGpuHandle());
-		d3dCmdList->SetComputeRootShaderResourceView(2, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
+		cmdList.SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, &rtDescMan_, as_address, ARRAYSIZE(as_address));
 #else
 		// グローバルルートシグネチャを設定
 		d3dCmdList->SetComputeRootSignature(rtGlobalRootSig_.GetRootSignature());
@@ -330,8 +277,6 @@ public:
 		rtDescMan_.Destroy();
 		rtLocalRootSig_.Destroy();
 		rtGlobalRootSig_.Destroy();
-		localRootSig_.Destroy();
-		globalRootSig_.Destroy();
 
 		imageSampler_.Destroy();
 		imageTextureView_.Destroy();
@@ -799,79 +744,6 @@ private:
 
 	bool CreateShaderTable()
 	{
-		// レイ生成シェーダ、ミスシェーダ、ヒットグループのIDを取得します.
-		// 各シェーダ種別ごとにシェーダテーブルを作成しますが、このサンプルでは各シェーダ種別はそれぞれ1つのシェーダを持つことになります.
-		void* rayGenShaderIdentifier;
-		void* missShaderIdentifier;
-		void* hitGroupShaderIdentifier;
-		{
-			ID3D12StateObjectProperties* prop;
-			stateObject_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
-			rayGenShaderIdentifier = prop->GetShaderIdentifier(kRayGenName);
-			missShaderIdentifier = prop->GetShaderIdentifier(kMissName);
-			hitGroupShaderIdentifier = prop->GetShaderIdentifier(kHitGroupName);
-			prop->Release();
-		}
-
-		UINT shaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-
-		auto Align = [](UINT size, UINT align)
-		{
-			return ((size + align - 1) / align) * align;
-		};
-
-		// シェーダレコードサイズ
-		// シェーダレコードはシェーダテーブルの要素1つです.
-		// これはシェーダIDとローカルルートシグネチャに設定される変数の組み合わせで構成されています.
-		// シェーダレコードのサイズはシェーダテーブル内で同一でなければならないため、同一シェーダテーブル内で最大のレコードサイズを指定すべきです.
-		// 本サンプルではすべてのシェーダレコードについてサイズが同一となります.
-		UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 4, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
-
-		auto GenShaderTable = [&](void* shaderId, sl12::Buffer& buffer)
-		{
-			if (!buffer.Initialize(&device_, shaderRecordSize, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
-			{
-				return false;
-			}
-
-			auto p = reinterpret_cast<char*>(buffer.Map(nullptr));
-			memcpy(p, shaderId, shaderIdentifierSize);
-			p += descHandleOffset;
-
-			auto texHandle = imageTextureView_.GetDesc()->GetGpuHandle();
-			auto uvHandle = glbMesh_.GetSubmesh(0)->GetTexcoordBV().GetDesc()->GetGpuHandle();
-			auto indexHandle = glbMesh_.GetSubmesh(0)->GetIndexBV().GetDesc()->GetGpuHandle();
-			//auto uvHandle = geometryUVBV_.GetDesc()->GetGpuHandle();
-			//auto indexHandle = geometryIBV_.GetDesc()->GetGpuHandle();
-			auto samHandle = imageSampler_.GetDesc()->GetGpuHandle();
-			memcpy(p, &texHandle, sizeof(texHandle)); p += sizeof(texHandle);
-			memcpy(p, &uvHandle, sizeof(uvHandle)); p += sizeof(uvHandle);
-			memcpy(p, &indexHandle, sizeof(indexHandle)); p += sizeof(indexHandle);
-			memcpy(p, &samHandle, sizeof(samHandle)); p += sizeof(samHandle);
-			buffer.Unmap();
-
-			return true;
-		};
-
-		if (!GenShaderTable(rayGenShaderIdentifier, rayGenTable_))
-		{
-			return false;
-		}
-		if (!GenShaderTable(missShaderIdentifier, missTable_))
-		{
-			return false;
-		}
-		if (!GenShaderTable(hitGroupShaderIdentifier, hitGroupTable_))
-		{
-			return false;
-		}
-
-		return true;
-	}
-
-	bool CreateShaderTableNew()
-	{
 		// LocalRS用のマテリアルDescriptorを用意する
 		std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> gpu_handles;
 		auto view_desc_size = rtDescMan_.GetViewDescSize();
@@ -1008,9 +880,9 @@ private:
 	static const int kBufferCount = sl12::Swapchain::kMaxBuffer;
 
 	sl12::CommandList		cmdLists_[kBufferCount];
-	sl12::RootSignature		globalRootSig_, localRootSig_;
 	sl12::RootSignature		rtGlobalRootSig_, rtLocalRootSig_;
 	sl12::RaytracingDescriptorManager	rtDescMan_;
+	sl12::DescriptorSet		rtGlobalDescSet_;
 
 	sl12::DxrPipelineState		stateObject_;
 	sl12::Texture				resultTexture_;

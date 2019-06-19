@@ -400,10 +400,17 @@ namespace sl12
 
 
 	//----
-	bool RaytracingDescriptorHeap::Initialize(Device* pDev, u32 asCount,
-		u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+	bool RaytracingDescriptorHeap::Initialize(
+		Device* pDev,
+		u32 bufferCount,
+		u32 asCount,
+		u32 globalCbvCount,
+		u32 globalSrvCount,
+		u32 globalUavCount,
+		u32 globalSamplerCount,
 		u32 materialCount)
 	{
+		bufferCount_ = std::max(bufferCount, Swapchain::kMaxBuffer);
 		asCount_ = asCount;
 		globalCbvCount_ = globalCbvCount;
 		globalSrvCount_ = globalSrvCount;
@@ -420,8 +427,8 @@ namespace sl12
 		u32 local_view_max = GetLocalViewCount() * materialCount;
 		u32 local_sampler_max = GetLocalSamplerCount() * materialCount;
 
-		u32 view_max = std::max<u32>(1024, (global_view_max + local_view_max) * Swapchain::kMaxBuffer);
-		u32 sampler_max = std::max<u32>(1024, (global_sampler_max + local_sampler_max) * Swapchain::kMaxBuffer);
+		u32 view_max = std::max<u32>(1024, (global_view_max + local_view_max) * bufferCount_);
+		u32 sampler_max = std::max<u32>(1024, (global_sampler_max + local_sampler_max) * bufferCount_);
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc{};
 
@@ -466,7 +473,7 @@ namespace sl12
 	//----
 	void RaytracingDescriptorHeap::GetGlobalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
 	{
-		assert(frameIndex < Swapchain::kMaxBuffer);
+		assert(frameIndex < bufferCount_);
 
 		u32 view_cnt = GetGlobalViewCount();
 		cpu = viewCpuHandleStart_;
@@ -478,7 +485,7 @@ namespace sl12
 	//----
 	void RaytracingDescriptorHeap::GetGlobalSamplerHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
 	{
-		assert(frameIndex < Swapchain::kMaxBuffer);
+		assert(frameIndex < bufferCount_);
 
 		u32 sampler_cnt = GetGlobalSamplerCount();
 		cpu = samplerCpuHandleStart_;
@@ -490,10 +497,10 @@ namespace sl12
 	//----
 	void RaytracingDescriptorHeap::GetLocalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
 	{
-		assert(frameIndex < Swapchain::kMaxBuffer);
+		assert(frameIndex < bufferCount_);
 
-		u32 global_max = GetGlobalViewCount() * Swapchain::kMaxBuffer;
-		u32 local_max = (viewDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		u32 global_max = GetGlobalViewCount() * bufferCount_;
+		u32 local_max = (viewDescMax_ - global_max) / bufferCount_;
 		cpu = viewCpuHandleStart_;
 		cpu.ptr += (global_max + local_max * frameIndex) * viewDescSize_;
 		gpu = viewGpuHandleStart_;
@@ -503,10 +510,10 @@ namespace sl12
 	//----
 	void RaytracingDescriptorHeap::GetLocalSamplerHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
 	{
-		assert(frameIndex < Swapchain::kMaxBuffer);
+		assert(frameIndex < bufferCount_);
 
-		u32 global_max = GetGlobalSamplerCount() * Swapchain::kMaxBuffer;
-		u32 local_max = (samplerDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		u32 global_max = GetGlobalSamplerCount() * bufferCount_;
+		u32 local_max = (samplerDescMax_ - global_max) / bufferCount_;
 		cpu = samplerCpuHandleStart_;
 		cpu.ptr += (global_max + local_max * frameIndex) * samplerDescSize_;
 		gpu = samplerGpuHandleStart_;
@@ -518,9 +525,9 @@ namespace sl12
 	{
 		u32 local_view_max = GetLocalViewCount() * materialCount;
 		u32 local_sampler_max = GetLocalSamplerCount() * materialCount;
-		u32 global_max = GetGlobalSamplerCount() * Swapchain::kMaxBuffer;
-		u32 cur_view_max = (viewDescMax_ - global_max) / Swapchain::kMaxBuffer;
-		u32 cur_sampler_max = (samplerDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		u32 global_max = GetGlobalSamplerCount() * bufferCount_;
+		u32 cur_view_max = (viewDescMax_ - global_max) / bufferCount_;
+		u32 cur_sampler_max = (samplerDescMax_ - global_max) / bufferCount_;
 		if (local_view_max > cur_view_max || local_sampler_max > cur_sampler_max)
 		{
 			return false;
@@ -531,14 +538,20 @@ namespace sl12
 	}
 
 	//----
-	bool RaytracingDescriptorManager::Initialize(Device* pDev, u32 asCount,
-		u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+	bool RaytracingDescriptorManager::Initialize(
+		Device* pDev,
+		u32 renderCount,
+		u32 asCount,
+		u32 globalCbvCount,
+		u32 globalSrvCount,
+		u32 globalUavCount,
+		u32 globalSamplerCount,
 		u32 materialCount)
 	{
 		pParentDevice_ = pDev;
 
 		pCurrentHeap_ = new RaytracingDescriptorHeap();
-		if (!pCurrentHeap_->Initialize(pDev, asCount, globalCbvCount, globalSrvCount, globalUavCount, globalSamplerCount, materialCount))
+		if (!pCurrentHeap_->Initialize(pDev, renderCount * Swapchain::kMaxBuffer, asCount, globalCbvCount, globalSrvCount, globalUavCount, globalSamplerCount, materialCount))
 		{
 			delete pCurrentHeap_;
 			return false;
@@ -584,7 +597,7 @@ namespace sl12
 		auto pPrevHeap = pCurrentHeap_;
 
 		pCurrentHeap_ = new RaytracingDescriptorHeap();
-		if (!pCurrentHeap_->Initialize(pParentDevice_, pPrevHeap->GetASCount(), pPrevHeap->GetGlobalCbvCount(), pPrevHeap->GetGlobalSrvCount(), pPrevHeap->GetGlobalUavCount(), pPrevHeap->GetGlobalSamplerCount(), materialCount))
+		if (!pCurrentHeap_->Initialize(pParentDevice_, pPrevHeap->GetBufferCount(), pPrevHeap->GetASCount(), pPrevHeap->GetGlobalCbvCount(), pPrevHeap->GetGlobalSrvCount(), pPrevHeap->GetGlobalUavCount(), pPrevHeap->GetGlobalSamplerCount(), materialCount))
 		{
 			delete pCurrentHeap_;
 			pCurrentHeap_ = pPrevHeap;
@@ -614,7 +627,7 @@ namespace sl12
 		HandleStart ret;
 		pCurrentHeap_->GetGlobalViewHandleStart(globalIndex_, ret.viewCpuHandle, ret.viewGpuHandle);
 		pCurrentHeap_->GetGlobalSamplerHandleStart(globalIndex_, ret.samplerCpuHandle, ret.samplerGpuHandle);
-		globalIndex_ = (globalIndex_ + 1) % Swapchain::kMaxBuffer;
+		globalIndex_ = (globalIndex_ + 1) % pCurrentHeap_->GetBufferCount();
 		return ret;
 	}
 
@@ -624,7 +637,7 @@ namespace sl12
 		HandleStart ret;
 		pCurrentHeap_->GetLocalViewHandleStart(localIndex_, ret.viewCpuHandle, ret.viewGpuHandle);
 		pCurrentHeap_->GetLocalSamplerHandleStart(localIndex_, ret.samplerCpuHandle, ret.samplerGpuHandle);
-		localIndex_ = (localIndex_ + 1) % Swapchain::kMaxBuffer;
+		localIndex_ = (localIndex_ + 1) % pCurrentHeap_->GetBufferCount();
 		return ret;
 	}
 

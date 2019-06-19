@@ -413,6 +413,81 @@ namespace sl12
 		SetViewDesc(pDSet->GetCsUav().maxCount, pDSet->GetCsUav().cpuHandles, input_index.csUavIndex_);
 	}
 
+	//----
+	void CommandList::SetRaytracingGlobalRootSignatureAndDescriptorSet(
+		RootSignature* pRS,
+		DescriptorSet* pDSet,
+		RaytracingDescriptorManager* pRtDescMan,
+		D3D12_GPU_VIRTUAL_ADDRESS* asAddress,
+		u32 asAddressCount)
+	{
+		auto pCmdList = GetCommandList();
+		auto def_view = pParentDevice_->GetDefaultViewDescInfo().cpuHandle;
+		auto def_sampler = pParentDevice_->GetDefaultSamplerDescInfo().cpuHandle;
+
+		// グローバルルートシグネチャを設定
+		pCmdList->SetComputeRootSignature(pRS->GetRootSignature());
+
+		// デスクリプタヒープを設定
+		pRtDescMan->SetHeapToCommandList(*this);
+
+		// Global用のハンドルを取得する
+		auto global_handle_start = pRtDescMan->IncrementGlobalHandleStart();
+
+		// CBV, SRV, UAVの登録
+		D3D12_CPU_DESCRIPTOR_HANDLE tmp[kSrvMax];
+		u32 slot_index = 0;
+		auto SetViewDesc = [&](u32 count, u32 offset, const D3D12_CPU_DESCRIPTOR_HANDLE* handles)
+		{
+			if (count > offset)
+			{
+				auto cnt = count - offset;
+				for (u32 i = 0; i < cnt; i++)
+				{
+					tmp[i] = (handles[i - offset].ptr > 0) ? handles[i - offset] : def_view;
+				}
+
+				pParentDevice_->GetDeviceDep()->CopyDescriptors(
+					1, &global_handle_start.viewCpuHandle, &cnt,
+					cnt, tmp, nullptr,
+					D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				pCmdList->SetComputeRootDescriptorTable(slot_index++, global_handle_start.viewGpuHandle);
+
+				global_handle_start.viewCpuHandle.ptr += pRtDescMan->GetViewDescSize() * cnt;
+				global_handle_start.viewGpuHandle.ptr += pRtDescMan->GetViewDescSize() * cnt;
+			}
+		};
+		SetViewDesc(pDSet->GetCsCbv().maxCount, 0, pDSet->GetCsCbv().cpuHandles);
+		SetViewDesc(pDSet->GetCsSrv().maxCount, asAddressCount, pDSet->GetCsSrv().cpuHandles);
+		SetViewDesc(pDSet->GetCsUav().maxCount, 0, pDSet->GetCsUav().cpuHandles);
+
+		// Samplerの登録
+		if (pDSet->GetCsSampler().maxCount > 0)
+		{
+			auto cnt = pDSet->GetCsSampler().maxCount;
+			auto handles = pDSet->GetCsSampler().cpuHandles;
+			for (u32 i = 0; i < cnt; i++)
+			{
+				tmp[i] = (handles[i].ptr > 0) ? handles[i] : def_sampler;
+			}
+
+			pParentDevice_->GetDeviceDep()->CopyDescriptors(
+				1, &global_handle_start.samplerCpuHandle, &cnt,
+				cnt, tmp, nullptr,
+				D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+			pCmdList->SetComputeRootDescriptorTable(slot_index++, global_handle_start.samplerGpuHandle);
+
+			global_handle_start.samplerCpuHandle.ptr += pRtDescMan->GetSamplerDescSize() * cnt;
+			global_handle_start.samplerGpuHandle.ptr += pRtDescMan->GetSamplerDescSize() * cnt;
+		}
+
+		// ASの登録
+		for (u32 i = 0; i < asAddressCount; i++)
+		{
+			pCmdList->SetComputeRootShaderResourceView(slot_index++, asAddress[i]);
+		}
+	}
+
 }	// namespace sl12
 
 //	EOF
