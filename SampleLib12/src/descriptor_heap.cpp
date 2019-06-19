@@ -2,6 +2,9 @@
 
 #include <sl12/device.h>
 #include <sl12/descriptor.h>
+#include <sl12/descriptor_set.h>
+#include <sl12/swapchain.h>
+#include <sl12/command_list.h>
 
 
 namespace sl12
@@ -394,6 +397,241 @@ namespace sl12
 
 		return true;
 	}
+
+
+	//----
+	bool RaytracingDescriptorHeap::Initialize(Device* pDev, u32 asCount,
+		u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+		u32 materialCount)
+	{
+		asCount_ = asCount;
+		globalCbvCount_ = globalCbvCount;
+		globalSrvCount_ = globalSrvCount;
+		globalUavCount_ = globalUavCount;
+		globalSamplerCount_ = globalSamplerCount;
+		materialCount_ = materialCount;
+		localCbvCount_ = kCbvMax - globalCbvCount;
+		localSrvCount_ = kSrvMax - asCount - globalSrvCount;
+		localUavCount_ = kUavMax - globalUavCount;
+		localSamplerCount_ = kSamplerMax - globalSamplerCount;
+
+		u32 global_view_max = GetGlobalViewCount();
+		u32 global_sampler_max = GetGlobalSamplerCount();
+		u32 local_view_max = GetLocalViewCount() * materialCount;
+		u32 local_sampler_max = GetLocalSamplerCount() * materialCount;
+
+		u32 view_max = std::max<u32>(1024, (global_view_max + local_view_max) * Swapchain::kMaxBuffer);
+		u32 sampler_max = std::max<u32>(1024, (global_sampler_max + local_sampler_max) * Swapchain::kMaxBuffer);
+
+		D3D12_DESCRIPTOR_HEAP_DESC desc{};
+
+		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		desc.NumDescriptors = view_max;
+		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		desc.NodeMask = 1;
+		auto hr = pDev->GetDeviceDep()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pViewHeap_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+		desc.NumDescriptors = sampler_max;
+		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		desc.NodeMask = 1;
+		hr = pDev->GetDeviceDep()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pSamplerHeap_));
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		viewCpuHandleStart_ = pViewHeap_->GetCPUDescriptorHandleForHeapStart();
+		viewGpuHandleStart_ = pViewHeap_->GetGPUDescriptorHandleForHeapStart();
+		samplerCpuHandleStart_ = pSamplerHeap_->GetCPUDescriptorHandleForHeapStart();
+		samplerGpuHandleStart_ = pSamplerHeap_->GetGPUDescriptorHandleForHeapStart();
+
+		viewDescSize_ = pDev->GetDeviceDep()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		samplerDescSize_ = pDev->GetDeviceDep()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+		return true;
+	}
+
+	//----
+	void RaytracingDescriptorHeap::Destroy()
+	{
+		SafeRelease(pViewHeap_);
+		SafeRelease(pSamplerHeap_);
+	}
+
+	//----
+	void RaytracingDescriptorHeap::GetGlobalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
+	{
+		assert(frameIndex < Swapchain::kMaxBuffer);
+
+		u32 view_cnt = GetGlobalViewCount();
+		cpu = viewCpuHandleStart_;
+		cpu.ptr += view_cnt * frameIndex * viewDescSize_;
+		gpu = viewGpuHandleStart_;
+		gpu.ptr += view_cnt * frameIndex * viewDescSize_;
+	}
+
+	//----
+	void RaytracingDescriptorHeap::GetGlobalSamplerHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
+	{
+		assert(frameIndex < Swapchain::kMaxBuffer);
+
+		u32 sampler_cnt = GetGlobalSamplerCount();
+		cpu = samplerCpuHandleStart_;
+		cpu.ptr += sampler_cnt * frameIndex * samplerDescSize_;
+		gpu = samplerGpuHandleStart_;
+		gpu.ptr += sampler_cnt * frameIndex * samplerDescSize_;
+	}
+
+	//----
+	void RaytracingDescriptorHeap::GetLocalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
+	{
+		assert(frameIndex < Swapchain::kMaxBuffer);
+
+		u32 global_max = GetGlobalViewCount() * Swapchain::kMaxBuffer;
+		u32 local_max = (viewDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		cpu = viewCpuHandleStart_;
+		cpu.ptr += (global_max + local_max * frameIndex) * viewDescSize_;
+		gpu = viewGpuHandleStart_;
+		gpu.ptr += (global_max + local_max * frameIndex) * viewDescSize_;
+	}
+
+	//----
+	void RaytracingDescriptorHeap::GetLocalSamplerHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
+	{
+		assert(frameIndex < Swapchain::kMaxBuffer);
+
+		u32 global_max = GetGlobalSamplerCount() * Swapchain::kMaxBuffer;
+		u32 local_max = (samplerDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		cpu = samplerCpuHandleStart_;
+		cpu.ptr += (global_max + local_max * frameIndex) * samplerDescSize_;
+		gpu = samplerGpuHandleStart_;
+		gpu.ptr += (global_max + local_max * frameIndex) * samplerDescSize_;
+	}
+
+	//----
+	bool RaytracingDescriptorHeap::CanResizeMaterialCount(u32 materialCount)
+	{
+		u32 local_view_max = GetLocalViewCount() * materialCount;
+		u32 local_sampler_max = GetLocalSamplerCount() * materialCount;
+		u32 global_max = GetGlobalSamplerCount() * Swapchain::kMaxBuffer;
+		u32 cur_view_max = (viewDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		u32 cur_sampler_max = (samplerDescMax_ - global_max) / Swapchain::kMaxBuffer;
+		if (local_view_max > cur_view_max || local_sampler_max > cur_sampler_max)
+		{
+			return false;
+		}
+
+		materialCount_ = materialCount;
+		return true;
+	}
+
+	//----
+	bool RaytracingDescriptorManager::Initialize(Device* pDev, u32 asCount,
+		u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+		u32 materialCount)
+	{
+		pParentDevice_ = pDev;
+
+		pCurrentHeap_ = new RaytracingDescriptorHeap();
+		if (!pCurrentHeap_->Initialize(pDev, asCount, globalCbvCount, globalSrvCount, globalUavCount, globalSamplerCount, materialCount))
+		{
+			delete pCurrentHeap_;
+			return false;
+		}
+
+		globalIndex_ = localIndex_ = 0;
+
+		return true;
+	}
+
+	//----
+	void RaytracingDescriptorManager::Destroy()
+	{
+		for (auto it = heapsBeforeKill_.begin(); it != heapsBeforeKill_.end(); it++)
+		{
+			it->ForceKill();
+		}
+		heapsBeforeKill_.clear();
+
+		SafeDelete(pCurrentHeap_);
+	}
+
+	//----
+	void RaytracingDescriptorManager::BeginNewFrame()
+	{
+		for (auto it = heapsBeforeKill_.begin(); it != heapsBeforeKill_.end(); it++)
+		{
+			if (it->Kill())
+			{
+				it = heapsBeforeKill_.erase(it);
+			}
+		}
+	}
+
+	//----
+	bool RaytracingDescriptorManager::ResizeMaterialCount(u32 materialCount)
+	{
+		if (pCurrentHeap_->CanResizeMaterialCount(materialCount))
+		{
+			return true;
+		}
+
+		auto pPrevHeap = pCurrentHeap_;
+
+		pCurrentHeap_ = new RaytracingDescriptorHeap();
+		if (!pCurrentHeap_->Initialize(pParentDevice_, pPrevHeap->GetASCount(), pPrevHeap->GetGlobalCbvCount(), pPrevHeap->GetGlobalSrvCount(), pPrevHeap->GetGlobalUavCount(), pPrevHeap->GetGlobalSamplerCount(), materialCount))
+		{
+			delete pCurrentHeap_;
+			pCurrentHeap_ = pPrevHeap;
+			return false;
+		}
+
+		heapsBeforeKill_.push_back(KillPendingHeap(pPrevHeap));
+
+		return true;
+	}
+
+	//----
+	void RaytracingDescriptorManager::SetHeapToCommandList(CommandList& cmdList)
+	{
+		auto&& d3dCmdList = cmdList.GetCommandList();
+
+		ID3D12DescriptorHeap* pDescHeaps[] = {
+			pCurrentHeap_->GetViewHeap(),
+			pCurrentHeap_->GetSamplerHeap(),
+		};
+		d3dCmdList->SetDescriptorHeaps(ARRAYSIZE(pDescHeaps), pDescHeaps);
+	}
+
+	//----
+	RaytracingDescriptorManager::HandleStart RaytracingDescriptorManager::IncrementGlobalHandleStart()
+	{
+		HandleStart ret;
+		pCurrentHeap_->GetGlobalViewHandleStart(globalIndex_, ret.viewCpuHandle, ret.viewGpuHandle);
+		pCurrentHeap_->GetGlobalSamplerHandleStart(globalIndex_, ret.samplerCpuHandle, ret.samplerGpuHandle);
+		globalIndex_ = (globalIndex_ + 1) % Swapchain::kMaxBuffer;
+		return ret;
+	}
+
+	//----
+	RaytracingDescriptorManager::HandleStart RaytracingDescriptorManager::IncrementLocalHandleStart()
+	{
+		HandleStart ret;
+		pCurrentHeap_->GetLocalViewHandleStart(localIndex_, ret.viewCpuHandle, ret.viewGpuHandle);
+		pCurrentHeap_->GetLocalSamplerHandleStart(localIndex_, ret.samplerCpuHandle, ret.samplerGpuHandle);
+		localIndex_ = (localIndex_ + 1) % Swapchain::kMaxBuffer;
+		return ret;
+	}
+
+	//----
+	RaytracingDescriptorManager::KillPendingHeap::KillPendingHeap(RaytracingDescriptorHeap* h)
+		: pHeap(h), killCount(Swapchain::kMaxBuffer)
+	{}
 
 }	// namespace sl12
 

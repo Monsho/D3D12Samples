@@ -2,6 +2,7 @@
 
 #include <sl12/util.h>
 #include <array>
+#include <sl12/descriptor_heap.h>
 
 
 namespace sl12
@@ -80,6 +81,14 @@ namespace sl12
 		{
 			return *pDsvDescHeap_;
 		}
+		DescriptorInfo& GetDefaultViewDescInfo()
+		{
+			return defaultViewDescInfo_;
+		}
+		DescriptorInfo& GetDefaultSamplerDescInfo()
+		{
+			return defaultSamplerDescInfo_;
+		}
 		Swapchain&		GetSwapchain()
 		{
 			return *pSwapchain_;
@@ -104,6 +113,9 @@ namespace sl12
 		DescriptorAllocator*	pSamplerDescHeap_ = nullptr;
 		DescriptorAllocator*	pRtvDescHeap_ = nullptr;
 		DescriptorAllocator*	pDsvDescHeap_ = nullptr;
+
+		DescriptorInfo	defaultViewDescInfo_;
+		DescriptorInfo	defaultSamplerDescInfo_;
 
 		Swapchain*		pSwapchain_{ nullptr };
 

@@ -7,6 +7,11 @@ namespace sl12
 {
 	class Device;
 
+	static const u32 kCbvMax = 16;
+	static const u32 kSrvMax = 48;
+	static const u32 kUavMax = 16;
+	static const u32 kSamplerMax = 16;
+
 	class DescriptorSet
 	{
 	private:
@@ -18,6 +23,7 @@ namespace sl12
 
 			void Reset()
 			{
+				memset(cpuHandles, 0, sizeof(cpuHandles));
 				maxCount = 0;
 			}
 
@@ -59,48 +65,48 @@ namespace sl12
 		inline void SetCsUav(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
 
 		// getter
-		const Handles<16>& GetVsCbv() const { return vsCbv_; }
-		const Handles<48>& GetVsSrv() const { return vsSrv_; }
-		const Handles<16>& GetVsSampler() const { return vsSampler_; }
-		const Handles<16>& GetPsCbv() const { return psCbv_; }
-		const Handles<48>& GetPsSrv() const { return psSrv_; }
-		const Handles<16>& GetPsSampler() const { return psSampler_; }
-		const Handles<16>& GetPsUav() const { return psUav_; }
-		const Handles<16>& GetGsCbv() const { return gsCbv_; }
-		const Handles<48>& GetGsSrv() const { return gsSrv_; }
-		const Handles<16>& GetGsSampler() const { return gsSampler_; }
-		const Handles<16>& GetHsCbv() const { return hsCbv_; }
-		const Handles<48>& GetHsSrv() const { return hsSrv_; }
-		const Handles<16>& GetHsSampler() const { return hsSampler_; }
-		const Handles<16>& GetDsCbv() const { return dsCbv_; }
-		const Handles<48>& GetDsSrv() const { return dsSrv_; }
-		const Handles<16>& GetDsSampler() const { return dsSampler_; }
-		const Handles<16>& GetCsCbv() const { return csCbv_; }
-		const Handles<48>& GetCsSrv() const { return csSrv_; }
-		const Handles<16>& GetCsSampler() const { return csSampler_; }
-		const Handles<16>& GetCsUav() const { return csUav_; }
+		const Handles<kCbvMax>& GetVsCbv() const { return vsCbv_; }
+		const Handles<kSrvMax>& GetVsSrv() const { return vsSrv_; }
+		const Handles<kSamplerMax>& GetVsSampler() const { return vsSampler_; }
+		const Handles<kCbvMax>& GetPsCbv() const { return psCbv_; }
+		const Handles<kSrvMax>& GetPsSrv() const { return psSrv_; }
+		const Handles<kSamplerMax>& GetPsSampler() const { return psSampler_; }
+		const Handles<kUavMax>& GetPsUav() const { return psUav_; }
+		const Handles<kCbvMax>& GetGsCbv() const { return gsCbv_; }
+		const Handles<kSrvMax>& GetGsSrv() const { return gsSrv_; }
+		const Handles<kSamplerMax>& GetGsSampler() const { return gsSampler_; }
+		const Handles<kCbvMax>& GetHsCbv() const { return hsCbv_; }
+		const Handles<kSrvMax>& GetHsSrv() const { return hsSrv_; }
+		const Handles<kSamplerMax>& GetHsSampler() const { return hsSampler_; }
+		const Handles<kCbvMax>& GetDsCbv() const { return dsCbv_; }
+		const Handles<kSrvMax>& GetDsSrv() const { return dsSrv_; }
+		const Handles<kSamplerMax>& GetDsSampler() const { return dsSampler_; }
+		const Handles<kCbvMax>& GetCsCbv() const { return csCbv_; }
+		const Handles<kSrvMax>& GetCsSrv() const { return csSrv_; }
+		const Handles<kSamplerMax>& GetCsSampler() const { return csSampler_; }
+		const Handles<kUavMax>& GetCsUav() const { return csUav_; }
 
 	private:
-		Handles<16>		vsCbv_;
-		Handles<48>		vsSrv_;
-		Handles<16>		vsSampler_;
-		Handles<16>		psCbv_;
-		Handles<48>		psSrv_;
-		Handles<16>		psSampler_;
-		Handles<16>		psUav_;
-		Handles<16>		gsCbv_;
-		Handles<48>		gsSrv_;
-		Handles<16>		gsSampler_;
-		Handles<16>		hsCbv_;
-		Handles<48>		hsSrv_;
-		Handles<16>		hsSampler_;
-		Handles<16>		dsCbv_;
-		Handles<48>		dsSrv_;
-		Handles<16>		dsSampler_;
-		Handles<16>		csCbv_;
-		Handles<48>		csSrv_;
-		Handles<16>		csSampler_;
-		Handles<16>		csUav_;
+		Handles<kCbvMax>		vsCbv_;
+		Handles<kSrvMax>		vsSrv_;
+		Handles<kSamplerMax>	vsSampler_;
+		Handles<kCbvMax>		psCbv_;
+		Handles<kSrvMax>		psSrv_;
+		Handles<kSamplerMax>	psSampler_;
+		Handles<kUavMax>		psUav_;
+		Handles<kCbvMax>		gsCbv_;
+		Handles<kSrvMax>		gsSrv_;
+		Handles<kSamplerMax>	gsSampler_;
+		Handles<kCbvMax>		hsCbv_;
+		Handles<kSrvMax>		hsSrv_;
+		Handles<kSamplerMax>	hsSampler_;
+		Handles<kCbvMax>		dsCbv_;
+		Handles<kSrvMax>		dsSrv_;
+		Handles<kSamplerMax>	dsSampler_;
+		Handles<kCbvMax>		csCbv_;
+		Handles<kSrvMax>		csSrv_;
+		Handles<kSamplerMax>	csSampler_;
+		Handles<kUavMax>		csUav_;
 	};	// class DescriptorSet
 
 	inline void DescriptorSet::Reset()

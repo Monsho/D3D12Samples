@@ -194,6 +194,9 @@ namespace sl12
 			{
 				return false;
 			}
+
+			defaultViewDescInfo_ = pViewDescHeap_->Allocate();
+			defaultSamplerDescInfo_ = pSamplerDescHeap_->Allocate();
 		}
 
 		// Swapchainの作成
@@ -231,6 +234,9 @@ namespace sl12
 		SafeRelease(pFence_);
 
 		SafeDelete(pSwapchain_);
+
+		defaultSamplerDescInfo_.Free();
+		defaultViewDescInfo_.Free();
 
 		SafeDelete(pDsvDescHeap_);
 		SafeDelete(pRtvDescHeap_);

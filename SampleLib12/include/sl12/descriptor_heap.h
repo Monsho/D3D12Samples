@@ -5,12 +5,14 @@
 #include <atomic>
 #include <vector>
 #include <map>
+#include <list>
 
 
 namespace sl12
 {
 	class Device;
 	class Descriptor;
+	class CommandList;
 
 	class DescriptorHeap
 	{
@@ -228,6 +230,144 @@ namespace sl12
 		SamplerDescriptorHeap*									pCurrentHeap_ = nullptr;
 		std::map<u32, MapItem>									descCache_;
 	};	// class SamplerDescriptorCache
+
+
+	class RaytracingDescriptorHeap
+	{
+	public:
+		RaytracingDescriptorHeap()
+		{}
+		~RaytracingDescriptorHeap()
+		{
+			Destroy();
+		}
+
+		bool Initialize(Device* pDev, u32 asCount,
+			u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+			u32 materialCount);
+		void Destroy();
+
+		void GetGlobalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
+		void GetGlobalSamplerHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
+		void GetLocalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
+		void GetLocalSamplerHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
+
+		bool CanResizeMaterialCount(u32 materialCount);
+
+		// getter
+		ID3D12DescriptorHeap* GetViewHeap() { return pViewHeap_; }
+		ID3D12DescriptorHeap* GetSamplerHeap() { return pSamplerHeap_; }
+		u32 GetViewDescSize() const { return viewDescSize_; }
+		u32 GetSamplerDescSize() const { return samplerDescSize_; }
+		u32 GetASCount() const { return asCount_; }
+		u32 GetGlobalCbvCount() const { return globalCbvCount_; }
+		u32 GetGlobalSrvCount() const { return globalSrvCount_; }
+		u32 GetGlobalUavCount() const { return globalUavCount_; }
+		u32 GetGlobalSamplerCount() const { return globalSamplerCount_; }
+		u32 GetGlobalViewCount() const
+		{
+			return globalCbvCount_ + globalSrvCount_ + globalUavCount_;
+		}
+		u32 GetLocalCbvCount() const { return localCbvCount_; }
+		u32 GetLocalSrvCount() const { return localSrvCount_; }
+		u32 GetLocalUavCount() const { return localUavCount_; }
+		u32 GetLocalSamplerCount() const { return localSamplerCount_; }
+		u32 GetLocalViewCount() const
+		{
+			return localCbvCount_ + localSrvCount_ + localUavCount_;
+		}
+
+	private:
+		ID3D12DescriptorHeap*		pViewHeap_ = nullptr;
+		ID3D12DescriptorHeap*		pSamplerHeap_ = nullptr;
+		D3D12_CPU_DESCRIPTOR_HANDLE	viewCpuHandleStart_;
+		D3D12_GPU_DESCRIPTOR_HANDLE	viewGpuHandleStart_;
+		D3D12_CPU_DESCRIPTOR_HANDLE	samplerCpuHandleStart_;
+		D3D12_GPU_DESCRIPTOR_HANDLE	samplerGpuHandleStart_;
+		u32							viewDescMax_ = 0;
+		u32							samplerDescMax_ = 0;
+		u32							viewDescSize_ = 0;
+		u32							samplerDescSize_ = 0;
+
+		u32		asCount_ = 0;
+		u32		globalCbvCount_ = 0;
+		u32		globalSrvCount_ = 0;
+		u32		globalUavCount_ = 0;
+		u32		globalSamplerCount_ = 0;
+		u32		localCbvCount_ = 0;
+		u32		localSrvCount_ = 0;
+		u32		localUavCount_ = 0;
+		u32		localSamplerCount_ = 0;
+		u32		materialCount_ = 0;
+	};	// class RaytracingDescriptorHeap
+
+	class RaytracingDescriptorManager
+	{
+		struct KillPendingHeap
+		{
+			RaytracingDescriptorHeap*	pHeap = nullptr;
+			int							killCount = 0;
+
+			KillPendingHeap(RaytracingDescriptorHeap* h);
+
+			bool Kill()
+			{
+				killCount--;
+				if (killCount <= 0)
+				{
+					SafeDelete(pHeap);
+					return true;
+				}
+				return false;
+			}
+
+			void ForceKill()
+			{
+				SafeDelete(pHeap);
+			}
+		};
+
+	public:
+		struct HandleStart
+		{
+			D3D12_CPU_DESCRIPTOR_HANDLE		viewCpuHandle;
+			D3D12_GPU_DESCRIPTOR_HANDLE		viewGpuHandle;
+			D3D12_CPU_DESCRIPTOR_HANDLE		samplerCpuHandle;
+			D3D12_GPU_DESCRIPTOR_HANDLE		samplerGpuHandle;
+		};	// struct HandleStart
+
+	public:
+		RaytracingDescriptorManager()
+		{}
+		~RaytracingDescriptorManager()
+		{
+			Destroy();
+		}
+
+		bool Initialize(Device* pDev, u32 asCount,
+			u32 globalCbvCount, u32 globalSrvCount, u32 globalUavCount, u32 globalSamplerCount,
+			u32 materialCount);
+		void Destroy();
+
+		void BeginNewFrame();
+
+		bool ResizeMaterialCount(u32 materialCount);
+
+		void SetHeapToCommandList(sl12::CommandList& cmdList);
+
+		HandleStart IncrementGlobalHandleStart();
+		HandleStart IncrementLocalHandleStart();
+
+		u32 GetViewDescSize() const { return pCurrentHeap_->GetViewDescSize(); }
+		u32 GetSamplerDescSize() const { return pCurrentHeap_->GetSamplerDescSize(); }
+
+	private:
+		Device*							pParentDevice_ = nullptr;
+		RaytracingDescriptorHeap*		pCurrentHeap_ = nullptr;
+		std::list<KillPendingHeap>		heapsBeforeKill_;
+		u32								globalIndex_ = 0;
+		u32								localIndex_ = 0;
+	};	// class RaytracingDescriptorManager
 
 }	// namespace sl12
 

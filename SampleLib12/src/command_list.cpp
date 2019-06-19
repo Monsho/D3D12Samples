@@ -213,6 +213,8 @@ namespace sl12
 	void CommandList::SetGraphicsRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet)
 	{
 		auto pCmdList = GetCommandList();
+		auto def_view = pParentDevice_->GetDefaultViewDescInfo().cpuHandle;
+		auto def_sampler = pParentDevice_->GetDefaultSamplerDescInfo().cpuHandle;
 
 		auto&& input_index = pRS->GetInputIndex();
 		pCmdList->SetGraphicsRootSignature(pRS->GetRootSignature());
@@ -221,25 +223,29 @@ namespace sl12
 		D3D12_GPU_DESCRIPTOR_HANDLE samplerGpuHandle;
 		D3D12_CPU_DESCRIPTOR_HANDLE sampler_handles[16 * 5];
 		u32 sampler_count = 0;
-		for (u32 i = 0; i < pDSet->GetVsSampler().maxCount; ++i)
+		auto SetSamplerHandle = [&](const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
 		{
-			sampler_handles[sampler_count++] = pDSet->GetVsSampler().cpuHandles[i];
+			sampler_handles[sampler_count++] = (handle.ptr > 0) ? handle : def_sampler;
+		};
+		for (u32 i = 0; i < pDSet->GetVsSampler().maxCount; i++)
+		{
+			SetSamplerHandle(pDSet->GetVsSampler().cpuHandles[i]);
 		}
-		for (u32 i = 0; i < pDSet->GetPsSampler().maxCount; ++i)
+		for (u32 i = 0; i < pDSet->GetPsSampler().maxCount; i++)
 		{
-			sampler_handles[sampler_count++] = pDSet->GetPsSampler().cpuHandles[i];
+			SetSamplerHandle(pDSet->GetPsSampler().cpuHandles[i]);
 		}
-		for (u32 i = 0; i < pDSet->GetGsSampler().maxCount; ++i)
+		for (u32 i = 0; i < pDSet->GetGsSampler().maxCount; i++)
 		{
-			sampler_handles[sampler_count++] = pDSet->GetGsSampler().cpuHandles[i];
+			SetSamplerHandle(pDSet->GetGsSampler().cpuHandles[i]);
 		}
-		for (u32 i = 0; i < pDSet->GetHsSampler().maxCount; ++i)
+		for (u32 i = 0; i < pDSet->GetHsSampler().maxCount; i++)
 		{
-			sampler_handles[sampler_count++] = pDSet->GetHsSampler().cpuHandles[i];
+			SetSamplerHandle(pDSet->GetHsSampler().cpuHandles[i]);
 		}
-		for (u32 i = 0; i < pDSet->GetDsSampler().maxCount; ++i)
+		for (u32 i = 0; i < pDSet->GetDsSampler().maxCount; i++)
 		{
-			sampler_handles[sampler_count++] = pDSet->GetDsSampler().cpuHandles[i];
+			SetSamplerHandle(pDSet->GetDsSampler().cpuHandles[i]);
 		}
 		if (sampler_count > 0)
 		{
@@ -287,16 +293,22 @@ namespace sl12
 		}
 
 		// CBV, SRV, UAVの登録
+		D3D12_CPU_DESCRIPTOR_HANDLE tmp[kSrvMax];
 		auto SetViewDesc = [&](u32 count, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, u8 index)
 		{
 			if (count > 0)
 			{
+				for (u32 i = 0; i < count; i++)
+				{
+					tmp[i] = (handles[i].ptr > 0) ? handles[i] : def_view;
+				}
+
 				D3D12_CPU_DESCRIPTOR_HANDLE dst_cpu;
 				D3D12_GPU_DESCRIPTOR_HANDLE dst_gpu;
 				pViewDescStack_->Allocate(count, dst_cpu, dst_gpu);
 				pParentDevice_->GetDeviceDep()->CopyDescriptors(
 					1, &dst_cpu, &count,
-					count, handles, nullptr,
+					count, tmp, nullptr,
 					D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				pCmdList->SetGraphicsRootDescriptorTable(index, dst_gpu);
 			}
@@ -318,6 +330,8 @@ namespace sl12
 	void CommandList::SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet)
 	{
 		auto pCmdList = GetCommandList();
+		auto def_view = pParentDevice_->GetDefaultViewDescInfo().cpuHandle;
+		auto def_sampler = pParentDevice_->GetDefaultSamplerDescInfo().cpuHandle;
 
 		auto&& input_index = pRS->GetInputIndex();
 		pCmdList->SetComputeRootSignature(pRS->GetRootSignature());
@@ -325,9 +339,13 @@ namespace sl12
 		D3D12_GPU_DESCRIPTOR_HANDLE samplerGpuHandle;
 		D3D12_CPU_DESCRIPTOR_HANDLE sampler_handles[16];
 		u32 sampler_count = 0;
-		for (u32 i = 0; i < pDSet->GetCsSampler().maxCount; ++i)
+		auto SetSamplerHandle = [&](const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
 		{
-			sampler_handles[sampler_count++] = pDSet->GetCsSampler().cpuHandles[i];
+			sampler_handles[sampler_count++] = (handle.ptr > 0) ? handle : def_sampler;
+		};
+		for (u32 i = 0; i < pDSet->GetCsSampler().maxCount; i++)
+		{
+			SetSamplerHandle(pDSet->GetCsSampler().cpuHandles[i]);
 		}
 		if (sampler_count > 0)
 		{
@@ -370,16 +388,22 @@ namespace sl12
 		}
 
 		// CBV, SRV, UAVの登録
+		D3D12_CPU_DESCRIPTOR_HANDLE tmp[kSrvMax];
 		auto SetViewDesc = [&](u32 count, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, u8 index)
 		{
 			if (count > 0)
 			{
+				for (u32 i = 0; i < count; i++)
+				{
+					tmp[i] = (handles[i].ptr > 0) ? handles[i] : def_view;
+				}
+
 				D3D12_CPU_DESCRIPTOR_HANDLE dst_cpu;
 				D3D12_GPU_DESCRIPTOR_HANDLE dst_gpu;
 				pViewDescStack_->Allocate(count, dst_cpu, dst_gpu);
 				pParentDevice_->GetDeviceDep()->CopyDescriptors(
 					1, &dst_cpu, &count,
-					count, handles, nullptr,
+					count, tmp, nullptr,
 					D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				pCmdList->SetComputeRootDescriptorTable(index, dst_gpu);
 			}
