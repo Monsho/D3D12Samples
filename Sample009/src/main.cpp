@@ -82,7 +82,7 @@ public:
 		}
 
 		// ルートシグネチャの初期化
-		if (!CreateRaytracingRootSignature(1, 1, 0, 1, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
+		if (!sl12::CreateRaytracingRootSignature(&device_, 1, 1, 0, 1, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
 		{
 			return false;
 		}
@@ -178,39 +178,11 @@ public:
 		rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 		rtGlobalDescSet_.SetCsUav(0, resultTextureView_.GetDescInfo().cpuHandle);
 
-#if 1
 		// コピーしつつコマンドリストに積む
 		D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
 			topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
 		};
 		cmdList.SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, &rtDescMan_, as_address, ARRAYSIZE(as_address));
-#else
-		// グローバルルートシグネチャを設定
-		d3dCmdList->SetComputeRootSignature(rtGlobalRootSig_.GetRootSignature());
-
-		// デスクリプタヒープを設定
-		rtDescMan_.SetHeapToCommandList(cmdList);
-
-		// デスクリプタコピー
-		auto global_handle_start = rtDescMan_.IncrementGlobalHandleStart();
-		sl12::u32 count = 1;
-		{
-			auto cbv_handle = sceneCBVs_[frameIndex].GetDescInfo().cpuHandle;
-			auto uav_handle = resultTextureView_.GetDescInfo().cpuHandle;
-
-			device_.GetDeviceDep()->CopyDescriptors(1, &global_handle_start.viewCpuHandle, &count, count, &cbv_handle, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-			global_handle_start.viewCpuHandle.ptr += rtDescMan_.GetViewDescSize() * count;
-			device_.GetDeviceDep()->CopyDescriptors(1, &global_handle_start.viewCpuHandle, &count, count, &uav_handle, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-			global_handle_start.viewCpuHandle.ptr += rtDescMan_.GetViewDescSize() * count;
-		}
-
-		// デスクリプタ設定
-		d3dCmdList->SetComputeRootDescriptorTable(0, global_handle_start.viewGpuHandle);
-		global_handle_start.viewGpuHandle.ptr += rtDescMan_.GetViewDescSize() * count;
-		d3dCmdList->SetComputeRootDescriptorTable(1, global_handle_start.viewGpuHandle);
-		global_handle_start.viewGpuHandle.ptr += rtDescMan_.GetViewDescSize() * count;
-		d3dCmdList->SetComputeRootShaderResourceView(2, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
-#endif
 
 		// レイトレースを実行
 		D3D12_DISPATCH_RAYS_DESC desc{};
@@ -286,164 +258,6 @@ public:
 	}
 
 private:
-	bool CreateRootSig(const D3D12_ROOT_SIGNATURE_DESC& desc, ID3D12RootSignature** ppSig)
-	{
-		ID3DBlob* blob = nullptr;
-		ID3DBlob* error = nullptr;
-		bool ret = true;
-
-		auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
-		if (FAILED(hr))
-		{
-			ret = false;
-			goto D3D_ERROR;
-		}
-
-		hr = device_.GetDeviceDep()->CreateRootSignature(1, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(ppSig));
-		if (FAILED(hr))
-		{
-			ret = false;
-			goto D3D_ERROR;
-		}
-
-	D3D_ERROR:
-		sl12::SafeRelease(blob);
-		sl12::SafeRelease(error);
-		return ret;
-	}
-
-	bool CreateRaytracingRootSignature(
-		sl12::u32 asCount,
-		sl12::u32 globalCbvCount,
-		sl12::u32 globalSrvCount,
-		sl12::u32 globalUavCount,
-		sl12::u32 globalSamplerCount,
-		sl12::RootSignature* pGlobalRS,
-		sl12::RootSignature* pLocalRS)
-	{
-		{
-			sl12::u32 range_cnt = 0;
-			D3D12_DESCRIPTOR_RANGE ranges[4]{};
-			D3D12_ROOT_PARAMETER params[16]{};
-			if (globalCbvCount > 0)
-			{
-				auto&& p = params[range_cnt];
-				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-				p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				p.DescriptorTable.NumDescriptorRanges = 1;
-				p.DescriptorTable.pDescriptorRanges = &ranges[range_cnt];
-
-				auto&& r = ranges[range_cnt++];
-				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-				r.NumDescriptors = globalCbvCount;
-				r.BaseShaderRegister = 0;
-				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-			}
-			if (globalSrvCount > 0)
-			{
-				auto&& p = params[range_cnt];
-				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-				p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				p.DescriptorTable.NumDescriptorRanges = 1;
-				p.DescriptorTable.pDescriptorRanges = &ranges[range_cnt];
-
-				auto&& r = ranges[range_cnt++];
-				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-				r.NumDescriptors = globalSrvCount;
-				r.BaseShaderRegister = asCount;
-				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-			}
-			if (globalUavCount > 0)
-			{
-				auto&& p = params[range_cnt];
-				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-				p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				p.DescriptorTable.NumDescriptorRanges = 1;
-				p.DescriptorTable.pDescriptorRanges = &ranges[range_cnt];
-
-				auto&& r = ranges[range_cnt++];
-				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-				r.NumDescriptors = globalUavCount;
-				r.BaseShaderRegister = 0;
-				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-			}
-			if (globalSamplerCount > 0)
-			{
-				auto&& p = params[range_cnt];
-				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-				p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				p.DescriptorTable.NumDescriptorRanges = 1;
-				p.DescriptorTable.pDescriptorRanges = &ranges[range_cnt];
-
-				auto&& r = ranges[range_cnt++];
-				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-				r.NumDescriptors = globalSamplerCount;
-				r.BaseShaderRegister = 0;
-				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-			}
-
-			for (sl12::u32 i = 0; i < asCount; i++)
-			{
-				auto&& p = params[range_cnt + i];
-				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
-				p.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				p.Descriptor.ShaderRegister = i;
-				p.Descriptor.RegisterSpace = 0;
-			}
-
-			D3D12_ROOT_SIGNATURE_DESC sigDesc{};
-			sigDesc.NumParameters = range_cnt + asCount;
-			sigDesc.pParameters = params;
-			sigDesc.NumStaticSamplers = 0;
-			sigDesc.pStaticSamplers = nullptr;
-			sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-			if (!pGlobalRS->Initialize(&device_, sigDesc))
-			{
-				return false;
-			}
-		}
-		{
-			D3D12_DESCRIPTOR_RANGE ranges[] = {
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			};
-			ranges[0].NumDescriptors = sl12::kCbvMax - globalCbvCount;
-			ranges[1].NumDescriptors = sl12::kSrvMax - globalSrvCount - asCount;
-			ranges[2].NumDescriptors = sl12::kUavMax - globalUavCount;
-			ranges[3].NumDescriptors = sl12::kSamplerMax - globalSamplerCount;
-			ranges[0].BaseShaderRegister = globalCbvCount;
-			ranges[1].BaseShaderRegister = globalSrvCount + asCount;
-			ranges[2].BaseShaderRegister = globalUavCount;
-			ranges[3].BaseShaderRegister = globalSamplerCount;
-
-			D3D12_ROOT_PARAMETER params[ARRAYSIZE(ranges)]{};
-			for (int i = 0; i < ARRAYSIZE(ranges); i++)
-			{
-				params[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-				params[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				params[i].DescriptorTable.NumDescriptorRanges = 1;
-				params[i].DescriptorTable.pDescriptorRanges = &ranges[i];
-			}
-
-			D3D12_ROOT_SIGNATURE_DESC sigDesc{};
-			sigDesc.NumParameters = ARRAYSIZE(params);
-			sigDesc.pParameters = params;
-			sigDesc.NumStaticSamplers = 0;
-			sigDesc.pStaticSamplers = nullptr;
-			sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-			if (!pLocalRS->Initialize(&device_, sigDesc))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
 	bool CreatePipelineState()
 	{
 		// DXR用のパイプラインステートを生成します.

@@ -104,6 +104,20 @@ namespace sl12
 		InputIndex					inputIndex_;
 	};	// class RootSignature
 
+
+	/**
+	 * @brief レイトレーシング用RootSignatureを作成するヘルパー関数
+	*/
+	bool CreateRaytracingRootSignature(
+		sl12::Device* pDevice,
+		sl12::u32 asCount,
+		sl12::u32 globalCbvCount,
+		sl12::u32 globalSrvCount,
+		sl12::u32 globalUavCount,
+		sl12::u32 globalSamplerCount,
+		sl12::RootSignature* pGlobalRS,
+		sl12::RootSignature* pLocalRS);
+
 }	// namespace sl12
 
 //	EOF

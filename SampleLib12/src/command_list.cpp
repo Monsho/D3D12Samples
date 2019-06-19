@@ -444,7 +444,7 @@ namespace sl12
 				auto cnt = count - offset;
 				for (u32 i = 0; i < cnt; i++)
 				{
-					tmp[i] = (handles[i - offset].ptr > 0) ? handles[i - offset] : def_view;
+					tmp[i] = (handles[i + offset].ptr > 0) ? handles[i + offset] : def_view;
 				}
 
 				pParentDevice_->GetDeviceDep()->CopyDescriptors(
