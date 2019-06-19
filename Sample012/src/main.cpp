@@ -19,6 +19,7 @@
 #include "sl12/gui.h"
 #include "sl12/glb_mesh.h"
 #include "sl12/timestamp.h"
+#include "sl12/descriptor_set.h"
 
 #include "CompiledShaders/hybrid.lib.hlsl.h"
 #include "CompiledShaders/zpre.vv.hlsl.h"
@@ -113,107 +114,17 @@ public:
 		}
 
 		// ルートシグネチャの初期化
+		if (!sl12::CreateRaytracingRootSignature(&device_, 1, 1, 3, 2, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
 		{
-			D3D12_DESCRIPTOR_RANGE ranges[] = {
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			};
-
-			D3D12_ROOT_PARAMETER params[_countof(ranges) + 1];
-			for (int i = 0; i < _countof(ranges); i++)
-			{
-				params[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-				params[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-				params[i].DescriptorTable.NumDescriptorRanges = 1;
-				params[i].DescriptorTable.pDescriptorRanges = &ranges[i];
-			}
-			params[_countof(ranges)].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
-			params[_countof(ranges)].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-			params[_countof(ranges)].Descriptor.ShaderRegister = 0;
-			params[_countof(ranges)].Descriptor.RegisterSpace = 0;
-
-			D3D12_ROOT_SIGNATURE_DESC sigDesc{};
-			sigDesc.NumParameters = ARRAYSIZE(params);
-			sigDesc.pParameters = params;
-			sigDesc.NumStaticSamplers = 0;
-			sigDesc.pStaticSamplers = nullptr;
-			sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-			if (!globalRootSig_.Initialize(&device_, sigDesc))
-			{
-				return false;
-			}
+			return false;
 		}
+		if (!zpreRootSig_.Initialize(&device_, &zpreVS_, &zprePS_, nullptr, nullptr, nullptr))
 		{
-			sl12::RootParameter params[] = {
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::All, 4),
-				sl12::RootParameter(sl12::RootParameterType::Sampler, sl12::ShaderVisibility::All, 4),
-			};
-			sl12::RootSignatureDesc desc;
-			desc.pParameters = params;
-			desc.numParameters = ARRAYSIZE(params);
-			desc.flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			if (!localRootSig_.Initialize(&device_, desc))
-			{
-				return false;
-			}
+			return false;
 		}
+		if (!lightingRootSig_.Initialize(&device_, &lightingVS_, &lightingPS_, nullptr, nullptr, nullptr))
 		{
-			sl12::RootParameter params[] = {
-				sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::Vertex, 0),
-			};
-			sl12::RootSignatureDesc desc;
-			desc.pParameters = params;
-			desc.numParameters = ARRAYSIZE(params);
-			desc.flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-			if (!zpreRootSig_.Initialize(&device_, desc))
-			{
-				return false;
-			}
-		}
-		{
-			sl12::RootParameter params[] = {
-				sl12::RootParameter(sl12::RootParameterType::ConstantBuffer, sl12::ShaderVisibility::All, 0),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::Pixel, 0),
-				sl12::RootParameter(sl12::RootParameterType::Sampler, sl12::ShaderVisibility::Pixel, 0),
-				sl12::RootParameter(sl12::RootParameterType::ShaderResource, sl12::ShaderVisibility::Pixel, 1),
-			};
-			sl12::RootSignatureDesc desc;
-			desc.pParameters = params;
-			desc.numParameters = ARRAYSIZE(params);
-			desc.flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-			if (!lightingRootSig_.Initialize(&device_, desc))
-			{
-				return false;
-			}
-		}
-		{
-			D3D12_DESCRIPTOR_RANGE ranges[]{
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			};
-			D3D12_ROOT_PARAMETER rootParameters[]{
-				{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL },
-				{ D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, 1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL },
-			};
-
-			D3D12_ROOT_SIGNATURE_DESC sigDesc;
-			sigDesc.NumParameters = _countof(rootParameters);
-			sigDesc.pParameters = rootParameters;
-			sigDesc.NumStaticSamplers = 0;
-			sigDesc.pStaticSamplers = nullptr;
-			sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-			if (!copyRootSig_.Initialize(&device_, sigDesc))
-			{
-				return false;
-			}
+			return false;
 		}
 
 		// パイプラインステートオブジェクトの初期化
@@ -310,48 +221,6 @@ public:
 			desc.multisampleCount = 1;
 
 			if (!lightingPso_.Initialize(&device_, desc))
-			{
-				return false;
-			}
-		}
-		{
-			if (!copyVS_.Initialize(&device_, sl12::ShaderType::Vertex, g_pCopyVS, sizeof(g_pCopyVS)))
-			{
-				return false;
-			}
-			if (!copyPS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pCopyPS, sizeof(g_pCopyPS)))
-			{
-				return false;
-			}
-
-			sl12::GraphicsPipelineStateDesc desc;
-			desc.pRootSignature = &copyRootSig_;
-			desc.pVS = &copyVS_;
-			desc.pPS = &copyPS_;
-
-			desc.blend.sampleMask = UINT_MAX;
-			desc.blend.rtDesc[0].isBlendEnable = false;
-			desc.blend.rtDesc[0].writeMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-
-			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
-			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
-			desc.rasterizer.isDepthClipEnable = false;
-			desc.rasterizer.isFrontCCW = true;
-
-			desc.depthStencil.isDepthEnable = false;
-			desc.depthStencil.isDepthWriteEnable = false;
-			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-
-			desc.inputLayout.numElements = 0;
-			desc.inputLayout.pElements = nullptr;
-
-			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-			desc.numRTVs = 0;
-			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
-			desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
-			desc.multisampleCount = 1;
-
-			if (!copyPso_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -505,6 +374,12 @@ public:
 			return false;
 		}
 
+		// Raytracing用DescriptorHeapの初期化
+		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 3, 2, 0, glbMesh_.GetSubmeshCount()))
+		{
+			return false;
+		}
+
 		// ASを生成する
 		if (!CreateAccelerationStructure())
 		{
@@ -616,13 +491,6 @@ public:
 		}
 		d3dCmdList->ClearDepthStencilView(depthTextureDSV_.GetDesc()->GetCpuHandle(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-		// デスクリプタヒープを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		d3dCmdList->SetDescriptorHeaps(ARRAYSIZE(pDescHeaps), pDescHeaps);
-
 		cmdList.TransitionBarrier(&gbufferTexture_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		gpuTimestamp_[frameIndex].Query(&cmdList);
@@ -648,12 +516,15 @@ public:
 			rect.bottom = kScreenHeight;
 			d3dCmdList->RSSetScissorRects(1, &rect);
 
-			// PSOとルートシグネチャを設定
+			// PSO設定
 			d3dCmdList->SetPipelineState(zprePso_.GetPSO());
-			d3dCmdList->SetGraphicsRootSignature(zpreRootSig_.GetRootSignature());
 
-			// デスクリプタテーブル設定
-			d3dCmdList->SetGraphicsRootDescriptorTable(0, sceneCBVs_[frameIndex].GetDesc()->GetGpuHandle());
+			// 基本Descriptor設定
+			descSet_.Reset();
+			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+
+			// 特にマテリアルごとのView設定がないのでここでRootSignatureとDescriptorを設定
+			cmdList.SetGraphicsRootSignatureAndDescriptorSet(&zpreRootSig_, &descSet_);
 
 			// DrawCall
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -681,19 +552,24 @@ public:
 
 		gpuTimestamp_[frameIndex].Query(&cmdList);
 
+		cmdList.SetDescriptorHeapDirty();
+
 		if (loopCount_ < MaxSample)
 		{
-			// グローバルルートシグネチャを設定
-			d3dCmdList->SetComputeRootSignature(globalRootSig_.GetRootSignature());
+			// デスクリプタを設定
+			rtGlobalDescSet_.Reset();
+			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(1, randomBufferSRV_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(2, gbufferTextureSRV_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(3, depthTextureSRV_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(0, resultTextureUAV_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(1, seedBufferUAV_.GetDescInfo().cpuHandle);
 
-			// グローバル設定のシェーダリソースを設定する
-			d3dCmdList->SetComputeRootDescriptorTable(0, randomBufferSRV_.GetDesc()->GetGpuHandle());
-			d3dCmdList->SetComputeRootDescriptorTable(1, gbufferTextureSRV_.GetDesc()->GetGpuHandle());
-			d3dCmdList->SetComputeRootDescriptorTable(2, depthTextureSRV_.GetDesc()->GetGpuHandle());
-			d3dCmdList->SetComputeRootDescriptorTable(3, resultTextureUAV_.GetDesc()->GetGpuHandle());
-			d3dCmdList->SetComputeRootDescriptorTable(4, seedBufferUAV_.GetDesc()->GetGpuHandle());
-			d3dCmdList->SetComputeRootDescriptorTable(5, sceneCBVs_[frameIndex].GetDesc()->GetGpuHandle());
-			d3dCmdList->SetComputeRootShaderResourceView(6, topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress());
+			// コピーしつつコマンドリストに積む
+			D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
+				topAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
+			};
+			cmdList.SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, &rtDescMan_, as_address, ARRAYSIZE(as_address));
 
 			// レイトレースを実行
 			D3D12_DISPATCH_RAYS_DESC desc{};
@@ -741,14 +617,15 @@ public:
 			rect.bottom = kScreenHeight;
 			d3dCmdList->RSSetScissorRects(1, &rect);
 
-			// PSOとルートシグネチャを設定
+			// PSO設定
 			d3dCmdList->SetPipelineState(lightingPso_.GetPSO());
-			d3dCmdList->SetGraphicsRootSignature(lightingRootSig_.GetRootSignature());
 
-			// デスクリプタテーブル設定
-			d3dCmdList->SetGraphicsRootDescriptorTable(0, sceneCBVs_[frameIndex].GetDesc()->GetGpuHandle());
-			d3dCmdList->SetGraphicsRootDescriptorTable(2, linearWrapSampler_.GetDesc()->GetGpuHandle());
-			d3dCmdList->SetGraphicsRootDescriptorTable(3, resultTextureSRV_.GetDesc()->GetGpuHandle());
+			// 基本Descriptor設定
+			descSet_.Reset();
+			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(1, resultTextureSRV_.GetDescInfo().cpuHandle);
+			descSet_.SetPsSampler(0, linearWrapSampler_.GetDescInfo().cpuHandle);
 
 			// DrawCall
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -759,7 +636,8 @@ public:
 				auto&& material = glbMesh_.GetMaterial(submesh->GetMaterialIndex());
 				auto&& base_color_srv = glbMesh_.GetTextureView(material->GetTexBaseColorIndex());
 
-				d3dCmdList->SetGraphicsRootDescriptorTable(1, base_color_srv->GetDesc()->GetGpuHandle());
+				descSet_.SetPsSrv(0, base_color_srv->GetDescInfo().cpuHandle);
+				cmdList.SetGraphicsRootSignatureAndDescriptorSet(&lightingRootSig_, &descSet_);
 
 				const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
 					submesh->GetPositionVBV().GetView(),
@@ -838,16 +716,13 @@ public:
 		zprePso_.Destroy();
 		zpreVS_.Destroy();
 		zprePS_.Destroy();
-		copyPso_.Destroy();
-		copyVS_.Destroy();
-		copyPS_.Destroy();
 		stateObject_.Destroy();
 
-		copyRootSig_.Destroy();
+		rtDescMan_.Destroy();
 		lightingRootSig_.Destroy();
 		zpreRootSig_.Destroy();
-		localRootSig_.Destroy();
-		globalRootSig_.Destroy();
+		rtLocalRootSig_.Destroy();
+		rtGlobalRootSig_.Destroy();
 
 		for (auto&& v : cmdLists_) v.Destroy();
 	}
@@ -921,11 +796,11 @@ private:
 			kMissName,
 			kHitGroupName,
 		};
-		dxrDesc.AddLocalRootSignatureAndExportAssociation(localRootSig_, kExports, ARRAYSIZE(kExports));
+		dxrDesc.AddLocalRootSignatureAndExportAssociation(rtLocalRootSig_, kExports, ARRAYSIZE(kExports));
 
 		// グローバルルートシグネチャサブオブジェクト
 		// すべてのシェーダテーブルで参照されるグローバルなルートシグネチャを設定します.
-		dxrDesc.AddGlobalRootSignature(globalRootSig_);
+		dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
 
 		// レイトレースコンフィグサブオブジェクト
 		// TraceRay()を行うことができる最大深度を指定するサブオブジェクトです.
@@ -1075,6 +950,50 @@ private:
 
 	bool CreateShaderTable()
 	{
+		// LocalRS用のマテリアルDescriptorを用意する
+		std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> gpu_handles;
+		auto view_desc_size = rtDescMan_.GetViewDescSize();
+		auto sampler_desc_size = rtDescMan_.GetSamplerDescSize();
+		auto local_handle_start = rtDescMan_.IncrementLocalHandleStart();
+
+		for (int i = 0; i < glbMesh_.GetSubmeshCount(); i++)
+		{
+			auto submesh = glbMesh_.GetSubmesh(i);
+			auto material = glbMesh_.GetMaterial(submesh->GetMaterialIndex());
+			auto texView = glbMesh_.GetTextureView(material->GetTexBaseColorIndex());
+			auto texNView = glbMesh_.GetTextureView(material->GetTexNormalIndex());
+
+			// CBVはなし
+			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+
+			// SRVは1つ
+			D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
+				texView->GetDescInfo().cpuHandle,
+			};
+			sl12::u32 srv_cnt = ARRAYSIZE(srv);
+			device_.GetDeviceDep()->CopyDescriptors(
+				1, &local_handle_start.viewCpuHandle, &srv_cnt,
+				srv_cnt, srv, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+			local_handle_start.viewCpuHandle.ptr += view_desc_size * srv_cnt;
+			local_handle_start.viewGpuHandle.ptr += view_desc_size * srv_cnt;
+
+			// UAVはなし
+			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+
+			// Samplerは1つ
+			D3D12_CPU_DESCRIPTOR_HANDLE sampler[] = {
+				imageSampler_.GetDescInfo().cpuHandle,
+			};
+			sl12::u32 sampler_cnt = ARRAYSIZE(sampler);
+			device_.GetDeviceDep()->CopyDescriptors(
+				1, &local_handle_start.samplerCpuHandle, &sampler_cnt,
+				sampler_cnt, sampler, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+			gpu_handles.push_back(local_handle_start.samplerGpuHandle);
+			local_handle_start.samplerCpuHandle.ptr += sampler_desc_size * sampler_cnt;
+			local_handle_start.samplerGpuHandle.ptr += sampler_desc_size * sampler_cnt;
+		}
+
 		// レイ生成シェーダ、ミスシェーダ、ヒットグループのIDを取得します.
 		// 各シェーダ種別ごとにシェーダテーブルを作成しますが、このサンプルでは各シェーダ種別はそれぞれ1つのシェーダを持つことになります.
 		void* rayGenShaderIdentifier;
@@ -1102,7 +1021,7 @@ private:
 		// シェーダレコードのサイズはシェーダテーブル内で同一でなければならないため、同一シェーダテーブル内で最大のレコードサイズを指定すべきです.
 		// 本サンプルではすべてのシェーダレコードについてサイズが同一となります.
 		UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 2, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+		UINT shaderRecordSize = Align(descHandleOffset + sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 4, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 		shaderRecordSize_ = shaderRecordSize;
 
 		auto GenShaderTable = [&](void** shaderIds, int shaderIdsCount, sl12::Buffer& buffer, int count = 1)
@@ -1123,14 +1042,7 @@ private:
 					memcpy(p, shaderIds[id], shaderIdentifierSize);
 					p += descHandleOffset;
 
-					auto submesh = glbMesh_.GetSubmesh(i);
-					auto material = glbMesh_.GetMaterial(submesh->GetMaterialIndex());
-					auto texView = glbMesh_.GetTextureView(material->GetTexBaseColorIndex());
-
-					auto texHandle = texView->GetDesc()->GetGpuHandle();
-					auto samHandle = imageSampler_.GetDesc()->GetGpuHandle();
-					memcpy(p, &texHandle, sizeof(texHandle)); p += sizeof(texHandle);
-					memcpy(p, &samHandle, sizeof(samHandle)); p += sizeof(samHandle);
+					memcpy(p, gpu_handles.data() + i * 4, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) * 4);
 
 					p = start + shaderRecordSize;
 				}
@@ -1155,7 +1067,6 @@ private:
 
 		return true;
 	}
-
 
 	void UpdateSceneCB(int frameIndex)
 	{
@@ -1196,7 +1107,9 @@ private:
 	static const int kBufferCount = sl12::Swapchain::kMaxBuffer;
 
 	sl12::CommandList		cmdLists_[kBufferCount];
-	sl12::RootSignature		globalRootSig_, localRootSig_;
+	sl12::RootSignature		rtGlobalRootSig_, rtLocalRootSig_;
+	sl12::RaytracingDescriptorManager	rtDescMan_;
+	sl12::DescriptorSet		rtGlobalDescSet_;
 
 	sl12::DxrPipelineState		stateObject_;
 	sl12::Texture				resultTexture_;
@@ -1239,9 +1152,7 @@ private:
 	sl12::RootSignature			zpreRootSig_, lightingRootSig_;
 	sl12::GraphicsPipelineState	zprePso_, lightingPso_;
 
-	sl12::Shader				copyVS_, copyPS_;
-	sl12::RootSignature			copyRootSig_;
-	sl12::GraphicsPipelineState	copyPso_;
+	sl12::DescriptorSet			descSet_;
 
 	sl12::Gui				gui_;
 	sl12::InputData			inputData_{};

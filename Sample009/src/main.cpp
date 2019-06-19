@@ -127,11 +127,9 @@ public:
 		}
 
 		// Raytracing—pDescriptorHeap‚Ì‰Šú‰»
+		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 0, 1, 0, glbMesh_.GetSubmeshCount()))
 		{
-			if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 0, 1, 0, glbMesh_.GetSubmeshCount()))
-			{
-				return false;
-			}
+			return false;
 		}
 
 		// AS‚ğ¶¬‚·‚é
