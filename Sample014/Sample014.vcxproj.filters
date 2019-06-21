@@ -53,6 +53,9 @@
     <FxCompile Include="shader\denoise.p.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
+    <FxCompile Include="shader\denoise.vv.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

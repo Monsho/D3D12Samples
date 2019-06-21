@@ -486,6 +486,9 @@ namespace sl12
 		{
 			pCmdList->SetComputeRootShaderResourceView(slot_index++, asAddress[i]);
 		}
+
+		// このコマンドリストが持っているDescriptorHeapをDirtyにしておく
+		SetDescriptorHeapDirty();
 	}
 
 }	// namespace sl12
