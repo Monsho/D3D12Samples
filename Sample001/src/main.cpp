@@ -477,8 +477,8 @@ void RenderScene()
 
 	auto scTex = g_Device_.GetSwapchain().GetCurrentTexture(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetCurrentDescHandle(1);
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvOffHandle = g_RenderTargetView_.GetDesc()->GetCpuHandle();
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvOffHandle = g_RenderTargetView_.GetDescInfo().cpuHandle;
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDescInfo().cpuHandle;
 	ID3D12GraphicsCommandList* pCmdList = g_pNextCmdList_->GetCommandList();
 
 	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);

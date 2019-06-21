@@ -9,18 +9,12 @@ namespace sl12
 	//----
 	bool Sampler::Initialize(Device* pDev, const D3D12_SAMPLER_DESC& desc)
 	{
-		pDesc_ = pDev->GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).CreateDescriptor();
-		if (!pDesc_)
-		{
-			return false;
-		}
 		descInfo_ = pDev->GetSamplerDescriptorHeap().Allocate();
 		if (!descInfo_.IsValid())
 		{
 			return false;
 		}
 
-		pDev->GetDeviceDep()->CreateSampler(&desc, pDesc_->GetCpuHandle());
 		pDev->GetDeviceDep()->CreateSampler(&desc, descInfo_.cpuHandle);
 
 		samplerDesc_ = desc;
@@ -32,7 +26,6 @@ namespace sl12
 	void Sampler::Destroy()
 	{
 		descInfo_.Free();
-		SafeRelease(pDesc_);
 	}
 
 }	// namespace sl12

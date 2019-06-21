@@ -354,7 +354,7 @@ public:
 		cmdList.TransitionBarrier(swapchain.GetCurrentTexture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		{
 			float color[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
-			d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDesc()->GetCpuHandle(), color, 0, nullptr);
+			d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDescInfo().cpuHandle, color, 0, nullptr);
 		}
 
 		if (isClearTarget_)
@@ -362,16 +362,16 @@ public:
 			isClearTarget_ = false;
 			float color[4] = { 0.0f };
 			cmdList.TransitionBarrier(&resultTexture_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			d3dCmdList->ClearRenderTargetView(resultTextureRTV_.GetDesc()->GetCpuHandle(), color, 0, nullptr);
+			d3dCmdList->ClearRenderTargetView(resultTextureRTV_.GetDescInfo().cpuHandle, color, 0, nullptr);
 			cmdList.TransitionBarrier(&resultTexture_, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		}
 
 		// デスクリプタヒープを設定
-		ID3D12DescriptorHeap* pDescHeaps[] = {
-			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
-			device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
-		};
-		d3dCmdList->SetDescriptorHeaps(ARRAYSIZE(pDescHeaps), pDescHeaps);
+		//ID3D12DescriptorHeap* pDescHeaps[] = {
+		//	device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV).GetHeap(),
+		//	device_.GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER).GetHeap()
+		//};
+		//d3dCmdList->SetDescriptorHeaps(ARRAYSIZE(pDescHeaps), pDescHeaps);
 
 		gpuTimestamp_[frameIndex].Query(&cmdList);
 
@@ -416,7 +416,7 @@ public:
 
 		{
 			// レンダーターゲット設定
-			auto&& rtv = swapchain.GetCurrentRenderTargetView()->GetDesc()->GetCpuHandle();
+			auto&& rtv = swapchain.GetCurrentRenderTargetView()->GetDescInfo().cpuHandle;
 			d3dCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
 
 			D3D12_VIEWPORT vp;

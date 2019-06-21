@@ -60,7 +60,6 @@ namespace sl12
 		{
 			return *pCopyQueue_;
 		}
-		DescriptorHeap&	GetDescriptorHeap(u32 no);
 		GlobalDescriptorHeap& GetGlobalViewDescriptorHeap()
 		{
 			return *pGlobalViewDescHeap_;
@@ -107,7 +106,6 @@ namespace sl12
 		CommandQueue*	pComputeQueue_{ nullptr };
 		CommandQueue*	pCopyQueue_{ nullptr };
 
-		DescriptorHeap*	pDescHeaps_{ nullptr };
 		GlobalDescriptorHeap*	pGlobalViewDescHeap_ = nullptr;
 		DescriptorAllocator*	pViewDescHeap_ = nullptr;
 		DescriptorAllocator*	pSamplerDescHeap_ = nullptr;

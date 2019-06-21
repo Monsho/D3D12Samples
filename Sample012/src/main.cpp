@@ -478,7 +478,7 @@ public:
 		cmdList.TransitionBarrier(swapchain.GetCurrentTexture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		{
 			float color[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
-			d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDesc()->GetCpuHandle(), color, 0, nullptr);
+			d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDescInfo().cpuHandle, color, 0, nullptr);
 		}
 
 		if (isClearTarget_)
@@ -486,10 +486,10 @@ public:
 			isClearTarget_ = false;
 			float color[4] = { 0.0f };
 			cmdList.TransitionBarrier(&resultTexture_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			d3dCmdList->ClearRenderTargetView(resultTextureRTV_.GetDesc()->GetCpuHandle(), color, 0, nullptr);
+			d3dCmdList->ClearRenderTargetView(resultTextureRTV_.GetDescInfo().cpuHandle, color, 0, nullptr);
 			cmdList.TransitionBarrier(&resultTexture_, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		}
-		d3dCmdList->ClearDepthStencilView(depthTextureDSV_.GetDesc()->GetCpuHandle(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+		d3dCmdList->ClearDepthStencilView(depthTextureDSV_.GetDescInfo().cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 		cmdList.TransitionBarrier(&gbufferTexture_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
@@ -498,8 +498,8 @@ public:
 		// Z pre pass
 		{
 			// レンダーターゲット設定
-			auto&& rtv = gbufferTextureRTV_.GetDesc()->GetCpuHandle();
-			auto&& dsv = depthTextureDSV_.GetDesc()->GetCpuHandle();
+			auto&& rtv = gbufferTextureRTV_.GetDescInfo().cpuHandle;
+			auto&& dsv = depthTextureDSV_.GetDescInfo().cpuHandle;
 			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
 
 			D3D12_VIEWPORT vp;
@@ -599,8 +599,8 @@ public:
 		// lighting pass
 		{
 			// レンダーターゲット設定
-			auto&& rtv = swapchain.GetCurrentRenderTargetView()->GetDesc()->GetCpuHandle();
-			auto&& dsv = depthTextureDSV_.GetDesc()->GetCpuHandle();
+			auto&& rtv = swapchain.GetCurrentRenderTargetView()->GetDescInfo().cpuHandle;
+			auto&& dsv = depthTextureDSV_.GetDescInfo().cpuHandle;
 			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
 
 			D3D12_VIEWPORT vp;

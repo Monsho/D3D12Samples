@@ -1218,11 +1218,11 @@ void RenderScene()
 
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvs[3]
 		{
-			pOutputs[0]->GetRtv()->GetDesc()->GetCpuHandle(),
-			pOutputs[1]->GetRtv()->GetDesc()->GetCpuHandle(),
-			pOutputs[2]->GetRtv()->GetDesc()->GetCpuHandle(),
+			pOutputs[0]->GetRtv()->GetDescInfo().cpuHandle,
+			pOutputs[1]->GetRtv()->GetDescInfo().cpuHandle,
+			pOutputs[2]->GetRtv()->GetDescInfo().cpuHandle,
 		};
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
@@ -1273,7 +1273,7 @@ void RenderScene()
 		sl12::RenderResource* pInput = g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]);
 		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
@@ -1386,7 +1386,7 @@ void RenderScene()
 		};
 		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
@@ -1425,7 +1425,7 @@ void RenderScene()
 		};
 		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
-		auto rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+		auto rtv = pOutput->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
@@ -1463,8 +1463,8 @@ void RenderScene()
 			g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[1]),
 		};
 
-		auto rtv = pOutputs[0]->GetRtv()->GetDesc()->GetCpuHandle();
-		auto dsv = pOutputs[1]->GetDsv()->GetDesc()->GetCpuHandle();
+		auto rtv = pOutputs[0]->GetRtv()->GetDescInfo().cpuHandle;
+		auto dsv = pOutputs[1]->GetDsv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);
@@ -1503,7 +1503,7 @@ void RenderScene()
 		};
 		sl12::RenderResource* pTemp = g_rrManager_.GetRenderResourceFromID(thisProd->GetTempIds()[0]);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		g_rrManager_.BarrierAllResources(mainCmdList, thisProd);

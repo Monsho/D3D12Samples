@@ -169,7 +169,7 @@ public:
 		auto&& swapchain = device_.GetSwapchain();
 		cmdList.TransitionBarrier(swapchain.GetCurrentTexture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		float color[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
-		d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDesc()->GetCpuHandle(), color, 0, nullptr);
+		d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView()->GetDescInfo().cpuHandle, color, 0, nullptr);
 
 		// デスクリプタを設定
 		rtGlobalDescSet_.Reset();

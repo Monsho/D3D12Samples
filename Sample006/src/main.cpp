@@ -338,7 +338,7 @@ void RenderScene()
 
 	auto scTex = g_Device_.GetSwapchain().GetCurrentTexture(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetDescHandle(nextFrameIndex);
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDescInfo().cpuHandle;
 	ID3D12GraphicsCommandList* pCmdList = mainCmdList.GetCommandList();
 
 	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -355,7 +355,6 @@ void RenderScene()
 	pCmdList->RSSetScissorRects(1, &scissor);
 
 	// Scene定数バッファを更新
-	sl12::Descriptor& cbSceneDesc = *g_CBSceneViews_[frameIndex].GetDesc();
 	{
 		static float sAngle = 90.0f;
 		void* p0 = g_pCBSceneBuffers_[frameIndex];

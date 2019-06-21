@@ -26,11 +26,9 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
-		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
 		DescriptorInfo	descInfo_;
-		Descriptor*		pDesc_{ nullptr };
 	};	// class ConstantBufferView
 
 
@@ -94,11 +92,9 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
-		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
 		DescriptorInfo	descInfo_;
-		Descriptor*		pDesc_{ nullptr };
 	};	// class BufferView
 
 }	// namespace sl12

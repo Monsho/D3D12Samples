@@ -665,7 +665,7 @@ void RenderScene()
 
 	auto scTex = g_Device_.GetSwapchain().GetCurrentTexture(1);
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_Device_.GetSwapchain().GetDescHandle(nextFrameIndex);
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDesc()->GetCpuHandle();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = g_DepthBufferView_.GetDescInfo().cpuHandle;
 	ID3D12GraphicsCommandList* pCmdList = mainCmdList.GetCommandList();
 
 	mainCmdList.TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -718,11 +718,11 @@ void RenderScene()
 
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvs[3]
 		{
-			pOutputs[0]->GetRtv()->GetDesc()->GetCpuHandle(),
-			pOutputs[1]->GetRtv()->GetDesc()->GetCpuHandle(),
-			pOutputs[2]->GetRtv()->GetDesc()->GetCpuHandle(),
+			pOutputs[0]->GetRtv()->GetDescInfo().cpuHandle,
+			pOutputs[1]->GetRtv()->GetDescInfo().cpuHandle,
+			pOutputs[2]->GetRtv()->GetDescInfo().cpuHandle,
 		};
-		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE dsv = pOutputs[3]->GetDsv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		auto prevState = thisProd->GetOutputPrevStates();
@@ -782,7 +782,7 @@ void RenderScene()
 		sl12::RenderResource* pInput = g_rrManager_.GetRenderResourceFromID(thisProd->GetInputIds()[0]);
 		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		mainCmdList.TransitionBarrier(pInput->GetTexture(), *thisProd->GetInputPrevStates(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -819,7 +819,7 @@ void RenderScene()
 		};
 		sl12::RenderResource* pOutput = g_rrManager_.GetRenderResourceFromID(thisProd->GetOutputIds()[0]);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv = pOutput->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		auto inputPrevStates = thisProd->GetInputPrevStates();
@@ -862,7 +862,7 @@ void RenderScene()
 		};
 		sl12::RenderResource* pTemp = g_rrManager_.GetRenderResourceFromID(thisProd->GetTempIds()[0]);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDesc()->GetCpuHandle();
+		D3D12_CPU_DESCRIPTOR_HANDLE tempRtv = pTemp->GetRtv()->GetDescInfo().cpuHandle;
 
 		// バリア
 		auto inputPrevStates = thisProd->GetInputPrevStates();

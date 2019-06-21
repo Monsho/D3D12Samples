@@ -134,20 +134,6 @@ namespace sl12
 		}
 
 		// DescriptorHeapの作成
-		pDescHeaps_ = new DescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
-		for (u32 i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i++)
-		{
-			D3D12_DESCRIPTOR_HEAP_DESC desc{
-				(D3D12_DESCRIPTOR_HEAP_TYPE)i,
-				numDescs[i],
-				(i == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) || (i == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-				1
-			};
-			if (!pDescHeaps_[i].Initialize(this, desc))
-			{
-				return false;
-			}
-		}
 		{
 			D3D12_DESCRIPTOR_HEAP_DESC desc{};
 			desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -230,7 +216,6 @@ namespace sl12
 	//----
 	void Device::Destroy()
 	{
-		//CloseHandle(fenceEvent_);
 		SafeRelease(pFence_);
 
 		SafeDelete(pSwapchain_);
@@ -243,7 +228,6 @@ namespace sl12
 		SafeDelete(pSamplerDescHeap_);
 		SafeDelete(pViewDescHeap_);
 		SafeDelete(pGlobalViewDescHeap_);
-		SafeDeleteArray(pDescHeaps_);
 
 		SafeDelete(pGraphicsQueue_);
 		SafeDelete(pComputeQueue_);
@@ -295,12 +279,6 @@ namespace sl12
 		{
 			pSwapchain_->WaitPresent();
 		}
-	}
-
-	//----
-	DescriptorHeap& Device::GetDescriptorHeap(u32 no)
-	{
-		return pDescHeaps_[no];
 	}
 
 }	// namespace sl12

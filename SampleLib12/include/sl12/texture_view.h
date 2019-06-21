@@ -8,7 +8,6 @@
 namespace sl12
 {
 	class Device;
-	class Descriptor;
 	class Texture;
 	class Buffer;
 
@@ -28,11 +27,9 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
-		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
 		DescriptorInfo	descInfo_;
-		Descriptor*		pDesc_{ nullptr };
 	};	// class TextureView
 
 
@@ -52,12 +49,10 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
-		Descriptor* GetDesc() { return pDesc_; }
 		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
 		DescriptorInfo	descInfo_;
-		Descriptor*		pDesc_{ nullptr };
 		DXGI_FORMAT		format_{ DXGI_FORMAT_UNKNOWN };
 	};	// class RenderTargetView
 	
@@ -78,12 +73,10 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
-		Descriptor* GetDesc() { return pDesc_; }
 		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
 		DescriptorInfo	descInfo_;
-		Descriptor*		pDesc_{ nullptr };
 		DXGI_FORMAT		format_{ DXGI_FORMAT_UNKNOWN };
 	};	// class DepthStencilView
 
@@ -105,11 +98,9 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
-		Descriptor* GetDesc() { return pDesc_; }
 
 	private:
 		DescriptorInfo	descInfo_;
-		Descriptor*		pDesc_{ nullptr };
 	};	// class UnorderdAccessView
 
 }	// namespace sl12

@@ -82,7 +82,7 @@ namespace sl12
 	//----
 	D3D12_CPU_DESCRIPTOR_HANDLE Swapchain::GetDescHandle(int index)
 	{
-		return views_[index].GetDesc()->GetCpuHandle();
+		return views_[index].GetDescInfo().cpuHandle;
 	}
 
 	//----
