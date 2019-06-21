@@ -427,8 +427,8 @@ namespace sl12
 		u32 local_view_max = GetLocalViewCount() * materialCount;
 		u32 local_sampler_max = GetLocalSamplerCount() * materialCount;
 
-		u32 view_max = std::max<u32>(1024, (global_view_max + local_view_max) * bufferCount_);
-		u32 sampler_max = std::max<u32>(1024, (global_sampler_max + local_sampler_max) * bufferCount_);
+		u32 view_max = std::max<u32>(1024, global_view_max * bufferCount_ + local_view_max * Swapchain::kMaxBuffer);
+		u32 sampler_max = std::max<u32>(1024, global_sampler_max * bufferCount_ + local_sampler_max * Swapchain::kMaxBuffer);
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc{};
 
@@ -637,7 +637,7 @@ namespace sl12
 		HandleStart ret;
 		pCurrentHeap_->GetLocalViewHandleStart(localIndex_, ret.viewCpuHandle, ret.viewGpuHandle);
 		pCurrentHeap_->GetLocalSamplerHandleStart(localIndex_, ret.samplerCpuHandle, ret.samplerGpuHandle);
-		localIndex_ = (localIndex_ + 1) % pCurrentHeap_->GetBufferCount();
+		localIndex_ = (localIndex_ + 1) % Swapchain::kMaxBuffer;
 		return ret;
 	}
 
