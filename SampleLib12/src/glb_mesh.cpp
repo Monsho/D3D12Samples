@@ -219,6 +219,14 @@ namespace sl12
 		texMetalRoughIndex_ = std::stoi(mat.metallicRoughness.metallicRoughnessTexture.textureId);
 		texNormalIndex_ = std::stoi(mat.normalTexture.textureId);
 
+		const BlendMode::Value kBlend[] = {
+			BlendMode::Opaque,		// ALPHA_UNKNOWN 
+			BlendMode::Opaque,		// ALPHA_OPAQUE
+			BlendMode::Blend,		// ALPHA_BLEND
+			BlendMode::Mask,		// ALPHA_MASK
+		};
+		blendMode_ = kBlend[mat.alphaMode];
+
 		return true;
 	}
 

@@ -139,17 +139,17 @@ namespace sl12
 		class BottomAccelerationStructure*	pBottomAS)
 	{
 		dxrDesc.Transform[0][0] = transform._11;
-		dxrDesc.Transform[0][1] = transform._12;
-		dxrDesc.Transform[0][2] = transform._13;
-		dxrDesc.Transform[0][3] = transform._14;
-		dxrDesc.Transform[1][0] = transform._21;
+		dxrDesc.Transform[0][1] = transform._21;
+		dxrDesc.Transform[0][2] = transform._31;
+		dxrDesc.Transform[0][3] = transform._41;
+		dxrDesc.Transform[1][0] = transform._12;
 		dxrDesc.Transform[1][1] = transform._22;
-		dxrDesc.Transform[1][2] = transform._23;
-		dxrDesc.Transform[1][3] = transform._24;
-		dxrDesc.Transform[2][0] = transform._31;
-		dxrDesc.Transform[2][1] = transform._32;
+		dxrDesc.Transform[1][2] = transform._32;
+		dxrDesc.Transform[1][3] = transform._42;
+		dxrDesc.Transform[2][0] = transform._13;
+		dxrDesc.Transform[2][1] = transform._23;
 		dxrDesc.Transform[2][2] = transform._33;
-		dxrDesc.Transform[2][3] = transform._34;
+		dxrDesc.Transform[2][3] = transform._43;
 		dxrDesc.InstanceID = id;
 		dxrDesc.InstanceMask = mask;
 		dxrDesc.InstanceContributionToHitGroupIndex = contribution;

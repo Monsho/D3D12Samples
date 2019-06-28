@@ -137,6 +137,7 @@ void RayGenerator()
 	worldPos.xyz += normal * 1e-4;
 
 	// シャドウ用レイの生成
+	float offset_rnd = GetRandom();
 	float2 ham = Hammersley2D(cbScene.loopCount % MaxSample, MaxSample);
 	float3 localDir = HemisphereSampleCos(ham.x * 1e-4, ham.y);
 	float4 qRot = QuatFromTwoVector(float3(0, 0, 1), -cbScene.lightDir.xyz);
@@ -152,9 +153,11 @@ void RayGenerator()
 	float ao = 0;
 	uint sampleBase = cbScene.loopCount * cbScene.aoSampleCount;
 	uint sampleMax = MaxSample * cbScene.aoSampleCount;
+	uint rnd_offset = uint(offset_rnd * sampleMax);
 	for (uint i = 0; i < cbScene.aoSampleCount; i++)
 	{
-		ham = Hammersley2D((sampleBase + i) % sampleMax, sampleMax);
+		uint seed = (sampleBase + i + rnd_offset) % sampleMax;
+		ham = Hammersley2D(seed, sampleMax);
 		localDir = HemisphereSampleUniform(ham.x, ham.y);
 		qRot = QuatFromTwoVector(float3(0, 0, 1), normal);
 		direction = QuatRotVector(localDir, qRot);

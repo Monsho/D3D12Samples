@@ -164,6 +164,13 @@ namespace sl12
 		void Destroy();
 		void DestroyInstanceBuffer();
 
+		sl12::Buffer* TransferInstanceBuffer()
+		{
+			auto ret = pInstanceBuffer_;
+			pInstanceBuffer_ = nullptr;
+			return ret;
+		}
+
 	private:
 		sl12::Buffer*		pInstanceBuffer_ = nullptr;
 	};	// class TopAccelerationStructure

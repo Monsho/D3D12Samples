@@ -175,6 +175,19 @@ namespace sl12
 		friend class GlbMesh;
 
 	public:
+		struct BlendMode
+		{
+			enum Value
+			{
+				Opaque,
+				Blend,
+				Mask,
+
+				Max
+			};
+		};
+
+	public:
 		GlbMaterial()
 		{}
 		~GlbMaterial()
@@ -199,6 +212,10 @@ namespace sl12
 		{
 			return texNormalIndex_;
 		}
+		BlendMode::Value GetBlendMode() const
+		{
+			return blendMode_;
+		}
 
 	private:
 		bool Initialize(Device* pDev, const Microsoft::glTF::Document& doc, const Microsoft::glTF::Material& mat, Microsoft::glTF::GLTFResourceReader& resReader);
@@ -209,6 +226,7 @@ namespace sl12
 		int					texBaseColorIndex_ = -1;
 		int					texMetalRoughIndex_ = -1;
 		int					texNormalIndex_ = -1;
+		BlendMode::Value	blendMode_ = BlendMode::Opaque;
 	};	// class GlbMaterial
 
 	class GlbMesh

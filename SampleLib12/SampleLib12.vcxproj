@@ -94,6 +94,7 @@
     <ClInclude Include="include\sl12\command_list.h" />
     <ClInclude Include="include\sl12\command_queue.h" />
     <ClInclude Include="include\sl12\crc.h" />
+    <ClInclude Include="include\sl12\death_list.h" />
     <ClInclude Include="include\sl12\default_states.h" />
     <ClInclude Include="include\sl12\descriptor.h" />
     <ClInclude Include="include\sl12\descriptor_heap.h" />
