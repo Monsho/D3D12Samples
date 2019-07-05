@@ -19,6 +19,12 @@ float4 main(PSInput In) : SV_TARGET0
 	uint2 pixel = uint2(In.position.xy);
 	float4 occlude = texOcclude[pixel];
 
+	[branch]
+	if (cbScene.aoOnly)
+	{
+		return float4(occlude.yyy, 1);
+	}
+
 	float4 baseColor = texColor.Sample(texColor_s, In.uv);
 	float3 normal = normalize(In.normal);
 	float LoN = saturate(dot(normal, -cbScene.lightDir.rgb));

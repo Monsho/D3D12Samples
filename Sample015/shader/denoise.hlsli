@@ -47,7 +47,7 @@ float4 Denoise(int2 uv, float delta)
 
 	for (int i = 1; i <= kBlurWidth; i++)
 	{
-		float gauss_weight = exp((float)(i * i) * gd);
+		float gauss_weight = exp(-(float)(i * i) * gd);
 #if kBlurX
 		int2 offset = int2(i, 0);
 #else

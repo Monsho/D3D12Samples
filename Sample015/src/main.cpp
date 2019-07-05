@@ -73,11 +73,15 @@ class SampleApplication
 		float				aoLength;
 		uint32_t			aoSampleCount;
 		uint32_t			loopCount;
+		uint32_t			randomType;
+		uint32_t			temporalOn;
+		uint32_t			aoOnly;
 	};
 
 	struct MeshCB
 	{
 		DirectX::XMFLOAT4X4	mtxLocalToWorld;
+		DirectX::XMFLOAT4X4	mtxPrevLocalToWorld;
 	};
 
 	struct Sphere
@@ -136,6 +140,15 @@ public:
 			return false;
 		}
 
+		// Gバッファを生成
+		for (int i = 0; i < ARRAYSIZE(gbuffers_); i++)
+		{
+			if (!gbuffers_[i].Initialize(&device_, kScreenWidth, kScreenHeight))
+			{
+				return false;
+			}
+		}
+
 		// サンプラー作成
 		{
 			D3D12_SAMPLER_DESC samDesc{};
@@ -148,7 +161,7 @@ public:
 		}
 
 		// ルートシグネチャの初期化
-		if (!sl12::CreateRaytracingRootSignature(&device_, 1, 1, 3, 2, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
+		if (!sl12::CreateRaytracingRootSignature(&device_, 1, 1, 4, 2, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
 		{
 			return false;
 		}
@@ -208,7 +221,10 @@ public:
 
 			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 			desc.numRTVs = 0;
-			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R10G10B10A2_UNORM;
+			for (int i = 0; i < ARRAYSIZE(gbuffers_[0].gbufferTex); i++)
+			{
+				desc.rtvFormats[desc.numRTVs++] = gbuffers_[0].gbufferTex[i].GetTextureDesc().format;
+			}
 			desc.dsvFormat = DXGI_FORMAT_D32_FLOAT;
 			desc.multisampleCount = 1;
 
@@ -416,15 +432,6 @@ public:
 			}
 		}
 
-		// Gバッファを生成
-		for (int i = 0; i < ARRAYSIZE(gbuffers_); i++)
-		{
-			if (!gbuffers_[i].Initialize(&device_, kScreenWidth, kScreenHeight))
-			{
-				return false;
-			}
-		}
-
 		// 乱数用のバッファを生成
 		{
 			if (!randomBuffer_.Initialize(&device_, sizeof(float) * 65536, sizeof(float), sl12::BufferUsage::ShaderResource, true, false))
@@ -485,6 +492,20 @@ public:
 			return false;
 		}
 
+		// ブルーノイズ読み込み
+		{
+			sl12::File texFile("data/blue_noise.tga");
+
+			if (!blueNoiseTex_.InitializeFromTGA(&device_, &utilCmdList_, texFile.GetData(), texFile.GetSize(), false))
+			{
+				return false;
+			}
+			if (!blueNoiseSRV_.Initialize(&device_, &blueNoiseTex_))
+			{
+				return false;
+			}
+		}
+
 		// ジオメトリを生成する
 		if (!CreateGeometry())
 		{
@@ -492,7 +513,7 @@ public:
 		}
 
 		// Raytracing用DescriptorHeapの初期化
-		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 3, 2, 0, glbMesh_.GetSubmeshCount() + moveMesh_.GetSubmeshCount()))
+		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 4, 2, 0, glbMesh_.GetSubmeshCount() + moveMesh_.GetSubmeshCount()))
 		{
 			return false;
 		}
@@ -553,6 +574,12 @@ public:
 
 		// GUI
 		{
+			static const char* kRandomTypes[] = {
+				"None",
+				"Table",
+				"Blue Noise",
+			};
+
 			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
 			{
 			}
@@ -572,14 +599,23 @@ public:
 				isClearTarget_ = true;
 				loopCount_ = 0;
 			}
-			if (ImGui::Button(isDenoise_ ? "Denoise OFF" : "Denoise ON"))
+			if (ImGui::Checkbox("Denoise", &isDenoise_))
 			{
-				isDenoise_ = !isDenoise_;
+				isClearTarget_ = true;
+				loopCount_ = 0;
 			}
-			if (ImGui::Button(isSuzanneStop_ ? "Move Suzanne" : "Stop Suzanne"))
+			if (ImGui::Combo("Random Type", &randomType_, kRandomTypes, ARRAYSIZE(kRandomTypes)))
 			{
-				isSuzanneStop_ = !isSuzanneStop_;
+				isClearTarget_ = true;
+				loopCount_ = 0;
 			}
+			if (ImGui::Checkbox("Temporal", &isTemporalOn_))
+			{
+				isClearTarget_ = true;
+				loopCount_ = 0;
+			}
+			ImGui::Checkbox("AO Only", &isAOOnly_);
+			ImGui::Checkbox("Suzanne Stop", &isSuzanneStop_);
 
 			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
 			uint64_t timestamp[6];
@@ -650,16 +686,22 @@ public:
 		}
 		d3dCmdList->ClearDepthStencilView(curGBuffer.depthDSV.GetDescInfo().cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[0], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[1], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[2], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
 		// Z pre pass
 		{
 			// レンダーターゲット設定
-			auto&& rtv = curGBuffer.gbufferRTV.GetDescInfo().cpuHandle;
+			D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
+				curGBuffer.gbufferRTV[0].GetDescInfo().cpuHandle,
+				curGBuffer.gbufferRTV[1].GetDescInfo().cpuHandle,
+				curGBuffer.gbufferRTV[2].GetDescInfo().cpuHandle,
+			};
 			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
-			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
+			d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
 
 			D3D12_VIEWPORT vp;
 			vp.TopLeftX = vp.TopLeftY = 0.0f;
@@ -681,6 +723,7 @@ public:
 			// 基本Descriptor設定
 			descSet_.Reset();
 			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, linearWrapSampler_.GetDescInfo().cpuHandle);
 
 			auto RenderMesh = [&](sl12::GlbMesh* pMesh, sl12::ConstantBufferView* pMeshCBV)
@@ -718,7 +761,9 @@ public:
 		}
 
 		// リソースバリア
-		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[0], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[1], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[2], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 		pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		// コマンドリスト変更
@@ -741,8 +786,9 @@ public:
 			rtGlobalDescSet_.Reset();
 			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(1, randomBufferSRV_.GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(2, curGBuffer.gbufferSRV.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(2, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(3, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(4, blueNoiseSRV_.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsUav(0, pRTResult->uav.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsUav(1, seedBufferUAV_.GetDescInfo().cpuHandle);
 
@@ -801,12 +847,13 @@ public:
 				// 基本Descriptor設定
 				descSet_.Reset();
 				descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(0, curGBuffer.gbufferSRV.GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(1, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(2, pRTResult->srv.GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(3, prevGBuffer.gbufferSRV.GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(4, prevGBuffer.depthSRV.GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(5, rtResults_[prevFrameIndex].srv.GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(1, curGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(2, curGBuffer.gbufferSRV[2].GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(3, pRTResult->srv.GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(4, prevGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(5, prevGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(6, rtResults_[prevFrameIndex].srv.GetDescInfo().cpuHandle);
 				descSet_.SetPsSampler(0, linearClampSampler_.GetDescInfo().cpuHandle);
 				descSet_.SetPsSampler(1, pointClampSampler_.GetDescInfo().cpuHandle);
 				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&temporalRootSig_, &descSet_);
@@ -847,7 +894,7 @@ public:
 				// 基本Descriptor設定
 				descSet_.Reset();
 				descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(0, curGBuffer.gbufferSRV.GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
 				descSet_.SetPsSrv(1, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
 				descSet_.SetPsSrv(2, pTRResult->srv.GetDescInfo().cpuHandle);
 				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&temporalRootSig_, &descSet_);
@@ -1363,6 +1410,7 @@ private:
 			auto cb = reinterpret_cast<MeshCB*>(glbMeshCB_.Map(nullptr));
 			DirectX::XMMATRIX m = DirectX::XMMatrixScaling(kSponzaScale, kSponzaScale, kSponzaScale);
 			DirectX::XMStoreFloat4x4(&cb->mtxLocalToWorld, m);
+			DirectX::XMStoreFloat4x4(&cb->mtxPrevLocalToWorld, m);
 			glbMeshCB_.Unmap();
 
 			if (!glbMeshCBV_.Initialize(&device_, &glbMeshCB_))
@@ -1382,6 +1430,7 @@ private:
 				auto cb = reinterpret_cast<MeshCB*>(moveMeshCBs_[i].Map(nullptr));
 				DirectX::XMMATRIX m = DirectX::XMMatrixScaling(kSuzanneScale, kSuzanneScale, kSuzanneScale);
 				DirectX::XMStoreFloat4x4(&cb->mtxLocalToWorld, m);
+				DirectX::XMStoreFloat4x4(&cb->mtxPrevLocalToWorld, m);
 				moveMeshCBs_[i].Unmap();
 
 				if (!moveMeshCBVs_[i].Initialize(&device_, &moveMeshCBs_[i]))
@@ -1607,6 +1656,9 @@ private:
 		cb->aoLength = aoLength_;
 		cb->aoSampleCount = static_cast<uint32_t>(aoSampleCount_);
 		cb->loopCount = loopCount_++;
+		cb->randomType = randomType_;
+		cb->temporalOn = isTemporalOn_ ? 1 : 0;
+		cb->aoOnly = isAOOnly_ ? 1 : 0;
 		sceneCBs_[frameIndex].Unmap();
 
 		loopCount_ = loopCount_ % MaxSample;
@@ -1614,18 +1666,26 @@ private:
 
 	DirectX::XMFLOAT4X4 UpdateMeshCB(int frameIndex)
 	{
+		float prevTime = meshTime_;
 		if (!isSuzanneStop_)
 			meshTime_ += 1.0f / 60.0f;
 
-		DirectX::XMMATRIX m_t = DirectX::XMMatrixTranslation(0.0f, -5.0f, 5.0f);
-		DirectX::XMMATRIX m_r = DirectX::XMMatrixRotationY(DirectX::XM_2PI * meshTime_ / 2.0f);
-		DirectX::XMMATRIX m_s = DirectX::XMMatrixScaling(kSuzanneScale, kSuzanneScale, kSuzanneScale);
-		DirectX::XMMATRIX m = m_s * m_t * m_r;
-		DirectX::XMFLOAT4X4 f44;
-		DirectX::XMStoreFloat4x4(&f44, m);
+		auto CalcMat = [](float time)
+		{
+			DirectX::XMMATRIX m_t = DirectX::XMMatrixTranslation(0.0f, -5.0f, 5.0f);
+			DirectX::XMMATRIX m_r = DirectX::XMMatrixRotationY(DirectX::XM_2PI * time / 2.0f);
+			DirectX::XMMATRIX m_s = DirectX::XMMatrixScaling(kSuzanneScale, kSuzanneScale, kSuzanneScale);
+			DirectX::XMMATRIX m = m_s * m_t * m_r;
+			DirectX::XMFLOAT4X4 f44;
+			DirectX::XMStoreFloat4x4(&f44, m);
+			return f44;
+		};
+
+		auto f44 = CalcMat(meshTime_);
 
 		auto cb = reinterpret_cast<MeshCB*>(moveMeshCBs_[frameIndex].Map(nullptr));
 		cb->mtxLocalToWorld = f44;
+		cb->mtxPrevLocalToWorld = CalcMat(prevTime);
 		moveMeshCBs_[frameIndex].Unmap();
 
 		return f44;
@@ -1750,9 +1810,9 @@ private:
 
 	struct GBuffers
 	{
-		sl12::Texture				gbufferTex;
-		sl12::TextureView			gbufferSRV;
-		sl12::RenderTargetView		gbufferRTV;
+		sl12::Texture				gbufferTex[3];
+		sl12::TextureView			gbufferSRV[3];
+		sl12::RenderTargetView		gbufferRTV[3];
 
 		sl12::Texture				depthTex;
 		sl12::TextureView			depthSRV;
@@ -1761,12 +1821,17 @@ private:
 		bool Initialize(sl12::Device* pDev, int width, int height)
 		{
 			{
+				const DXGI_FORMAT kFormats[] = {
+					DXGI_FORMAT_R10G10B10A2_UNORM,
+					DXGI_FORMAT_R16G16B16A16_FLOAT,
+					DXGI_FORMAT_R16G16B16A16_FLOAT,
+				};
+
 				sl12::TextureDesc desc;
 				desc.dimension = sl12::TextureDimension::Texture2D;
 				desc.width = width;
 				desc.height = height;
 				desc.mipLevels = 1;
-				desc.format = DXGI_FORMAT_R10G10B10A2_UNORM;
 				desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
 				desc.sampleCount = 1;
 				desc.clearColor[4] = { 0.0f };
@@ -1775,19 +1840,25 @@ private:
 				desc.isRenderTarget = true;
 				desc.isDepthBuffer = false;
 				desc.isUav = false;
-				if (!gbufferTex.Initialize(pDev, desc))
-				{
-					return false;
-				}
 
-				if (!gbufferSRV.Initialize(pDev, &gbufferTex))
+				for (int i = 0; i < ARRAYSIZE(gbufferTex); i++)
 				{
-					return false;
-				}
+					desc.format = kFormats[i];
 
-				if (!gbufferRTV.Initialize(pDev, &gbufferTex))
-				{
-					return false;
+					if (!gbufferTex[i].Initialize(pDev, desc))
+					{
+						return false;
+					}
+
+					if (!gbufferSRV[i].Initialize(pDev, &gbufferTex[i]))
+					{
+						return false;
+					}
+
+					if (!gbufferRTV[i].Initialize(pDev, &gbufferTex[i]))
+					{
+						return false;
+					}
 				}
 			}
 
@@ -1828,9 +1899,12 @@ private:
 
 		void Destroy()
 		{
-			gbufferRTV.Destroy();
-			gbufferSRV.Destroy();
-			gbufferTex.Destroy();
+			for (int i = 0; i < ARRAYSIZE(gbufferTex); i++)
+			{
+				gbufferRTV[i].Destroy();
+				gbufferSRV[i].Destroy();
+				gbufferTex[i].Destroy();
+			}
 			depthDSV.Destroy();
 			depthSRV.Destroy();
 			depthTex.Destroy();
@@ -1905,6 +1979,9 @@ private:
 	sl12::RenderTargetView		resultTextureRTV_;
 	sl12::UnorderedAccessView	resultTextureUAV_;
 
+	sl12::Texture				blueNoiseTex_;
+	sl12::TextureView			blueNoiseSRV_;
+
 	sl12::Buffer				randomBuffer_;
 	sl12::BufferView			randomBufferSRV_;
 	sl12::Buffer				seedBuffer_;
@@ -1962,6 +2039,9 @@ private:
 	int						aoSampleCount_ = 1;
 	bool					isDenoise_ = true;
 	uint32_t				loopCount_ = 0;
+	int						randomType_ = 1;
+	bool					isTemporalOn_ = true;
+	bool					isAOOnly_ = false;
 	bool					isClearTarget_ = true;
 
 	DirectX::XMFLOAT4X4		mtxWorldToView_, mtxPrevWorldToView_;

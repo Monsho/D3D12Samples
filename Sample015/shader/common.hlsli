@@ -15,11 +15,15 @@ struct SceneCB
 	float		aoLength;
 	uint		aoSampleCount;
 	uint		loopCount;
+	uint		randomType;
+	uint		temporalOn;
+	uint		aoOnly;
 };
 
 struct MeshCB
 {
 	float4x4	mtxLocalToWorld;
+	float4x4	mtxPrevLocalToWorld;
 };
 
 float3 SkyColor(float3 w_dir)

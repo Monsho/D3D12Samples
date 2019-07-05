@@ -6,6 +6,7 @@ struct HitData
 };
 
 #define TMax			10000.0
+#define BlueNoiseWidth	64
 #define MaxSample		512
 #define	PI				3.14159265358979
 
@@ -14,14 +15,15 @@ RaytracingAccelerationStructure		Scene			: register(t0, space0);
 StructuredBuffer<float>				RandomTable		: register(t1);
 Texture2D							GBufferTex		: register(t2);
 Texture2D							DepthTex		: register(t3);
+Texture2D							BlueNoiseTex	: register(t4);
 RWTexture2D<float4>					RenderTarget	: register(u0);
 RWByteAddressBuffer					RandomSeed		: register(u1);
 ConstantBuffer<SceneCB>				cbScene			: register(b0);
 
 // local
-ByteAddressBuffer					Indices			: register(t4);
-StructuredBuffer<float2>			VertexUV		: register(t5);
-Texture2D							texImage		: register(t6);
+ByteAddressBuffer					Indices			: register(t5);
+StructuredBuffer<float2>			VertexUV		: register(t6);
+Texture2D							texImage		: register(t7);
 SamplerState						texImage_s		: register(s0);
 
 
@@ -173,7 +175,17 @@ void RayGenerator()
 	worldPos.xyz /= worldPos.w;
 
 	// シャドウ用レイの生成
-	float offset_rnd = GetRandom();
+	float offset_rnd = 0.0;
+	[branch]
+	if (cbScene.randomType == 1)
+	{
+		offset_rnd = GetRandom();
+	}
+	else if (cbScene.randomType == 2)
+	{
+		uint2 noise_uv = index % BlueNoiseWidth;
+		offset_rnd = BlueNoiseTex[noise_uv].r;
+	}
 	float3 origin = worldPos.xyz + normal * 1e-4;
 	float3 direction = -cbScene.lightDir.xyz;
 

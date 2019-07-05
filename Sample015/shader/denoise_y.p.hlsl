@@ -11,5 +11,5 @@ struct PSInput
 
 float4 main(PSInput In) : SV_TARGET0
 {
-	return Denoise(int2(In.position.xy), 5.0);
+	return Denoise(int2(In.position.xy), 3.0);
 }

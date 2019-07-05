@@ -5,6 +5,9 @@
 #include <sl12/fence.h>
 #include <sl12/swapchain.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "../../External/stb/stb_image.h"
+
 
 namespace sl12
 {
@@ -239,13 +242,54 @@ namespace sl12
 			return false;
 		}
 
-		// TGAファイルフォーマットからイメージリソースを作成
+		// stbでpngを読み込む
+		int width, height, bpp;
+		auto pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(pPngBin), static_cast<int>(size), &width, &height, &bpp, 0);
+		if (!pixels || (bpp != 3 && bpp != 4))
+		{
+			return false;
+		}
+
+		// DirectXTex形式のイメージへ変換
 		DirectX::ScratchImage image;
-		auto hr = DirectX::LoadFromWICMemory(pPngBin, size, DirectX::WIC_FLAGS_NONE, nullptr, image);
+		auto hr = image.Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
 		if (FAILED(hr))
 		{
 			return false;
 		}
+		if (bpp == 3)
+		{
+			auto src = pixels;
+			auto dst = image.GetPixels();
+			for (int y = 0; y < height; y++)
+			{
+				for (int x = 0; x < height; x++)
+				{
+					dst[0] = src[0];
+					dst[1] = src[1];
+					dst[2] = src[2];
+					dst[3] = 0xff;
+					src += 3;
+					dst += 4;
+				}
+			}
+		}
+		else
+		{
+			auto src = pixels;
+			auto dst = image.GetPixels();
+			memcpy(dst, src, width * height * bpp);
+		}
+
+		stbi_image_free(pixels);
+
+		// TGAファイルフォーマットからイメージリソースを作成
+		//DirectX::ScratchImage image;
+		//auto hr = DirectX::LoadFromWICMemory(pPngBin, size, DirectX::WIC_FLAGS_NONE, nullptr, image);
+		//if (FAILED(hr))
+		//{
+		//	return false;
+		//}
 
 		// D3D12リソースを作成
 		if (!InitializeFromDXImage(pDev, image, isForceSRGB))
@@ -416,7 +460,19 @@ namespace sl12
 				}
 				D3D12_MEMCPY_DEST dstData = { pData + footprint[i].Offset, footprint[i].Footprint.RowPitch, footprint[i].Footprint.RowPitch * numRows[i] };
 				const DirectX::Image* pImage = image.GetImage(m, 0, d);
-				memcpy(dstData.pData, pImage->pixels, pImage->rowPitch * pImage->height);
+				if (rowSize[i] == footprint[i].Footprint.RowPitch)
+				{
+					memcpy(dstData.pData, pImage->pixels, pImage->rowPitch * pImage->height);
+				}
+				else if (rowSize[i] < footprint[i].Footprint.RowPitch)
+				{
+					u8* p_src = pImage->pixels;
+					u8* p_dst = reinterpret_cast<u8*>(dstData.pData);
+					for (u32 r = 0; r < numRows[i]; r++, p_src += pImage->rowPitch, p_dst += footprint[i].Footprint.RowPitch)
+					{
+						memcpy(p_dst, p_src, rowSize[i]);
+					}
+				}
 			}
 		}
 

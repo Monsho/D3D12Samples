@@ -13,3 +13,6 @@
 [submodule "External/DirectXMesh"]
 	path = External/DirectXMesh
 	url = https://github.com/microsoft/DirectXMesh
+[submodule "External/tinyexr"]
+	path = External/tinyexr
+	url = https://github.com/syoyo/tinyexr
