@@ -49,7 +49,7 @@ float4 main(PSInput In) : SV_TARGET0
 	{
 		float n = prevRes.z + 1;
 		result.y = (prevRes.y * prevRes.z + result.y) / n;
-		result.z = min(n, 512);
+		result.z = min(n, MaxSample);
 	}
 	else
 	{

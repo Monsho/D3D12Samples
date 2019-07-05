@@ -37,5 +37,7 @@ float ToLinearDepth(float perspDepth, float n, float f)
 	return -n / ((n - f) * perspDepth + f);
 }
 
+#define MaxSample			512
+
 #endif // COMMON_HLSLI
 //	EOF

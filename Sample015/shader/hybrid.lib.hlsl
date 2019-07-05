@@ -7,7 +7,6 @@ struct HitData
 
 #define TMax			10000.0
 #define BlueNoiseWidth	64
-#define MaxSample		512
 #define	PI				3.14159265358979
 
 // global

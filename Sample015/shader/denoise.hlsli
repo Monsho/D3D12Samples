@@ -5,9 +5,9 @@
 
 ConstantBuffer<SceneCB>		cbScene			: register(b0);
 
-Texture2D			texNormal		: register(t0);
-Texture2D<float>	texDepth		: register(t1);
-Texture2D			texResult		: register(t2);
+Texture2D		texNormal		: register(t0);
+Texture2D		texDepth		: register(t1);
+Texture2D		texResult		: register(t2);
 
 #ifndef kNormalThreshold
 #	define	kNormalThreshold		0.5
@@ -16,7 +16,7 @@ Texture2D			texResult		: register(t2);
 #	define	kDepthThreshold			0.00001
 #endif
 #ifndef kBlurWidth
-#	define	kBlurWidth				5
+#	define	kBlurWidth				3
 #endif
 #ifndef kBlurX
 #	define	kBlurX					1
@@ -24,10 +24,8 @@ Texture2D			texResult		: register(t2);
 
 float CalcWeight(int2 uv, int2 offset, float3 base_normal, float base_depth, float gauss_weight)
 {
-	float zn = cbScene.screenInfo.x;
-	float zf = cbScene.screenInfo.y;
 	float3 n = normalize(texNormal[uv + offset].xyz * 2 - 1);
-	float d = ToLinearDepth(texDepth[uv + offset], zn, zf);
+	float d = texDepth[uv + offset].r;
 
 	float w = gauss_weight;
 	w *= smoothstep(kNormalThreshold, 1.0, dot(base_normal, n));	// normal weight
@@ -37,10 +35,8 @@ float CalcWeight(int2 uv, int2 offset, float3 base_normal, float base_depth, flo
 
 float4 Denoise(int2 uv, float delta)
 {
-	float zn = cbScene.screenInfo.x;
-	float zf = cbScene.screenInfo.y;
 	float3 base_normal = normalize(texNormal[uv].xyz * 2 - 1);
-	float base_depth = ToLinearDepth(texDepth[uv], zn, zf);
+	float base_depth = texDepth[uv].r;
 	float4 result = texResult[uv];
 	float total_weight = 1;
 	float gd = 1.0 / (2.0 * delta * delta);

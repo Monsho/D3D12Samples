@@ -599,8 +599,9 @@ public:
 				isClearTarget_ = true;
 				loopCount_ = 0;
 			}
-			if (ImGui::Checkbox("Denoise", &isDenoise_))
+			if (ImGui::SliderInt("Denoise Iteration", &denoiseCount_, 0, 4))
 			{
+				isDenoise_ = denoiseCount_ > 0;
 				isClearTarget_ = true;
 				loopCount_ = 0;
 			}
@@ -620,7 +621,7 @@ public:
 			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
 			uint64_t timestamp[6];
 
-			gpuTimestamp_[prevFrameIndex].GetTimestamp(0, 6, timestamp);
+			gpuTimestamp_[frameIndex].GetTimestamp(0, 6, timestamp);
 			uint64_t all_time = timestamp[4] - timestamp[0];
 			uint64_t ray_time = timestamp[3] - timestamp[2];
 			float all_ms = (float)all_time / ((float)freq / 1000.0f);
@@ -629,7 +630,7 @@ public:
 			ImGui::Text("All GPU: %f (ms)", all_ms);
 			ImGui::Text("RayTracing: %f (ms)", ray_ms);
 
-			topAsTimestamp_[prevFrameIndex].GetTimestamp(0, 2, timestamp);
+			topAsTimestamp_[frameIndex].GetTimestamp(0, 2, timestamp);
 			uint64_t tas_time = timestamp[1] - timestamp[0];
 			float tas_ms = (float)tas_time / ((float)freq / 1000.0f);
 			ImGui::Text("TopAS Build: %f (ms)", tas_ms);
@@ -771,8 +772,6 @@ public:
 		d3dCmdList = pCmdList->GetCommandList();
 		dxrCmdList = pCmdList->GetDxrCommandList();
 
-		gpuTimestamp_[frameIndex].Query(pCmdList);
-
 		pCmdList->SetDescriptorHeapDirty();
 
 		// Shadow & AO
@@ -781,6 +780,9 @@ public:
 		RaytracingResult* pDNResult = &rtWork_;
 		{
 			pCmdList->TransitionBarrier(&pRTResult->tex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+			// レイトレのみの時間計測
+			gpuTimestamp_[frameIndex].Query(pCmdList);
 
 			// デスクリプタを設定
 			rtGlobalDescSet_.Reset();
@@ -815,6 +817,9 @@ public:
 			dxrCmdList->DispatchRays(&desc);
 
 			pCmdList->UAVBarrier(&pRTResult->tex);
+
+			// レイトレはここまで
+			gpuTimestamp_[frameIndex].Query(pCmdList);
 
 			pCmdList->TransitionBarrier(&pRTResult->tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 			pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
@@ -868,6 +873,7 @@ public:
 			}
 
 			// Denoise
+			for (int cnt = 0; cnt < std::max(1, denoiseCount_); cnt++)
 			{
 				// X
 				pCmdList->TransitionBarrier(&denoiseWork_.tex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -895,7 +901,7 @@ public:
 				descSet_.Reset();
 				descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 				descSet_.SetPsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
-				descSet_.SetPsSrv(1, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(1, curGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
 				descSet_.SetPsSrv(2, pTRResult->srv.GetDescInfo().cpuHandle);
 				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&temporalRootSig_, &descSet_);
 
@@ -926,12 +932,12 @@ public:
 				d3dCmdList->DrawInstanced(3, 1, 0, 0);
 
 				pCmdList->TransitionBarrier(&pDNResult->tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+				pTRResult = pDNResult;
 			}
 
 			pCmdList->TransitionBarrier(&prevGBuffer.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 		}
-
-		gpuTimestamp_[frameIndex].Query(pCmdList);
 
 		// lighting pass
 		{
@@ -2035,13 +2041,14 @@ private:
 	float					skyPower_ = 1.0f;
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
 	float					lightPower_ = 1.0f;
-	float					aoLength_ = 10.0f;
+	float					aoLength_ = 3.0f;
 	int						aoSampleCount_ = 1;
 	bool					isDenoise_ = true;
 	uint32_t				loopCount_ = 0;
 	int						randomType_ = 1;
 	bool					isTemporalOn_ = true;
 	bool					isAOOnly_ = false;
+	int						denoiseCount_ = 1;
 	bool					isClearTarget_ = true;
 
 	DirectX::XMFLOAT4X4		mtxWorldToView_, mtxPrevWorldToView_;
