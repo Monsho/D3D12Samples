@@ -365,7 +365,7 @@ namespace sl12
 		{
 			viewDesc.Format = DXGI_FORMAT_R32_TYPELESS;
 			viewDesc.Buffer.FirstElement = firstElement;
-			viewDesc.Buffer.NumElements = static_cast<u32>(resDesc.Width / 4);
+			viewDesc.Buffer.NumElements = static_cast<u32>(resDesc.Width / 4) - firstElement;
 			viewDesc.Buffer.StructureByteStride = 0;
 			viewDesc.Buffer.CounterOffsetInBytes = offset;
 			viewDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
