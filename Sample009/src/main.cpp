@@ -63,7 +63,7 @@ public:
 		{
 			sl12::File texFile("data/ConcreteTile_basecolor.tga");
 
-			if (!imageTexture_.InitializeFromTGA(&device_, &cmdLists_[0], texFile.GetData(), texFile.GetSize(), false))
+			if (!imageTexture_.InitializeFromTGA(&device_, &cmdLists_[0], texFile.GetData(), texFile.GetSize(), 1, false))
 			{
 				return false;
 			}

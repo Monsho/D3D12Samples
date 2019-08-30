@@ -496,7 +496,7 @@ public:
 		{
 			sl12::File texFile("data/blue_noise.tga");
 
-			if (!blueNoiseTex_.InitializeFromTGA(&device_, &utilCmdList_, texFile.GetData(), texFile.GetSize(), false))
+			if (!blueNoiseTex_.InitializeFromTGA(&device_, &utilCmdList_, texFile.GetData(), texFile.GetSize(), 1, false))
 			{
 				return false;
 			}

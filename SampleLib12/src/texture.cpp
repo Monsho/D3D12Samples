@@ -184,7 +184,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, bool isForceSRGB)
+	bool Texture::InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
 	{
 		if (!pDev)
 		{
@@ -197,14 +197,23 @@ namespace sl12
 
 		// TGAファイルフォーマットからイメージリソースを作成
 		DirectX::ScratchImage image;
+		DirectX::ScratchImage* pBaseImage = &image;
 		auto hr = DirectX::LoadFromTGAMemory(pTgaBin, size, nullptr, image);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
+		// ミップマップ生成
+		DirectX::ScratchImage mipped_image;
+		if (mipLevels != 1)
+		{
+			pBaseImage = &mipped_image;
+			DirectX::GenerateMipMaps(*image.GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, mipped_image);
+		}
+
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, image, isForceSRGB))
+		if (!InitializeFromDXImage(pDev, *pBaseImage, isForceSRGB))
 		{
 			return false;
 		}
@@ -212,7 +221,7 @@ namespace sl12
 		// コピー命令発行
 		ID3D12Resource* pSrcImage = nullptr;
 		pCmdList->Reset();
-		if (!UpdateImage(pDev, pCmdList, image, &pSrcImage))
+		if (!UpdateImage(pDev, pCmdList, *pBaseImage, &pSrcImage))
 		{
 			return false;
 		}
@@ -231,7 +240,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, bool isForceSRGB)
+	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
 	{
 		if (!pDev)
 		{
@@ -252,6 +261,7 @@ namespace sl12
 
 		// DirectXTex形式のイメージへ変換
 		DirectX::ScratchImage image;
+		DirectX::ScratchImage* pBaseImage = &image;
 		auto hr = image.Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
 		if (FAILED(hr))
 		{
@@ -283,16 +293,16 @@ namespace sl12
 
 		stbi_image_free(pixels);
 
-		// TGAファイルフォーマットからイメージリソースを作成
-		//DirectX::ScratchImage image;
-		//auto hr = DirectX::LoadFromWICMemory(pPngBin, size, DirectX::WIC_FLAGS_NONE, nullptr, image);
-		//if (FAILED(hr))
-		//{
-		//	return false;
-		//}
+		// ミップマップ生成
+		DirectX::ScratchImage mipped_image;
+		if (mipLevels != 1)
+		{
+			pBaseImage = &mipped_image;
+			DirectX::GenerateMipMaps(*image.GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, mipped_image);
+		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, image, isForceSRGB))
+		if (!InitializeFromDXImage(pDev, *pBaseImage, isForceSRGB))
 		{
 			return false;
 		}
@@ -300,7 +310,7 @@ namespace sl12
 		// コピー命令発行
 		ID3D12Resource* pSrcImage = nullptr;
 		pCmdList->Reset();
-		if (!UpdateImage(pDev, pCmdList, image, &pSrcImage))
+		if (!UpdateImage(pDev, pCmdList, *pBaseImage, &pSrcImage))
 		{
 			return false;
 		}

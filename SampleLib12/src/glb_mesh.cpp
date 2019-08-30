@@ -261,7 +261,7 @@ namespace sl12
 			texture->pTex = new Texture();
 			texture->pView = new TextureView();
 
-			if (!texture->pTex->InitializeFromPNG(pDev, pCmdList, data.data(), data.size(), false))
+			if (!texture->pTex->InitializeFromPNG(pDev, pCmdList, data.data(), data.size(), 0, false))
 			{
 				return false;
 			}

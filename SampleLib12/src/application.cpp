@@ -91,6 +91,7 @@ namespace sl12
 			desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 			desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 			desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.MaxLOD = FLT_MAX;
 			auto isInitSampler = pointWrapSampler_.Initialize(&device_, desc);
 			assert(isInitSampler);
 

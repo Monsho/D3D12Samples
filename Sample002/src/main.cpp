@@ -366,7 +366,7 @@ bool InitializeAssets()
 	{
 		File texFile("data/icon.tga");
 
-		if (!g_texture_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), false))
+		if (!g_texture_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), 1, false))
 		{
 			return false;
 		}

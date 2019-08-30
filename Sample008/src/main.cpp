@@ -219,7 +219,7 @@ bool LoadTexture(TextureSet* pTexSet, const char* filename)
 {
 	File texFile(filename);
 
-	if (!pTexSet->tex_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), false))
+	if (!pTexSet->tex_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), 1, false))
 	{
 		return false;
 	}
