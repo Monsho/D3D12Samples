@@ -653,7 +653,9 @@ private:
 
 		// Bottom ASÇÃê∂ê¨èÄîı
 		sl12::GeometryStructureDesc geoDesc{};
-		geoDesc.InitializeAsAABB(&spheresAABB_, sizeof(D3D12_RAYTRACING_AABB), spheres_.size());
+		geoDesc.InitializeAsAABB(
+			D3D12_RAYTRACING_GEOMETRY_FLAG_NONE,
+			&spheresAABB_, sizeof(D3D12_RAYTRACING_AABB), spheres_.size());
 
 		sl12::StructureInputDesc bottomInput{};
 		if (!bottomInput.InitializeAsBottom(&device_, &geoDesc, 1, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))

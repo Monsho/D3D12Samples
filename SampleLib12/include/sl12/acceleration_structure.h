@@ -16,6 +16,7 @@ namespace sl12
 		D3D12_RAYTRACING_GEOMETRY_DESC	dxrDesc;
 
 		void InitializeAsTriangle(
+			D3D12_RAYTRACING_GEOMETRY_FLAGS	flags,
 			sl12::Buffer*		pVertexBuffer,
 			sl12::Buffer*		pIndexBuffer,
 			sl12::Buffer*		pTransformBuffer,
@@ -26,6 +27,7 @@ namespace sl12
 			DXGI_FORMAT			indexFormat);
 
 		void InitializeAsTriangle(
+			D3D12_RAYTRACING_GEOMETRY_FLAGS	flags,
 			sl12::Buffer*		pVertexBuffer,
 			sl12::Buffer*		pIndexBuffer,
 			sl12::Buffer*		pTransformBuffer,
@@ -38,6 +40,7 @@ namespace sl12
 			DXGI_FORMAT			indexFormat);
 
 		void InitializeAsAABB(
+			D3D12_RAYTRACING_GEOMETRY_FLAGS	flags,
 			sl12::Buffer*		pAABBBuffer,
 			UINT64				bufferStride,
 			UINT				aabbCount);

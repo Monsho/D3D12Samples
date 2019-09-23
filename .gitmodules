@@ -16,3 +16,6 @@
 [submodule "External/tinyexr"]
 	path = External/tinyexr
 	url = https://github.com/syoyo/tinyexr
+[submodule "External/cereal"]
+	path = External/cereal
+	url = https://github.com/USCiLab/cereal

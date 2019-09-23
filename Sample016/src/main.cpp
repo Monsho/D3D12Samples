@@ -40,8 +40,8 @@
 
 namespace
 {
-	static const int	kScreenWidth = 1280;
-	static const int	kScreenHeight = 720;
+	static const int	kScreenWidth = 1920;
+	static const int	kScreenHeight = 1080;
 	static const int	MaxSample = 512;
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 10000.0f;
@@ -169,6 +169,7 @@ public:
 
 		// ルートシグネチャの初期化
 		if (!sl12::CreateRaytracingRootSignature(&device_, 1, 1, 4, 2, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
+		//if (!sl12::CreateRaytracingRootSignature(&device_, 1, 1, 2, 0, 0, &rtGlobalRootSig_, &rtLocalRootSig_))
 		{
 			return false;
 		}
@@ -878,9 +879,9 @@ public:
 			// デスクリプタを設定
 			rtGlobalDescSet_.Reset();
 			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(1, randomBufferSRV_.GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(2, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(3, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(1, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(2, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(3, randomBufferSRV_.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(4, blueNoiseSRV_.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsUav(0, pRTResult->uav.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsUav(1, seedBufferUAV_.GetDescInfo().cpuHandle);
@@ -1128,7 +1129,7 @@ public:
 		device_.WaitDrawDone();
 
 		// 次のフレームへ
-		device_.Present(1);
+		device_.Present(0);
 
 		// コマンド実行
 		zpreCmdLists_.Execute();
@@ -1144,7 +1145,7 @@ public:
 	{
 		// 描画待ち
 		device_.WaitDrawDone();
-		device_.Present(1);
+		device_.Present(0);
 
 		deathList_.Destroy();
 
@@ -1281,7 +1282,7 @@ private:
 
 		// シェーダコンフィグサブオブジェクト
 		// ヒットシェーダ、ミスシェーダの引数となるPayload, IntersectionAttributesの最大サイズを設定します.
-		dxrDesc.AddShaderConfig(sizeof(float) * 4 + sizeof(sl12::u32), sizeof(float) * 2);
+		dxrDesc.AddShaderConfig(sizeof(float) * 16, sizeof(float) * 2);
 
 		// ローカルルートシグネチャサブオブジェクト
 		// シェーダレコードごとに設定されるルートシグネチャを設定します.
@@ -1302,7 +1303,7 @@ private:
 
 		// レイトレースコンフィグサブオブジェクト
 		// TraceRay()を行うことができる最大深度を指定するサブオブジェクトです.
-		dxrDesc.AddRaytracinConfig(31);
+		dxrDesc.AddRaytracinConfig(2);
 
 		// PSO生成
 		if (!stateObject_.Initialize(&device_, dxrDesc))
@@ -1330,7 +1331,13 @@ private:
 		for (int i = 0; i < pMesh->GetSubmeshCount(); i++)
 		{
 			auto submesh = pMesh->GetSubmesh(i);
+			auto material = glbMesh_.GetMaterial(submesh->GetMaterialIndex());
+
+			auto flags = material->GetBlendMode() == sl12::GlbMaterial::BlendMode::Opaque
+				? D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE
+				: D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
 			geoDescs[i].InitializeAsTriangle(
+				flags,
 				&submesh->GetPositionB(),
 				&submesh->GetIndexB(),
 				nullptr,
@@ -1551,6 +1558,7 @@ private:
 				hitGroupIndices.push_back(1);
 			}
 
+#if 1
 			// CBVはなし
 			gpu_handles.push_back(local_handle_start.viewGpuHandle);
 
@@ -1570,6 +1578,39 @@ private:
 
 			// UAVはなし
 			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+#else
+			// CBV
+			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+
+			// SRV
+			D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
+				randomBufferSRV_.GetDescInfo().cpuHandle,
+				blueNoiseSRV_.GetDescInfo().cpuHandle,
+				submesh->GetIndexBV().GetDescInfo().cpuHandle,
+				submesh->GetTexcoordBV().GetDescInfo().cpuHandle,
+				texView->GetDescInfo().cpuHandle,
+			};
+			sl12::u32 srv_cnt = ARRAYSIZE(srv);
+			device_.GetDeviceDep()->CopyDescriptors(
+				1, &local_handle_start.viewCpuHandle, &srv_cnt,
+				srv_cnt, srv, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+			local_handle_start.viewCpuHandle.ptr += view_desc_size * srv_cnt;
+			local_handle_start.viewGpuHandle.ptr += view_desc_size * srv_cnt;
+
+			// UAV
+			D3D12_CPU_DESCRIPTOR_HANDLE uav[] = {
+				rtWork_.uav.GetDescInfo().cpuHandle,
+				seedBufferUAV_.GetDescInfo().cpuHandle,
+			};
+			sl12::u32 uav_cnt = ARRAYSIZE(uav);
+			device_.GetDeviceDep()->CopyDescriptors(
+				1, &local_handle_start.viewCpuHandle, &uav_cnt,
+				uav_cnt, uav, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			gpu_handles.push_back(local_handle_start.viewGpuHandle);
+			local_handle_start.viewCpuHandle.ptr += view_desc_size * uav_cnt;
+			local_handle_start.viewGpuHandle.ptr += view_desc_size * uav_cnt;
+#endif
 
 			// Samplerは1つ
 			D3D12_CPU_DESCRIPTOR_HANDLE sampler[] = {
@@ -2310,7 +2351,7 @@ private:
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
 	float					lightPower_ = 1.0f;
 	float					aoLength_ = 3.0f;
-	int						aoSampleCount_ = 1;
+	int						aoSampleCount_ = 4;
 	bool					isDenoise_ = true;
 	uint32_t				loopCount_ = 0;
 	int						randomType_ = 1;

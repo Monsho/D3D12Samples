@@ -1040,6 +1040,7 @@ private:
 		{
 			auto submesh = glbMesh_.GetSubmesh(i);
 			geoDescs[i].InitializeAsTriangle(
+				D3D12_RAYTRACING_GEOMETRY_FLAG_NONE,
 				&submesh->GetPositionB(),
 				&submesh->GetIndexB(),
 				nullptr,

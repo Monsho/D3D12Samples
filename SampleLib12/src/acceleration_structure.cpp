@@ -7,6 +7,7 @@ namespace sl12
 	// Geometry Desc‚ðŽOŠpƒ|ƒŠƒSƒ“ƒƒbƒVƒ…‚Æ‚µ‚Ä‰Šú‰»
 	//-------------------------------------------------------------------
 	void GeometryStructureDesc::InitializeAsTriangle(
+		D3D12_RAYTRACING_GEOMETRY_FLAGS	flags,
 		sl12::Buffer*		pVertexBuffer,
 		sl12::Buffer*		pIndexBuffer,
 		sl12::Buffer*		pTransformBuffer,
@@ -20,6 +21,7 @@ namespace sl12
 			return;
 
 		dxrDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		dxrDesc.Flags = flags;
 		dxrDesc.Triangles.VertexBuffer.StartAddress = pVertexBuffer->GetResourceDep()->GetGPUVirtualAddress();
 		dxrDesc.Triangles.VertexBuffer.StrideInBytes = vertexStride;
 		dxrDesc.Triangles.VertexCount = vertexCount;
@@ -30,6 +32,7 @@ namespace sl12
 		dxrDesc.Triangles.Transform3x4 = pTransformBuffer ? pTransformBuffer->GetResourceDep()->GetGPUVirtualAddress() : 0;
 	}
 	void GeometryStructureDesc::InitializeAsTriangle(
+		D3D12_RAYTRACING_GEOMETRY_FLAGS	flags,
 		sl12::Buffer*		pVertexBuffer,
 		sl12::Buffer*		pIndexBuffer,
 		sl12::Buffer*		pTransformBuffer,
@@ -45,6 +48,7 @@ namespace sl12
 			return;
 
 		dxrDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		dxrDesc.Flags = flags;
 		dxrDesc.Triangles.VertexBuffer.StartAddress = pVertexBuffer->GetResourceDep()->GetGPUVirtualAddress() + vertexOffset;
 		dxrDesc.Triangles.VertexBuffer.StrideInBytes = vertexStride;
 		dxrDesc.Triangles.VertexCount = vertexCount;
@@ -59,6 +63,7 @@ namespace sl12
 	// Geometry Desc‚ðAABB‚Æ‚µ‚Ä‰Šú‰»
 	//-------------------------------------------------------------------
 	void GeometryStructureDesc::InitializeAsAABB(
+		D3D12_RAYTRACING_GEOMETRY_FLAGS	flags,
 		sl12::Buffer*		pAABBBuffer,
 		UINT64				bufferStride,
 		UINT				aabbCount)
@@ -67,7 +72,7 @@ namespace sl12
 			return;
 
 		dxrDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
-		dxrDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+		dxrDesc.Flags = flags;
 		dxrDesc.AABBs.AABBs.StartAddress = pAABBBuffer->GetResourceDep()->GetGPUVirtualAddress();
 		dxrDesc.AABBs.AABBs.StrideInBytes = bufferStride;
 		dxrDesc.AABBs.AABBCount = aabbCount;

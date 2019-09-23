@@ -11,9 +11,9 @@ struct HitData
 
 // global
 RaytracingAccelerationStructure		Scene			: register(t0, space0);
-StructuredBuffer<float>				RandomTable		: register(t1);
-Texture2D							GBufferTex		: register(t2);
-Texture2D							DepthTex		: register(t3);
+Texture2D							GBufferTex		: register(t1);
+Texture2D							DepthTex		: register(t2);
+StructuredBuffer<float>				RandomTable		: register(t3);
 Texture2D							BlueNoiseTex	: register(t4);
 RWTexture2D<float4>					RenderTarget	: register(u0);
 RWByteAddressBuffer					RandomSeed		: register(u1);
@@ -185,13 +185,16 @@ void RayGenerator()
 		uint2 noise_uv = index % BlueNoiseWidth;
 		offset_rnd = BlueNoiseTex[noise_uv].r;
 	}
-	float3 origin = worldPos.xyz + normal * 1e-4;
+	float3 origin = worldPos.xyz + normal * 1e-2;
 	float3 direction = -cbScene.lightDir.xyz;
+
+	uint ray_flags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
+	//uint ray_flags = RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
 
 	// シャドウ計算
 	RayDesc ray = { origin, 0.0, direction, TMax };
-	HitData shadowPay = { 0 };
-	TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, ray, shadowPay);
+	HitData shadowPay = (HitData)0;
+	TraceRay(Scene, ray_flags, ~0, 0, 1, 0, ray, shadowPay);
 
 	// AO計算
 	float ao = 0;
@@ -206,8 +209,8 @@ void RayGenerator()
 		float4 qRot = QuatFromTwoVector(float3(0, 0, 1), normal);
 		direction = QuatRotVector(localDir, qRot);
 		RayDesc aoRay = { origin, 0.0, direction, cbScene.aoLength };
-		HitData aoPay = { 0 };
-		TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, ~0, 0, 1, 0, aoRay, aoPay);
+		HitData aoPay = (HitData)0;
+		TraceRay(Scene, ray_flags, ~0, 0, 1, 0, aoRay, aoPay);
 		ao += aoPay.visible;
 	}
 	ao /= (float)cbScene.aoSampleCount;

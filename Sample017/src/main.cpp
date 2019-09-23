@@ -782,7 +782,7 @@ public:
 		device_.WaitDrawDone();
 
 		// 次のフレームへ
-		device_.Present(1);
+		device_.Present(0);
 
 		// コマンド実行
 		zpreCmdLists_.Execute();

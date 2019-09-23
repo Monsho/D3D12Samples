@@ -441,6 +441,7 @@ private:
 		sl12::GeometryStructureDesc geoDesc{};
 		auto submesh = glbMesh_.GetSubmesh(0);
 		geoDesc.InitializeAsTriangle(
+			D3D12_RAYTRACING_GEOMETRY_FLAG_NONE,
 			&submesh->GetPositionB(),
 			&submesh->GetIndexB(),
 			nullptr,
