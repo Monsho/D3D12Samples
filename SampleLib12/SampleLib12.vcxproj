@@ -108,6 +108,8 @@
     <ClInclude Include="include\sl12\mesh_format.h" />
     <ClInclude Include="include\sl12\pipeline_state.h" />
     <ClInclude Include="include\sl12\render_resource_manager.h" />
+    <ClInclude Include="include\sl12\resource_loader.h" />
+    <ClInclude Include="include\sl12\resource_mesh.h" />
     <ClInclude Include="include\sl12\root_signature.h" />
     <ClInclude Include="include\sl12\root_signature_manager.h" />
     <ClInclude Include="include\sl12\sampler.h" />
@@ -140,6 +142,8 @@
     <ClCompile Include="src\mesh.cpp" />
     <ClCompile Include="src\pipeline_state.cpp" />
     <ClCompile Include="src\render_resource_manager.cpp" />
+    <ClCompile Include="src\resource_loader.cpp" />
+    <ClCompile Include="src\resource_mesh.cpp" />
     <ClCompile Include="src\root_signature.cpp" />
     <ClCompile Include="src\root_signature_manager.cpp" />
     <ClCompile Include="src\sampler.cpp" />

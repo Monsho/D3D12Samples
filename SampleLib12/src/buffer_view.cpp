@@ -46,7 +46,7 @@ namespace sl12
 
 
 	//----
-	bool VertexBufferView::Initialize(Device* pDev, Buffer* pBuffer)
+	bool VertexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset)
 	{
 		if (!pBuffer)
 		{
@@ -57,8 +57,8 @@ namespace sl12
 			return false;
 		}
 
-		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
-		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize());
+		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
+		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize() - offset);
 		view_.StrideInBytes = static_cast<u32>(pBuffer->GetStride());
 
 		return true;
@@ -70,7 +70,7 @@ namespace sl12
 
 
 	//----
-	bool IndexBufferView::Initialize(Device* pDev, Buffer* pBuffer)
+	bool IndexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset)
 	{
 		if (!pBuffer)
 		{
@@ -81,8 +81,8 @@ namespace sl12
 			return false;
 		}
 
-		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
-		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize());
+		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
+		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize() - offset);
 		view_.Format = (pBuffer->GetStride() == 4) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
 
 		return true;

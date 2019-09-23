@@ -9,7 +9,7 @@
       <AdditionalLibraryDirectories>$(SolutionDir)External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;$(SolutionDir)External\UVAtlas\UVAtlas\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)External\DirectXMesh\DirectXMesh\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir)External\DirectXTex\DirectXTex;$(SolutionDir)External\imgui;$(SolutionDir)SampleLib12\include;$(SolutionDir)External\UVAtlas\UVAtlas\inc;$(SolutionDir)External\DirectXMesh\DirectXMesh;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)External\DirectXTex\DirectXTex;$(SolutionDir)External\imgui;$(SolutionDir)SampleLib12\include;$(SolutionDir)External\UVAtlas\UVAtlas\inc;$(SolutionDir)External\DirectXMesh\DirectXMesh;$(SolutionDir)External\cereal\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup />

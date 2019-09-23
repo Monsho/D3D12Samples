@@ -1,6 +1,9 @@
 ﻿#pragma once
 
 #include "sl12/types.h"
+#include "sl12/resource_loader.h"
+#include "sl12/buffer.h"
+#include "sl12/buffer_view.h"
 
 #include <DirectXMath.h>
 #include <cereal/cereal.hpp>
@@ -110,9 +113,43 @@ namespace sl12
 		~ResourceMesh()
 		{}
 
+		const std::vector<ResourceMeshMaterial>& GetMaterials() const
+		{
+			return materials_;
+		}
+		const std::vector<ResourceMeshSubmesh>& GetSubmeshes() const
+		{
+			return submeshes_;
+		}
+		const ResourceMeshBoundingSphere GetBoundingSphere() const
+		{
+			return boundingSphere_;
+		}
+
+		const std::vector<u8>& GetVBPosition() const
+		{
+			return vbPosition_;
+		}
+		const std::vector<u8>& GetVBNormal() const
+		{
+			return vbNormal_;
+		}
+		const std::vector<u8>& GetVBTangent() const
+		{
+			return vbTangent_;
+		}
+		const std::vector<u8>& GetVBTexcoord() const
+		{
+			return vbTexcoord_;
+		}
+		const std::vector<u8>& GetIndexBuffer() const
+		{
+			return indexBuffer_;
+		}
+
 	private:
 		std::vector<ResourceMeshMaterial>	materials_;
-		std::vector< ResourceMeshSubmesh>	submeshes_;
+		std::vector<ResourceMeshSubmesh>	submeshes_;
 		ResourceMeshBoundingSphere			boundingSphere_;
 
 		std::vector<u8>						vbPosition_;
@@ -135,6 +172,29 @@ namespace sl12
 				CEREAL_NVP(indexBuffer_));
 		}
 	};	// class ResourceMesh
+
+	class ResourceItemMesh
+		: public ResourceItemBase
+	{
+	public:
+		static const u32 kType = TYPE_FOURCC("MESH");
+
+		~ResourceItemMesh();
+
+		static ResourceItemBase* LoadFunction(ResourceLoader* pLoader, const std::string& filepath);
+
+	private:
+		ResourceItemMesh()
+			: ResourceItemBase(ResourceItemMesh::kType)
+		{}
+
+	private:
+		Buffer			positionVB_;
+		Buffer			normalVB_;
+		Buffer			tangentVB_;
+		Buffer			texcoordVB_;
+		Buffer			indexBuffer_;
+	};	// class ResourceItemMesh
 
 }	// namespace sl12
 
