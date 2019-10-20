@@ -25,6 +25,12 @@ struct LightCB
 	float		skyPower;
 };
 
+struct MaterialCB
+{
+	float2		roughnessRange;
+	float2		metallicRange;
+};
+
 struct FrustumCB
 {
 	float4		frustumPlanes[6];
@@ -36,7 +42,8 @@ struct MeshCB
 	float4x4	mtxPrevLocalToWorld;
 };
 
-#define PI		3.1415926
+#define PI			3.1415926
+#define Epsilon		1e-5
 
 #endif // CONSTANT_H
 //	EOF

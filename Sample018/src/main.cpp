@@ -331,9 +331,10 @@ public:
 			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_EQUAL;
 
 			D3D12_INPUT_ELEMENT_DESC input_elems[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-				{"NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-				{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+				{"NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT,    1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+				{"TANGENT",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+				{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       3, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 			};
 			desc.inputLayout.numElements = ARRAYSIZE(input_elems);
 			desc.inputLayout.pElements = input_elems;
@@ -579,6 +580,12 @@ public:
 			if (ImGui::ColorEdit3("Light Color", lightColor_))
 			{
 			}
+			if (ImGui::SliderFloat2("Roughness Range", (float*)&roughnessRange_, 0.0f, 1.0f))
+			{
+			}
+			if (ImGui::SliderFloat2("Metallic Range", (float*)&metallicRange_, 0.0f, 1.0f))
+			{
+			}
 			ImGui::Checkbox("Indirect Draw", &isIndirectDraw_);
 			ImGui::Checkbox("Freeze Cull", &isFreezeCull_);
 
@@ -775,6 +782,7 @@ public:
 			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(2, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
 
 			int count = 0;
@@ -789,15 +797,22 @@ public:
 				{
 					auto&& submesh = submeshes[i];
 					auto&& material = pMesh->GetMaterials()[submesh.materialIndex];
-					auto tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
-					auto&& base_color_srv = tex_res->GetTextureView();
+					auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+					auto n_tex_res = const_cast<sl12::ResourceItemTexture*>(material.normalTex.GetItem<sl12::ResourceItemTexture>());
+					auto orm_tex_res = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
+					auto&& base_color_srv = bc_tex_res->GetTextureView();
+					auto&& normal_srv = n_tex_res->GetTextureView();
+					auto&& orm_srv = orm_tex_res->GetTextureView();
 
 					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
+					descSet_.SetPsSrv(1, normal_srv.GetDescInfo().cpuHandle);
+					descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
 					pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&lightingRootSig_, &descSet_);
 
 					const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
 						submesh.positionVBV.GetView(),
 						submesh.normalVBV.GetView(),
+						submesh.tangentVBV.GetView(),
 						submesh.texcoordVBV.GetView(),
 					};
 					d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
@@ -840,7 +855,7 @@ public:
 		device_.WaitDrawDone();
 
 		// 次のフレームへ
-		device_.Present(0);
+		device_.Present(1);
 
 		// コマンド実行
 		zpreCmdLists_.Execute();
@@ -858,10 +873,6 @@ public:
 
 		anisoSampler_.Destroy();
 
-		rayGenTable_.Destroy();
-		missTable_.Destroy();
-		hitGroupTable_.Destroy();
-
 		glbMeshCBV_.Destroy();
 		glbMeshCB_.Destroy();
 
@@ -871,15 +882,14 @@ public:
 		for (auto&& v : lightCBVs_) v.Destroy();
 		for (auto&& v : lightCBs_) v.Destroy();
 
+		for (auto&& v : materialCBVs_) v.Destroy();
+		for (auto&& v : materialCBs_) v.Destroy();
+
 		for (auto&& v : gpuTimestamp_) v.Destroy();
 
 		gui_.Destroy();
 
 		DestroyIndirectDrawParams();
-
-		instanceSBV_.Destroy();
-		instanceSB_.Destroy();
-		spheresAABB_.Destroy();
 
 		for (auto&& v : gbuffers_) v.Destroy();
 
@@ -944,7 +954,6 @@ public:
 private:
 	bool CreateSceneCB()
 	{
-		// レイ生成シェーダで使用する定数バッファを生成する
 		auto mtxWorldToView = DirectX::XMMatrixLookAtLH(
 			DirectX::XMLoadFloat4(&camPos_),
 			DirectX::XMLoadFloat4(&tgtPos_),
@@ -977,6 +986,15 @@ private:
 				return false;
 			}
 			if (!lightCBVs_[i].Initialize(&device_, &lightCBs_[i]))
+			{
+				return false;
+			}
+
+			if (!materialCBs_[i].Initialize(&device_, sizeof(MaterialCB), 0, sl12::BufferUsage::ConstantBuffer, true, false))
+			{
+				return false;
+			}
+			if (!materialCBVs_[i].Initialize(&device_, &materialCBs_[i]))
 			{
 				return false;
 			}
@@ -1042,6 +1060,13 @@ private:
 			cb->lightColor = lightColor;
 			cb->skyPower = skyPower_;
 			lightCBs_[frameIndex].Unmap();
+		}
+
+		{
+			auto cb = reinterpret_cast<MaterialCB*>(materialCBs_[frameIndex].Map(nullptr));
+			cb->roughnessRange = roughnessRange_;
+			cb->metallicRange = metallicRange_;
+			materialCBs_[frameIndex].Unmap();
 		}
 
 		loopCount_ = loopCount_ % MaxSample;
@@ -1463,6 +1488,9 @@ private:
 	sl12::Buffer				lightCBs_[kBufferCount];
 	sl12::ConstantBufferView	lightCBVs_[kBufferCount];
 
+	sl12::Buffer				materialCBs_[kBufferCount];
+	sl12::ConstantBufferView	materialCBVs_[kBufferCount];
+
 	sl12::Buffer				glbMeshCB_;
 	sl12::ConstantBufferView	glbMeshCBV_;
 
@@ -1474,14 +1502,6 @@ private:
 	sl12::RootSignature				cullRootSig_, countClearRootSig_;
 	sl12::ComputePipelineState		cullPso_, countClearPso_;
 	sl12::DescriptorSet				cullDescSet_;
-
-	sl12::Buffer			rayGenTable_, missTable_, hitGroupTable_;
-	sl12::u64				shaderRecordSize_;
-
-	std::vector<Sphere>		spheres_;
-	sl12::Buffer			spheresAABB_;
-	sl12::Buffer			instanceSB_;
-	sl12::BufferView		instanceSBV_;
 
 	GBuffers				gbuffers_[kBufferCount];
 
@@ -1502,9 +1522,11 @@ private:
 	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
-	float					skyPower_ = 1.0f;
+	float					skyPower_ = 0.1f;
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
-	float					lightPower_ = 0.5f;
+	float					lightPower_ = 1.0f;
+	DirectX::XMFLOAT2		roughnessRange_ = { 0.0f, 1.0f };
+	DirectX::XMFLOAT2		metallicRange_ = { 0.0f, 1.0f };
 	uint32_t				loopCount_ = 0;
 	bool					isClearTarget_ = true;
 
