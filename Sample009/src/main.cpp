@@ -16,6 +16,7 @@
 #include "sl12/file.h"
 #include "sl12/glb_mesh.h"
 #include "sl12/descriptor_set.h"
+#include "sl12/fence.h"
 
 #include "CompiledShaders/test.lib.hlsl.h"
 
@@ -58,6 +59,8 @@ public:
 				return false;
 			}
 		}
+
+		cmdLists_[0].Reset();
 
 		// テクスチャ読み込み
 		{
@@ -126,6 +129,10 @@ public:
 			return false;
 		}
 
+		cmdLists_[0].Close();
+		cmdLists_[0].Execute();
+		device_.WaitDrawDone();
+
 		// Raytracing用DescriptorHeapの初期化
 		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 0, 1, 0, glbMesh_.GetSubmeshCount()))
 		{
@@ -156,6 +163,7 @@ public:
 	bool Execute() override
 	{
 		device_.WaitPresent();
+		device_.SyncKillObjects();
 
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
 		auto&& cmdList = cmdLists_[frameIndex];
@@ -414,11 +422,11 @@ private:
 		memcpy(p, indices, sizeof(indices));
 		geometryIB_.Unmap();
 
-		if (!geometryIBV_.Initialize(&device_, &geometryIB_, 0, 0))
+		if (!geometryIBV_.Initialize(&device_, &geometryIB_, 0, 0, 0))
 		{
 			return false;
 		}
-		if (!geometryUVBV_.Initialize(&device_, &geometryUVB_, 0, sizeof(float) * 2))
+		if (!geometryUVBV_.Initialize(&device_, &geometryUVB_, 0, 0, sizeof(float) * 2))
 		{
 			return false;
 		}

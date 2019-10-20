@@ -69,6 +69,11 @@ namespace sl12
 						base->filePath_ = item.filePath;
 						resourceMap_[item.id].reset(base);
 					}
+
+					if (!isAlive_)
+					{
+						break;
+					}
 				}
 
 				isLoading_ = false;

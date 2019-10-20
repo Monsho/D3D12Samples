@@ -110,28 +110,15 @@ namespace sl12
 		}
 		else
 		{
-			Buffer src;
-			if (!src.Initialize(pDev, size, stride_, bufferUsage_, true, false))
+			Buffer* src = new Buffer();
+			if (!src->Initialize(pDev, size, stride_, bufferUsage_, true, false))
 			{
 				return;
 			}
-			src.UpdateBuffer(pDev, pCmdList, pData, size, 0);
+			src->UpdateBuffer(pDev, pCmdList, pData, size, 0);
 
-			pCmdList->Reset();
-			pCmdList->GetCommandList()->CopyBufferRegion(pResource_, offset, src.pResource_, 0, size);
-			pCmdList->Close();
-			pCmdList->Execute();
-
-			Fence fence;
-			if (!fence.Initialize(pDev))
-			{
-				return;
-			}
-			fence.Signal(pCmdList->GetParentQueue(), 1);
-			fence.WaitSignal(1);
-
-			fence.Destroy();
-			src.Destroy();
+			pCmdList->GetCommandList()->CopyBufferRegion(pResource_, offset, src->pResource_, 0, size);
+			pDev->KillObject(src);
 		}
 
 	}

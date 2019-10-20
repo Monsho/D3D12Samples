@@ -295,10 +295,21 @@ bool InitializeAssets()
 	{
 		File texFile("data/icon.tga");
 
+		g_copyCmdList_.Reset();
 		if (!g_texture_.InitializeFromTGA(&g_Device_, &g_copyCmdList_, texFile.GetData(), texFile.GetSize(), 1, false))
 		{
 			return false;
 		}
+		g_copyCmdList_.Close();
+		g_copyCmdList_.Execute();
+
+		sl12::Fence fence;
+		fence.Initialize(&g_Device_);
+		fence.Signal(g_copyCmdList_.GetParentQueue());
+		fence.WaitSignal();
+
+		fence.Destroy();
+
 		if (!g_textureView_.Initialize(&g_Device_, &g_texture_))
 		{
 			return false;
@@ -457,6 +468,8 @@ void RenderScene()
 {
 	if (g_pNextCmdList_)
 		g_pNextCmdList_->Execute();
+
+	g_Device_.SyncKillObjects();
 
 	int32_t frameIndex = (g_Device_.GetSwapchain().GetFrameIndex() + 1) % sl12::Swapchain::kMaxBuffer;
 	g_pNextCmdList_ = &g_mainCmdLists_[frameIndex];

@@ -438,7 +438,7 @@ public:
 			{
 				return false;
 			}
-			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, sizeof(float)))
+			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, 0, sizeof(float)))
 			{
 				return false;
 			}
@@ -446,7 +446,7 @@ public:
 			{
 				return false;
 			}
-			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_))
+			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_, 0, 0, 0, 0))
 			{
 				return false;
 			}
@@ -482,6 +482,8 @@ public:
 			}
 		}
 
+		utilCmdList_.Reset();
+
 		// GUIÇÃèâä˙âª
 		if (!gui_.Initialize(&device_, DXGI_FORMAT_R8G8B8A8_UNORM))
 		{
@@ -511,6 +513,10 @@ public:
 		{
 			return false;
 		}
+
+		utilCmdList_.Close();
+		utilCmdList_.Execute();
+		device_.WaitDrawDone();
 
 		// RaytracingópDescriptorHeapÇÃèâä˙âª
 		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 4, 2, 0, glbMesh_.GetSubmeshCount() + moveMesh_.GetSubmeshCount()))
@@ -546,6 +552,7 @@ public:
 	bool Execute() override
 	{
 		device_.WaitPresent();
+		device_.SyncKillObjects();
 
 		const int kSwapchainBufferOffset = 1;
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
@@ -559,7 +566,7 @@ public:
 		auto&& curGBuffer = gbuffers_[frameIndex];
 		auto&& prevGBuffer = gbuffers_[prevFrameIndex];
 
-		deathList_.SyncKill();
+		device_.SyncKillObjects();
 		UpdateSceneCB(frameIndex);
 		DirectX::XMFLOAT4X4 mtx_mesh = UpdateMeshCB(frameIndex);
 
@@ -658,7 +665,7 @@ public:
 				return false;
 			}
 
-			deathList_.KillObject(topAS_.TransferInstanceBuffer());
+			device_.KillObject(topAS_.TransferInstanceBuffer());
 
 			topAsTimestamp_[frameIndex].Query(&asCmdList);
 			topAsTimestamp_[frameIndex].Resolve(&asCmdList);
@@ -1039,8 +1046,6 @@ public:
 		device_.WaitDrawDone();
 		device_.Present(1);
 
-		deathList_.Destroy();
-
 		rayGenTable_.Destroy();
 		missTable_.Destroy();
 		hitGroupTable_.Destroy();
@@ -1349,7 +1354,7 @@ private:
 		glbBottomAS_.DestroyScratchBuffer();
 		moveBottomAS_.DestroyScratchBuffer();
 		//topAS_.DestroyScratchBuffer();
-		deathList_.KillObject(topAS_.TransferInstanceBuffer());
+		device_.KillObject(topAS_.TransferInstanceBuffer());
 		//topAS_.DestroyInstanceBuffer();
 
 		return true;
@@ -2033,8 +2038,6 @@ private:
 	sl12::Timestamp			gpuTimestamp_[sl12::Swapchain::kMaxBuffer];
 	sl12::Timestamp			bottomAsTimestamp_;
 	sl12::Timestamp			topAsTimestamp_[sl12::Swapchain::kMaxBuffer];
-
-	sl12::DeathList			deathList_;
 
 	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };

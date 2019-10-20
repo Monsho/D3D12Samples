@@ -1,8 +1,12 @@
 ﻿#pragma once
 
-#include <sl12/util.h>
 #include <array>
+#include <list>
+#include <memory>
+#include <mutex>
+#include <sl12/util.h>
 #include <sl12/descriptor_heap.h>
+#include <sl12/death_list.h>
 
 
 namespace sl12
@@ -12,6 +16,15 @@ namespace sl12
 	class DescriptorHeap;
 	class DescriptorAllocator;
 	class GlobalDescriptorHeap;
+	class CommandList;
+
+	struct IRenderCommand
+	{
+		virtual ~IRenderCommand()
+		{}
+
+		virtual void LoadCommand(CommandList* pCmdlist) = 0;
+	};	// struct IRenderCommand
 
 	class Device
 	{
@@ -30,6 +43,42 @@ namespace sl12
 
 		void WaitDrawDone();
 		void WaitPresent();
+
+		void SyncKillObjects(bool bForce = false)
+		{
+			if (!bForce)
+			{
+				deathList_.SyncKill();
+			}
+			else
+			{
+				deathList_.Destroy();
+			}
+		}
+		void PendingKill(PendingKillItem* p)
+		{
+			deathList_.PendingKill(p);
+		}
+		template <typename T>
+		void KillObject(T* p)
+		{
+			deathList_.KillObject<T>(p);
+		}
+
+		void AddRenderCommand(std::unique_ptr<IRenderCommand>& rc)
+		{
+			std::lock_guard<std::mutex> lock(renderCommandMutex_);
+			renderCommands_.push_back(std::move(rc));
+		}
+		void LoadRenderCommands(CommandList* pCmdlist)
+		{
+			std::lock_guard<std::mutex> lock(renderCommandMutex_);
+			for (auto&& rc : renderCommands_)
+			{
+				rc->LoadCommand(pCmdlist);
+			}
+			renderCommands_.clear();
+		}
 
 		// getter
 		IDXGIFactory4*	GetFactoryDep()
@@ -120,6 +169,11 @@ namespace sl12
 		ID3D12Fence*	pFence_{ nullptr };
 		u32				fenceValue_{ 0 };
 		HANDLE			fenceEvent_{ nullptr };
+
+		DeathList		deathList_;
+
+		std::mutex									renderCommandMutex_;
+		std::list<std::unique_ptr<IRenderCommand>>	renderCommands_;
 	};	// class Device
 
 }	// namespace sl12

@@ -59,7 +59,7 @@ namespace sl12
 
 			indexBuffer_.source_data_.reset(new u8[index_count * sizeof(u32)]);
 			memcpy(indexBuffer_.source_data_.get(), index_data.data(), index_count * sizeof(u32));
-			indicesCount_ = index_count;
+			indicesCount_ = (int)index_count;
 		}
 
 		// 頂点バッファ作成
@@ -90,7 +90,7 @@ namespace sl12
 
 				if (verticesCount)
 				{
-					*verticesCount = count / elem_count;
+					*verticesCount = (int)(count / elem_count);
 				}
 			}
 
@@ -134,7 +134,7 @@ namespace sl12
 			{
 				return false;
 			}
-			if (!indexBuffer_.buffer_view_.Initialize(pDev, &indexBuffer_.buffer_, 0, 0))
+			if (!indexBuffer_.buffer_view_.Initialize(pDev, &indexBuffer_.buffer_, 0, 0, 0))
 			{
 				return false;
 			}
@@ -163,7 +163,7 @@ namespace sl12
 			{
 				return false;
 			}
-			if (!bb.buffer_view_.Initialize(pDev, &bb.buffer_, 0, sizeof(float) * elem_count))
+			if (!bb.buffer_view_.Initialize(pDev, &bb.buffer_, 0, 0, sizeof(float) * elem_count))
 			{
 				return false;
 			}
@@ -444,7 +444,7 @@ namespace sl12
 			{
 				used_indices.insert(new_idx[s]);
 			}
-			int new_vtx_count = used_indices.size();
+			int new_vtx_count = (int)used_indices.size();
 
 			// UVAtlasが生成したインデックス番号をサブメッシュ用インデックス番号に変換するリストを作成
 			std::vector<uint32_t> submesh_index_list;

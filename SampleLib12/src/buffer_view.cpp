@@ -46,7 +46,7 @@ namespace sl12
 
 
 	//----
-	bool VertexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset)
+	bool VertexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size)
 	{
 		if (!pBuffer)
 		{
@@ -58,7 +58,7 @@ namespace sl12
 		}
 
 		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
-		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize() - offset);
+		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
 		view_.StrideInBytes = static_cast<u32>(pBuffer->GetStride());
 
 		return true;
@@ -70,7 +70,7 @@ namespace sl12
 
 
 	//----
-	bool IndexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset)
+	bool IndexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size)
 	{
 		if (!pBuffer)
 		{
@@ -82,7 +82,7 @@ namespace sl12
 		}
 
 		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
-		view_.SizeInBytes = static_cast<u32>(pBuffer->GetSize() - offset);
+		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
 		view_.Format = (pBuffer->GetStride() == 4) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
 
 		return true;
@@ -94,7 +94,7 @@ namespace sl12
 
 
 	//----
-	bool BufferView::Initialize(Device* pDev, Buffer* pBuffer, u32 firstElement, u32 stride)
+	bool BufferView::Initialize(Device* pDev, Buffer* pBuffer, u32 firstElement, u32 numElement, u32 stride)
 	{
 		const D3D12_RESOURCE_DESC& resDesc = pBuffer->GetResourceDesc();
 		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
@@ -104,7 +104,7 @@ namespace sl12
 		{
 			viewDesc.Format = DXGI_FORMAT_R32_TYPELESS;
 			viewDesc.Buffer.FirstElement = firstElement;
-			viewDesc.Buffer.NumElements = static_cast<u32>(resDesc.Width / 4);
+			viewDesc.Buffer.NumElements = (numElement == 0) ? (static_cast<u32>(resDesc.Width / 4) - firstElement) : numElement;
 			viewDesc.Buffer.StructureByteStride = 0;
 			viewDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
 		}
@@ -112,7 +112,7 @@ namespace sl12
 		{
 			viewDesc.Format = DXGI_FORMAT_UNKNOWN;
 			viewDesc.Buffer.FirstElement = firstElement;
-			viewDesc.Buffer.NumElements = static_cast<u32>((resDesc.Width / static_cast<u64>(stride)) - static_cast<u64>(firstElement));
+			viewDesc.Buffer.NumElements = (numElement == 0) ? (static_cast<u32>((resDesc.Width / static_cast<u64>(stride)) - static_cast<u64>(firstElement))) : numElement;
 			viewDesc.Buffer.StructureByteStride = stride;
 			viewDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 		}

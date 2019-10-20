@@ -102,6 +102,8 @@ public:
 			}
 		}
 
+		cmdLists_[0].Reset();
+
 		// サンプラー作成
 		{
 			D3D12_SAMPLER_DESC samDesc{};
@@ -215,7 +217,7 @@ public:
 			{
 				return false;
 			}
-			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, sizeof(float)))
+			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, 0, sizeof(float)))
 			{
 				return false;
 			}
@@ -223,7 +225,7 @@ public:
 			{
 				return false;
 			}
-			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_))
+			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_, 0, 0, 0, 0))
 			{
 				return false;
 			}
@@ -254,6 +256,10 @@ public:
 		{
 			return false;
 		}
+
+		cmdLists_[0].Close();
+		cmdLists_[0].Execute();
+		device_.WaitDrawDone();
 
 		// Raytracing用DescriptorHeapの初期化
 		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 1, 2, 0, glbMesh_.GetSubmeshCount()))
@@ -294,6 +300,7 @@ public:
 	bool Execute() override
 	{
 		device_.WaitPresent();
+		device_.SyncKillObjects();
 
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
 		auto prevFrameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 2) % sl12::Swapchain::kMaxBuffer;

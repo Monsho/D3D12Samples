@@ -372,6 +372,8 @@ public:
 			}
 		}
 
+		utilCmdList_.Reset();
+
 		// GUIの初期化
 		if (!gui_.Initialize(&device_, DXGI_FORMAT_R8G8B8A8_UNORM))
 		{
@@ -387,6 +389,10 @@ public:
 		{
 			return false;
 		}
+
+		utilCmdList_.Close();
+		utilCmdList_.Execute();
+		device_.WaitDrawDone();
 
 		// multi draw indirectに必要なオブジェクトを生成する
 		if (!CreateIndirectDrawParams())
@@ -410,6 +416,7 @@ public:
 	bool Execute() override
 	{
 		device_.WaitPresent();
+		device_.SyncKillObjects();
 
 		const int kSwapchainBufferOffset = 1;
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
@@ -423,7 +430,6 @@ public:
 		auto&& curGBuffer = gbuffers_[frameIndex];
 		auto&& prevGBuffer = gbuffers_[prevFrameIndex];
 
-		deathList_.SyncKill();
 		UpdateSceneCB(frameIndex);
 
 		gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
@@ -480,7 +486,7 @@ public:
 			anisoChange_ = false;
 			if (pAnisoSampler_)
 			{
-				deathList_.KillObject(pAnisoSampler_);
+				device_.KillObject(pAnisoSampler_);
 				pAnisoSampler_ = nullptr;
 			}
 
@@ -800,7 +806,6 @@ public:
 		device_.WaitDrawDone();
 		device_.Present(1);
 
-		deathList_.Destroy();
 		sl12::SafeDelete(pAnisoSampler_);
 
 		rayGenTable_.Destroy();
@@ -1190,7 +1195,7 @@ private:
 			for (auto c : meshletCounts_)
 			{
 				auto bv = new sl12::BufferView();
-				if (!bv->Initialize(&device_, &meshletB_, count, sizeof(Meshlet)))
+				if (!bv->Initialize(&device_, &meshletB_, count, 0, sizeof(Meshlet)))
 				{
 					delete bv;
 					return false;
@@ -1212,7 +1217,7 @@ private:
 			for (auto c : meshletCounts_)
 			{
 				auto uav = new sl12::UnorderedAccessView();
-				if (!uav->Initialize(&device_, &indirectArgumentB_, count, sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
+				if (!uav->Initialize(&device_, &indirectArgumentB_, count, 0, sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
 				{
 					delete uav;
 					return false;
@@ -1232,7 +1237,7 @@ private:
 			for (int i = 0; i < meshletCounts_.size(); i++)
 			{
 				auto uav = new sl12::UnorderedAccessView();
-				if (!uav->Initialize(&device_, &indirectCounterB_, i * 4, 0, 0))
+				if (!uav->Initialize(&device_, &indirectCounterB_, i * 4, 0, 0, 0))
 				{
 					delete uav;
 					return false;
@@ -1591,8 +1596,6 @@ private:
 	sl12::InputData			inputData_{};
 
 	sl12::Timestamp			gpuTimestamp_[sl12::Swapchain::kMaxBuffer];
-
-	sl12::DeathList			deathList_;
 
 	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };

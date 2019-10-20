@@ -197,7 +197,7 @@ public:
 			{
 				return false;
 			}
-			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, sizeof(float)))
+			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, 0, sizeof(float)))
 			{
 				return false;
 			}
@@ -205,7 +205,7 @@ public:
 			{
 				return false;
 			}
-			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_))
+			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_, 0, 0, 0, 0))
 			{
 				return false;
 			}
@@ -633,7 +633,7 @@ private:
 		{
 			return false;
 		}
-		if (!instanceSBV_.Initialize(&device_, &instanceSB_, 0, sizeof(Instance)))
+		if (!instanceSBV_.Initialize(&device_, &instanceSB_, 0, 0, sizeof(Instance)))
 		{
 			return false;
 		}

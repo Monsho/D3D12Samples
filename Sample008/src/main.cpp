@@ -375,7 +375,7 @@ bool InitializeAssets()
 			{
 				return false;
 			}
-			if (!g_LightPosBV_[i].Initialize(&g_Device_, &g_LightPosB_[i], 0, sizeof(DirectX::XMFLOAT4)))
+			if (!g_LightPosBV_[i].Initialize(&g_Device_, &g_LightPosB_[i], 0, 0, sizeof(DirectX::XMFLOAT4)))
 			{
 				return false;
 			}
@@ -384,7 +384,7 @@ bool InitializeAssets()
 		{
 			return false;
 		}
-		if (!g_LightColorBV_.Initialize(&g_Device_, &g_LightColorB_, 0, sizeof(DirectX::XMFLOAT4)))
+		if (!g_LightColorBV_.Initialize(&g_Device_, &g_LightColorB_, 0, 0, sizeof(DirectX::XMFLOAT4)))
 		{
 			return false;
 		}
@@ -489,6 +489,8 @@ bool InitializeAssets()
 			return false;
 		}
 	}
+
+	g_copyCmdList_.Reset();
 
 	// テクスチャロード
 	if (!LoadTexture(&g_WaveNormalTex_, "data/wave_normal.tga"))
@@ -928,6 +930,16 @@ bool InitializeAssets()
 		}
 	}
 
+	g_copyCmdList_.Close();
+	g_copyCmdList_.Execute();
+
+	sl12::Fence fence;
+	fence.Initialize(&g_Device_);
+	fence.Signal(g_copyCmdList_.GetParentQueue());
+	fence.WaitSignal();
+
+	fence.Destroy();
+
 	return true;
 }
 
@@ -1085,6 +1097,7 @@ void RenderScene()
 
 	sl12::CommandList& mainCmdList = g_mainCmdLists_[frameIndex];
 
+	g_Device_.SyncKillObjects();
 	g_Gui_.BeginNewFrame(&mainCmdList, kWindowWidth, kWindowHeight, g_InputData_);
 
 	// GUI

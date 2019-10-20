@@ -2,6 +2,7 @@
 
 #include <sl12/util.h>
 #include <DirectXTex.h>
+#include <memory>
 
 
 namespace sl12
@@ -58,6 +59,9 @@ namespace sl12
 		bool InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB);
 		bool InitializeFromImageBin(Device* pDev, CommandList* pCmdList, const TextureDesc& desc, const void* pImageBin);
 		bool InitializeFromSwapchain(Device* pDev, Swapchain* pSwapchain, int bufferIndex);
+
+		std::unique_ptr<DirectX::ScratchImage> InitializeFromTGAwoLoad(Device* pDev, const void* pTgaBin, size_t size, sl12::u32 mipLevels);
+		std::unique_ptr<DirectX::ScratchImage> InitializeFromPNGwoLoad(Device* pDev, const void* pPngBin, size_t size, sl12::u32 mipLevels);
 
 		bool UpdateImage(Device* pDev, CommandList* pCmdList, const DirectX::ScratchImage& image, ID3D12Resource** ppSrcImage);
 		bool UpdateImage(Device* pDev, CommandList* pCmdList, const void* pImageBin, ID3D12Resource** ppSrcImage);

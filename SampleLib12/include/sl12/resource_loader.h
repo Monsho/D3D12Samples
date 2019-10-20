@@ -43,7 +43,7 @@ namespace sl12
 			{
 				return nullptr;
 			}
-			return static_cast<T*>(ret);
+			return static_cast<const T*>(ret);
 		}
 
 	private:

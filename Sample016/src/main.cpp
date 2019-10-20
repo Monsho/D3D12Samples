@@ -22,6 +22,8 @@
 #include "sl12/descriptor_set.h"
 #include "sl12/fence.h"
 #include "sl12/death_list.h"
+#include "sl12/resource_loader.h"
+#include "sl12/resource_mesh.h"
 
 #include "CompiledShaders/hybrid.lib.hlsl.h"
 #include "CompiledShaders/zpre.vv.hlsl.h"
@@ -123,6 +125,14 @@ public:
 
 	bool Initialize() override
 	{
+		resourceLoader_.Initialize(&device_);
+		auto res_mesh_handle = resourceLoader_.LoadRequest<sl12::ResourceItemMesh>("D:\\Projects\\VS2017\\Samples\\SampleTools\\glTFtoMesh\\sample\\test.rmesh");
+		while (resourceLoader_.IsLoading())
+		{
+			Sleep(1);
+		}
+		resourceLoader_.Destroy();
+
 		// コマンドリストの初期化
 		auto&& gqueue = device_.GetGraphicsQueue();
 		auto&& cqueue = device_.GetComputeQueue();
@@ -484,7 +494,7 @@ public:
 			{
 				return false;
 			}
-			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, sizeof(float)))
+			if (!randomBufferSRV_.Initialize(&device_, &randomBuffer_, 0, 0, sizeof(float)))
 			{
 				return false;
 			}
@@ -492,7 +502,7 @@ public:
 			{
 				return false;
 			}
-			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_))
+			if (!seedBufferUAV_.Initialize(&device_, &seedBuffer_, 0, 0, 0, 0))
 			{
 				return false;
 			}
@@ -528,6 +538,8 @@ public:
 			}
 		}
 
+		utilCmdList_.Reset();
+
 		// GUIの初期化
 		if (!gui_.Initialize(&device_, DXGI_FORMAT_R8G8B8A8_UNORM))
 		{
@@ -557,6 +569,10 @@ public:
 		{
 			return false;
 		}
+
+		utilCmdList_.Close();
+		utilCmdList_.Execute();
+		device_.WaitDrawDone();
 
 		// multi draw indirectに必要なオブジェクトを生成する
 		if (!CreateIndirectDrawParams())
@@ -598,6 +614,7 @@ public:
 	bool Execute() override
 	{
 		device_.WaitPresent();
+		device_.SyncKillObjects();
 
 		const int kSwapchainBufferOffset = 1;
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
@@ -611,7 +628,6 @@ public:
 		auto&& curGBuffer = gbuffers_[frameIndex];
 		auto&& prevGBuffer = gbuffers_[prevFrameIndex];
 
-		deathList_.SyncKill();
 		UpdateSceneCB(frameIndex);
 
 		gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
@@ -1147,8 +1163,6 @@ public:
 		device_.WaitDrawDone();
 		device_.Present(0);
 
-		deathList_.Destroy();
-
 		rayGenTable_.Destroy();
 		missTable_.Destroy();
 		hitGroupTable_.Destroy();
@@ -1454,7 +1468,7 @@ private:
 		device_.WaitDrawDone();
 
 		glbBottomAS_.DestroyScratchBuffer();
-		deathList_.KillObject(topAS_.TransferInstanceBuffer());
+		device_.KillObject(topAS_.TransferInstanceBuffer());
 
 		return true;
 	}
@@ -1920,7 +1934,7 @@ private:
 			for (auto c : meshletCounts_)
 			{
 				auto bv = new sl12::BufferView();
-				if (!bv->Initialize(&device_, &meshletB_, count, sizeof(Meshlet)))
+				if (!bv->Initialize(&device_, &meshletB_, count, 0, sizeof(Meshlet)))
 				{
 					delete bv;
 					return false;
@@ -1942,7 +1956,7 @@ private:
 			for (auto c : meshletCounts_)
 			{
 				auto uav = new sl12::UnorderedAccessView();
-				if (!uav->Initialize(&device_, &indirectArgumentB_, count, sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
+				if (!uav->Initialize(&device_, &indirectArgumentB_, count, 0, sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
 				{
 					delete uav;
 					return false;
@@ -1962,7 +1976,7 @@ private:
 			for (int i = 0; i < meshletCounts_.size(); i++)
 			{
 				auto uav = new sl12::UnorderedAccessView();
-				if (!uav->Initialize(&device_, &indirectCounterB_, i * 4, 0, 0))
+				if (!uav->Initialize(&device_, &indirectCounterB_, i * 4, 0, 0, 0))
 				{
 					delete uav;
 					return false;
@@ -2342,8 +2356,6 @@ private:
 	sl12::Timestamp			bottomAsTimestamp_;
 	sl12::Timestamp			topAsTimestamp_[sl12::Swapchain::kMaxBuffer];
 
-	sl12::DeathList			deathList_;
-
 	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
@@ -2373,6 +2385,8 @@ private:
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;
+
+	sl12::ResourceLoader	resourceLoader_;
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

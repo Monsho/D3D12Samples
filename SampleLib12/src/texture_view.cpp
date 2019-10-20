@@ -356,7 +356,7 @@ namespace sl12
 	}
 
 	//----
-	bool UnorderedAccessView::Initialize(Device* pDev, Buffer* pBuff, u32 firstElement, u32 stride, u64 offset)
+	bool UnorderedAccessView::Initialize(Device* pDev, Buffer* pBuff, u32 firstElement, u32 numElement, u32 stride, u64 offset)
 	{
 		const D3D12_RESOURCE_DESC& resDesc = pBuff->GetResourceDesc();
 		D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc{};
@@ -365,7 +365,7 @@ namespace sl12
 		{
 			viewDesc.Format = DXGI_FORMAT_R32_TYPELESS;
 			viewDesc.Buffer.FirstElement = firstElement;
-			viewDesc.Buffer.NumElements = static_cast<u32>(resDesc.Width / 4) - firstElement;
+			viewDesc.Buffer.NumElements = (numElement == 0) ? (static_cast<u32>(resDesc.Width / 4) - firstElement) : numElement;
 			viewDesc.Buffer.StructureByteStride = 0;
 			viewDesc.Buffer.CounterOffsetInBytes = offset;
 			viewDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
@@ -374,7 +374,7 @@ namespace sl12
 		{
 			viewDesc.Format = DXGI_FORMAT_UNKNOWN;
 			viewDesc.Buffer.FirstElement = firstElement;
-			viewDesc.Buffer.NumElements = static_cast<u32>((resDesc.Width / static_cast<u64>(stride)) - static_cast<u64>(firstElement));
+			viewDesc.Buffer.NumElements = (numElement == 0) ? (static_cast<u32>((resDesc.Width / static_cast<u64>(stride)) - static_cast<u64>(firstElement))) : numElement;
 			viewDesc.Buffer.StructureByteStride = stride;
 			viewDesc.Buffer.CounterOffsetInBytes = offset;
 			viewDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;

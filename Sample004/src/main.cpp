@@ -287,11 +287,11 @@ bool InitializeAssets()
 		{
 			return false;
 		}
-		if (!g_src_vbSRVs_[0].Initialize(&g_Device_, &g_src_vbuffers_[0], 0, 0))
+		if (!g_src_vbSRVs_[0].Initialize(&g_Device_, &g_src_vbuffers_[0], 0, 0, 0))
 		{
 			return false;
 		}
-		if (!g_dst_vbUAVs_[0].Initialize(&g_Device_, &g_dst_vbuffers_[0], 0, 0))
+		if (!g_dst_vbUAVs_[0].Initialize(&g_Device_, &g_dst_vbuffers_[0], 0, 0, 0, 0))
 		{
 			return false;
 		}
@@ -309,11 +309,11 @@ bool InitializeAssets()
 		{
 			return false;
 		}
-		if (!g_src_vbSRVs_[1].Initialize(&g_Device_, &g_src_vbuffers_[1], 0, 0))
+		if (!g_src_vbSRVs_[1].Initialize(&g_Device_, &g_src_vbuffers_[1], 0, 0, 0))
 		{
 			return false;
 		}
-		if (!g_dst_vbUAVs_[1].Initialize(&g_Device_, &g_dst_vbuffers_[1], 0, 0))
+		if (!g_dst_vbUAVs_[1].Initialize(&g_Device_, &g_dst_vbuffers_[1], 0, 0, 0, 0))
 		{
 			return false;
 		}

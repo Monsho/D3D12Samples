@@ -27,6 +27,18 @@ namespace sl12
 		}
 	};	// class ResourceMeshBoundingSphere
 
+	struct ResourceMeshBoundingBox
+	{
+		float	minX, minY, minZ;
+		float	maxX, maxY, maxZ;
+
+		template <class Archive>
+		void serialize(Archive& ar)
+		{
+			ar(CEREAL_NVP(minX), CEREAL_NVP(minY), CEREAL_NVP(minZ), CEREAL_NVP(maxX), CEREAL_NVP(maxY), CEREAL_NVP(maxZ));
+		}
+	};	// class ResourceMeshBoundingBox
+
 	class ResourceMeshMaterial
 	{
 		friend class cereal::access;
@@ -36,6 +48,15 @@ namespace sl12
 		{}
 		~ResourceMeshMaterial()
 		{}
+
+		const std::string& GetName() const
+		{
+			return name_;
+		}
+		const std::vector<std::string>& GetTextureNames() const
+		{
+			return textureNames_;
+		}
 
 	private:
 		std::string					name_;
@@ -59,18 +80,37 @@ namespace sl12
 		~ResourceMeshMeshlet()
 		{}
 
+		u32 GetIndexOffset() const
+		{
+			return indexOffset_;
+		}
+		u32 GetIndexCount() const
+		{
+			return indexCount_;
+		}
+		const ResourceMeshBoundingSphere& GetBoundingSphere() const
+		{
+			return boundingSphere_;
+		}
+		const ResourceMeshBoundingBox& GetBoundingBox() const
+		{
+			return boundingBox_;
+		}
+
 	private:
-		u32							ibOffset_;
-		u32							ibCount_;
+		u32							indexOffset_;
+		u32							indexCount_;
 		ResourceMeshBoundingSphere	boundingSphere_;
+		ResourceMeshBoundingBox		boundingBox_;
 
 
 		template <class Archive>
 		void serialize(Archive& ar)
 		{
-			ar(CEREAL_NVP(ibOffset_),
-				CEREAL_NVP(ibCount_),
-				CEREAL_NVP(boundingSphere_));
+			ar(CEREAL_NVP(indexOffset_),
+				CEREAL_NVP(indexCount_),
+				CEREAL_NVP(boundingSphere_),
+				CEREAL_NVP(boundingBox_));
 		}
 	};	// class ResourceMeshMeshlet
 
@@ -84,22 +124,61 @@ namespace sl12
 		~ResourceMeshSubmesh()
 		{}
 
+		int GetMaterialIndex() const
+		{
+			return materialIndex_;
+		}
+		u32 GetVertexOffset() const
+		{
+			return vertexOffset_;
+		}
+		u32 GetIndexOffset() const
+		{
+			return indexOffset_;
+		}
+		u32 GetVertexCount() const
+		{
+			return vertexCount_;
+		}
+		u32 GetIndexCount() const
+		{
+			return indexCount_;
+		}
+		const std::vector<ResourceMeshMeshlet>& GetMeshlets() const
+		{
+			return meshlets_;
+		}
+		const ResourceMeshBoundingSphere& GetBoundingSphere() const
+		{
+			return boundingSphere_;
+		}
+		const ResourceMeshBoundingBox& GetBoundingBox() const
+		{
+			return boundingBox_;
+		}
+
 	private:
 		int									materialIndex_;
-		u32									vbOffset_;
-		u32									ibOffset_;
+		u32									vertexOffset_;
+		u32									indexOffset_;
+		u32									vertexCount_;
+		u32									indexCount_;
 		std::vector<ResourceMeshMeshlet>	meshlets_;
 		ResourceMeshBoundingSphere			boundingSphere_;
+		ResourceMeshBoundingBox				boundingBox_;
 
 
 		template <class Archive>
 		void serialize(Archive& ar)
 		{
 			ar(CEREAL_NVP(materialIndex_),
-				CEREAL_NVP(vbOffset_),
-				CEREAL_NVP(ibOffset_),
+				CEREAL_NVP(vertexOffset_),
+				CEREAL_NVP(indexOffset_),
+				CEREAL_NVP(vertexCount_),
+				CEREAL_NVP(indexCount_),
 				CEREAL_NVP(meshlets_),
-				CEREAL_NVP(boundingSphere_));
+				CEREAL_NVP(boundingSphere_),
+				CEREAL_NVP(boundingBox_));
 		}
 	};	// class ResourceMeshSubmesh
 
@@ -121,9 +200,13 @@ namespace sl12
 		{
 			return submeshes_;
 		}
-		const ResourceMeshBoundingSphere GetBoundingSphere() const
+		const ResourceMeshBoundingSphere& GetBoundingSphere() const
 		{
 			return boundingSphere_;
+		}
+		const ResourceMeshBoundingBox& GetBoundingBox() const
+		{
+			return boundingBox_;
 		}
 
 		const std::vector<u8>& GetVBPosition() const
@@ -151,6 +234,7 @@ namespace sl12
 		std::vector<ResourceMeshMaterial>	materials_;
 		std::vector<ResourceMeshSubmesh>	submeshes_;
 		ResourceMeshBoundingSphere			boundingSphere_;
+		ResourceMeshBoundingBox				boundingBox_;
 
 		std::vector<u8>						vbPosition_;
 		std::vector<u8>						vbNormal_;
@@ -165,6 +249,7 @@ namespace sl12
 			ar(CEREAL_NVP(materials_),
 				CEREAL_NVP(submeshes_),
 				CEREAL_NVP(boundingSphere_),
+				CEREAL_NVP(boundingBox_),
 				CEREAL_NVP(vbPosition_),
 				CEREAL_NVP(vbNormal_),
 				CEREAL_NVP(vbTangent_),
@@ -177,9 +262,67 @@ namespace sl12
 		: public ResourceItemBase
 	{
 	public:
+		struct Bounding
+		{
+			struct
+			{
+				DirectX::XMFLOAT3	center;
+				float				radius;
+			} sphere;
+			struct
+			{
+				DirectX::XMFLOAT3	aabbMin, aabbMax;
+			} box;
+		};	// struct Bounding
+
+		struct Material
+		{
+			std::string		name;
+			ResourceHandle	baseColorTex;
+			ResourceHandle	normalTex;
+			ResourceHandle	ormTex;
+		};	// struct Material
+
+		struct Meshlet
+		{
+			u32			indexOffset;
+			u32			indexCount;
+			Bounding	boundingInfo;
+		};	// struct Meshlet
+
+		struct Submesh
+		{
+			int					materialIndex;
+			u32					indexCount;
+			VertexBufferView	positionVBV;
+			VertexBufferView	normalVBV;
+			VertexBufferView	tangentVBV;
+			VertexBufferView	texcoordVBV;
+			IndexBufferView		indexBV;
+			BufferView			positionView;
+			BufferView			normalView;
+			BufferView			tangentView;
+			BufferView			texcoordView;
+			BufferView			indexView;
+			Bounding			boundingInfo;
+
+			std::vector<Meshlet>	meshlets;
+		};	// struct Submesh
+
+	public:
 		static const u32 kType = TYPE_FOURCC("MESH");
 
 		~ResourceItemMesh();
+
+		const std::vector<Material>& GetMaterials() const
+		{
+			return mateirals_;
+		}
+		const std::vector<Submesh>& GetSubmeshes() const
+		{
+			return Submeshes_;
+		}
+
 
 		static ResourceItemBase* LoadFunction(ResourceLoader* pLoader, const std::string& filepath);
 
@@ -189,11 +332,15 @@ namespace sl12
 		{}
 
 	private:
-		Buffer			positionVB_;
-		Buffer			normalVB_;
-		Buffer			tangentVB_;
-		Buffer			texcoordVB_;
-		Buffer			indexBuffer_;
+		std::vector<Material>	mateirals_;
+		std::vector<Submesh>	Submeshes_;
+		Bounding				boundingInfo_;
+
+		Buffer		positionVB_;
+		Buffer		normalVB_;
+		Buffer		tangentVB_;
+		Buffer		texcoordVB_;
+		Buffer		indexBuffer_;
 	};	// class ResourceItemMesh
 
 }	// namespace sl12

@@ -93,7 +93,7 @@ namespace sl12
 		}
 
 		bool Initialize(Device* pDev, Texture* pTex, u32 mipSlice = 0, u32 firstArray = 0, u32 arraySize = 1);
-		bool Initialize(Device* pDev, Buffer* pBuff, u32 firstElement = 0, u32 stride = 0, u64 offset = 0L);
+		bool Initialize(Device* pDev, Buffer* pBuff, u32 firstElement, u32 numElement, u32 stride, u64 offset);
 		void Destroy();
 
 		// getter

@@ -362,6 +362,9 @@ bool InitializeAssets()
 		g_ibuffer_.UpdateBuffer(&g_Device_, &g_copyCmdList_, indices, sizeof(indices));
 	}
 
+	// コピーコマンドリセット
+	g_copyCmdList_.Reset();
+
 	// テクスチャロード
 	{
 		File texFile("data/icon.tga");
@@ -507,6 +510,17 @@ bool InitializeAssets()
 	{
 		return false;
 	}
+
+	// コピーコマンドの実行と終了待ち
+	g_copyCmdList_.Close();
+	g_copyCmdList_.Execute();
+
+	sl12::Fence fence;
+	fence.Initialize(&g_Device_);
+	fence.Signal(g_copyCmdList_.GetParentQueue());
+	fence.WaitSignal();
+
+	fence.Destroy();
 
 	return true;
 }
@@ -662,6 +676,7 @@ void RenderScene()
 
 	sl12::CommandList& mainCmdList = g_mainCmdLists_[frameIndex];
 
+	g_Device_.SyncKillObjects();
 	g_Gui_.BeginNewFrame(&mainCmdList, kWindowWidth, kWindowHeight, g_InputData_);
 
 	bool runCalcFFT = false;

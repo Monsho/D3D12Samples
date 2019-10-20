@@ -186,69 +186,96 @@ namespace sl12
 	//----
 	bool Texture::InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
 	{
-		if (!pDev)
+		auto image = InitializeFromTGAwoLoad(pDev, pTgaBin, size, mipLevels);
+		if (image.get() == nullptr)
 		{
 			return false;
-		}
-		if (!pTgaBin || !size)
-		{
-			return false;
-		}
-
-		// TGAファイルフォーマットからイメージリソースを作成
-		DirectX::ScratchImage image;
-		DirectX::ScratchImage* pBaseImage = &image;
-		auto hr = DirectX::LoadFromTGAMemory(pTgaBin, size, nullptr, image);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// ミップマップ生成
-		DirectX::ScratchImage mipped_image;
-		if (mipLevels != 1)
-		{
-			pBaseImage = &mipped_image;
-			DirectX::GenerateMipMaps(*image.GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, mipped_image);
 		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *pBaseImage, isForceSRGB))
+		if (!InitializeFromDXImage(pDev, *image, isForceSRGB))
 		{
 			return false;
 		}
 
 		// コピー命令発行
 		ID3D12Resource* pSrcImage = nullptr;
-		pCmdList->Reset();
-		if (!UpdateImage(pDev, pCmdList, *pBaseImage, &pSrcImage))
+		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
 		{
 			return false;
 		}
-		pCmdList->Close();
-		pCmdList->Execute();
-
-		Fence fence;
-		fence.Initialize(pDev);
-		fence.Signal(pCmdList->GetParentQueue());
-		fence.WaitSignal();
-
-		fence.Destroy();
-		SafeRelease(pSrcImage);
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
 
 		return true;
 	}
 
 	//----
-	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
+	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromTGAwoLoad(Device* pDev, const void* pTgaBin, size_t size, sl12::u32 mipLevels)
 	{
 		if (!pDev)
 		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		if (!pTgaBin || !size)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+
+		// TGAファイルフォーマットからイメージリソースを作成
+		std::unique_ptr<DirectX::ScratchImage> image(new DirectX::ScratchImage());
+		auto hr = DirectX::LoadFromTGAMemory(pTgaBin, size, nullptr, *image);
+		if (FAILED(hr))
+		{
 			return false;
+		}
+
+		// ミップマップ生成
+		if (mipLevels != 1)
+		{
+			std::unique_ptr<DirectX::ScratchImage> mipped_image(new DirectX::ScratchImage());
+			DirectX::GenerateMipMaps(*image->GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, *mipped_image);
+			image.swap(mipped_image);
+		}
+
+		return std::move(image);
+	}
+
+	//----
+	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
+	{
+		auto image = InitializeFromPNGwoLoad(pDev, pPngBin, size, mipLevels);
+		if (image.get() == nullptr)
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!InitializeFromDXImage(pDev, *image, isForceSRGB))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
+		{
+			return false;
+		}
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
+
+		return true;
+	}
+
+	//----
+	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromPNGwoLoad(Device* pDev, const void* pPngBin, size_t size, sl12::u32 mipLevels)
+	{
+		if (!pDev)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
 		}
 		if (!pPngBin || !size)
 		{
-			return false;
+			return std::unique_ptr<DirectX::ScratchImage>();
 		}
 
 		// stbでpngを読み込む
@@ -260,9 +287,8 @@ namespace sl12
 		}
 
 		// DirectXTex形式のイメージへ変換
-		DirectX::ScratchImage image;
-		DirectX::ScratchImage* pBaseImage = &image;
-		auto hr = image.Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
+		std::unique_ptr<DirectX::ScratchImage> image(new DirectX::ScratchImage());
+		auto hr = image->Initialize2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
 		if (FAILED(hr))
 		{
 			return false;
@@ -270,7 +296,7 @@ namespace sl12
 		if (bpp == 3)
 		{
 			auto src = pixels;
-			auto dst = image.GetPixels();
+			auto dst = image->GetPixels();
 			for (int y = 0; y < height; y++)
 			{
 				for (int x = 0; x < height; x++)
@@ -287,45 +313,21 @@ namespace sl12
 		else
 		{
 			auto src = pixels;
-			auto dst = image.GetPixels();
+			auto dst = image->GetPixels();
 			memcpy(dst, src, width * height * bpp);
 		}
 
 		stbi_image_free(pixels);
 
 		// ミップマップ生成
-		DirectX::ScratchImage mipped_image;
 		if (mipLevels != 1)
 		{
-			pBaseImage = &mipped_image;
-			DirectX::GenerateMipMaps(*image.GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, mipped_image);
+			std::unique_ptr<DirectX::ScratchImage> mipped_image(new DirectX::ScratchImage());
+			DirectX::GenerateMipMaps(*image->GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, *mipped_image);
+			image.swap(mipped_image);
 		}
 
-		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *pBaseImage, isForceSRGB))
-		{
-			return false;
-		}
-
-		// コピー命令発行
-		ID3D12Resource* pSrcImage = nullptr;
-		pCmdList->Reset();
-		if (!UpdateImage(pDev, pCmdList, *pBaseImage, &pSrcImage))
-		{
-			return false;
-		}
-		pCmdList->Close();
-		pCmdList->Execute();
-
-		Fence fence;
-		fence.Initialize(pDev);
-		fence.Signal(pCmdList->GetParentQueue());
-		fence.WaitSignal();
-
-		fence.Destroy();
-		SafeRelease(pSrcImage);
-
-		return true;
+		return std::move(image);
 	}
 
 	//----
@@ -348,21 +350,11 @@ namespace sl12
 
 		// コピー命令発行
 		ID3D12Resource* pSrcImage = nullptr;
-		pCmdList->Reset();
 		if (!UpdateImage(pDev, pCmdList, pImageBin, &pSrcImage))
 		{
 			return false;
 		}
-		pCmdList->Close();
-		pCmdList->Execute();
-
-		Fence fence;
-		fence.Initialize(pDev);
-		fence.Signal(pCmdList->GetParentQueue());
-		fence.WaitSignal();
-
-		fence.Destroy();
-		SafeRelease(pSrcImage);
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
 
 		return true;
 	}

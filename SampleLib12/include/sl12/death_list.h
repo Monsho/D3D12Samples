@@ -36,6 +36,21 @@ namespace sl12
 		}
 	};	// struct DeleteObjectItem
 
+	template <typename T>
+	struct ReleaseObjectItem
+		: public PendingKillItem
+	{
+		T*	pObject = nullptr;
+
+		ReleaseObjectItem(T* p)
+			: pObject(p)
+		{}
+		~ReleaseObjectItem()
+		{
+			SafeRelease(pObject);
+		}
+	};
+
 	class DeathList
 	{
 	public:
