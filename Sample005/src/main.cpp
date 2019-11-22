@@ -282,6 +282,8 @@ bool InitializeAssets()
 {
 	ID3D12Device* pDev = g_Device_.GetDeviceDep();
 
+	g_copyCmdList_.Reset();
+
 	// 深度バッファを作成
 	{
 		sl12::TextureDesc texDesc;
@@ -397,8 +399,6 @@ bool InitializeAssets()
 
 		g_ibuffer_.UpdateBuffer(&g_Device_, &g_copyCmdList_, indices, sizeof(indices));
 	}
-
-	g_copyCmdList_.Reset();
 
 	// テクスチャロード
 	if (!LoadTexture(&g_srcTexture_, "data/woman.tga"))

@@ -200,6 +200,8 @@ bool InitializeAssets()
 {
 	ID3D12Device* pDev = g_Device_.GetDeviceDep();
 
+	g_copyCmdList_.Reset();
+
 	// 深度バッファを作成
 	{
 		sl12::TextureDesc texDesc;
@@ -361,9 +363,6 @@ bool InitializeAssets()
 
 		g_ibuffer_.UpdateBuffer(&g_Device_, &g_copyCmdList_, indices, sizeof(indices));
 	}
-
-	// コピーコマンドリセット
-	g_copyCmdList_.Reset();
 
 	// テクスチャロード
 	{
@@ -823,7 +822,7 @@ void RenderScene()
 		void* p0 = g_pCBSceneBuffers_[frameIndex];
 		DirectX::XMFLOAT4X4* pMtxs = reinterpret_cast<DirectX::XMFLOAT4X4*>(p0);
 		DirectX::XMMATRIX mtxW = DirectX::XMMatrixRotationY(sAngle * DirectX::XM_PI / 180.0f) * DirectX::XMMatrixScaling(4.0f, 4.0f, 1.0f);
-		DirectX::FXMVECTOR eye = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 5.0f, 10.0f));
+		DirectX::FXMVECTOR eye = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 0.0f, 10.0f));
 		DirectX::FXMVECTOR focus = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 		DirectX::FXMVECTOR up = DirectX::XMLoadFloat3(&DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f));
 		DirectX::XMMATRIX mtxV = DirectX::XMMatrixLookAtRH(eye, focus, up);
