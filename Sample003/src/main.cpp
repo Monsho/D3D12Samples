@@ -160,6 +160,7 @@ bool InitializeAssets()
 		texDesc.width = kWindowWidth;
 		texDesc.height = kWindowHeight;
 		texDesc.format = kDepthFormat;
+		texDesc.initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 		texDesc.isDepthBuffer = true;
 
 		if (!g_DepthBuffer_.Initialize(&g_Device_, texDesc))
@@ -193,14 +194,15 @@ bool InitializeAssets()
 
 	// 頂点バッファを作成
 	{
+		static const float kPosRange = 20.0f;
 		auto frandom = [](float minv, float maxv) {
 			float t = (float)rand() / (float)(RAND_MAX - 1);
 			return minv * (1.0f - t) + maxv * t;
 		};
 		auto posRandom = [&](float* p) {
-			p[0] = frandom(-20.0f, 20.0f);
-			p[1] = frandom(-20.0f, 20.0f);
-			p[2] = frandom(-20.0f, 20.0f);
+			p[0] = frandom(-kPosRange, kPosRange);
+			p[1] = frandom(-kPosRange, kPosRange);
+			p[2] = frandom(-kPosRange, kPosRange);
 		};
 		auto colRandom = [&](float* c) {
 			c[0] = frandom(0.0f, 1.0f);
@@ -371,7 +373,8 @@ bool InitializeAssets()
 	}
 
 	// GUIの初期化
-	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, g_DepthBuffer_.GetTextureDesc().format))
+	if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN))
+	//if (!g_Gui_.Initialize(&g_Device_, DXGI_FORMAT_R8G8B8A8_UNORM, g_DepthBuffer_.GetTextureDesc().format))
 	{
 		return false;
 	}
@@ -467,7 +470,7 @@ void RenderScene()
 	ID3D12GraphicsCommandList* pCmdList = g_pNextCmdList_->GetCommandList();
 
 	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 	// 画面クリア
 	const float kClearColor[] = { 0.0f, 0.0f, 0.6f, 1.0f };
@@ -533,6 +536,9 @@ void RenderScene()
 	}
 	pCmdList->EndQuery(g_pTimestampQuery_[frameIndex], D3D12_QUERY_TYPE_TIMESTAMP, 1);
 
+	g_pNextCmdList_->TransitionBarrier(&g_DepthBuffer_, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+	pCmdList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
 	ImGui::Render();
 
 	g_pNextCmdList_->TransitionBarrier(scTex, D3D12_RESOURCE_STATE_PRESENT);

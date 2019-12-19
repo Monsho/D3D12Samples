@@ -322,7 +322,30 @@ namespace sl12
 		{
 			return Submeshes_;
 		}
-
+		const Bounding& GetBoundingInfo() const
+		{
+			return boundingInfo_;
+		}
+		Buffer& GetPositionVB()
+		{
+			return positionVB_;
+		}
+		Buffer& GetNormalVB()
+		{
+			return normalVB_;
+		}
+		Buffer& GetTangentVB()
+		{
+			return tangentVB_;
+		}
+		Buffer& GetTexcoordVB()
+		{
+			return texcoordVB_;
+		}
+		Buffer& GetIndexBuffer()
+		{
+			return indexBuffer_;
+		}
 
 		static ResourceItemBase* LoadFunction(ResourceLoader* pLoader, const std::string& filepath);
 

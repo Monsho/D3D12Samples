@@ -60,6 +60,7 @@ namespace sl12
 		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
 		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
 		view_.StrideInBytes = static_cast<u32>(pBuffer->GetStride());
+		bufferOffset_ = offset;
 
 		return true;
 	}
@@ -84,6 +85,7 @@ namespace sl12
 		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
 		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
 		view_.Format = (pBuffer->GetStride() == 4) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+		bufferOffset_ = offset;
 
 		return true;
 	}

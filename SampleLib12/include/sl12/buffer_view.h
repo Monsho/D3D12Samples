@@ -48,9 +48,11 @@ namespace sl12
 
 		// getter
 		const D3D12_VERTEX_BUFFER_VIEW& GetView() const { return view_; }
+		size_t GetBufferOffset() const { return bufferOffset_; }
 
 	private:
 		D3D12_VERTEX_BUFFER_VIEW	view_{};
+		size_t						bufferOffset_ = 0;
 	};	// class VertexBufferView
 
 
@@ -70,9 +72,11 @@ namespace sl12
 
 		// getter
 		const D3D12_INDEX_BUFFER_VIEW& GetView() const { return view_; }
+		size_t GetBufferOffset() const { return bufferOffset_; }
 
 	private:
 		D3D12_INDEX_BUFFER_VIEW	view_{};
+		size_t						bufferOffset_ = 0;
 	};	// class IndexBufferView
 
 
