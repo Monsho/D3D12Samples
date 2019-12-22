@@ -32,7 +32,7 @@ bool IsHit(const HitData h)
 void RayGenerator()
 {
 	uint3 tex_pos = DispatchRaysIndex();
-	float max_distance = cbBoxInfo.extentWhole * 3;
+	float max_distance = cbBoxInfo.extentWhole * 3 * 2;
 	float signed_distance = rwSdf[tex_pos] * max_distance;
 	float3 origin = (cbBoxInfo.centerPos - cbBoxInfo.extentWhole.xxx) + (float3(tex_pos) + 0.5) * cbBoxInfo.sizeVoxel;
 
@@ -41,8 +41,8 @@ void RayGenerator()
 	{
 		// レイトレースして距離を検証
 		uint ray_flags = 0;
-		RayDesc ray = { origin, 0.0, TraceDirections[cbTraceInfo.dirOffset + c], TMax };
-		//RayDesc ray = { origin, 0.0, TraceDirections[cbTraceInfo.dirOffset + c], max_distance };
+		//RayDesc ray = { origin, 0.0, TraceDirections[cbTraceInfo.dirOffset + c], TMax };
+		RayDesc ray = { origin, 0.0, TraceDirections[cbTraceInfo.dirOffset + c], max_distance };
 		HitData payload = GetInitialPayload();
 		TraceRay(
 			TLAS,

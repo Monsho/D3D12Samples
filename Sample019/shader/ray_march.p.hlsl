@@ -58,7 +58,7 @@ float sdVolumeTexture(float3 p, float4x4 mtxLocalToWorld, float4x4 mtxWorldToLoc
 	float4 local_origin = mul(mtxWorldToLocal, float4(p, 1));
 	float3 origin = (local_origin.xyz / local_origin.w) - centerPos;
 	float inv_box_width = 1 / (extent * 2);
-	float max_distance = extent * 3;
+	float max_distance = extent * 3 * 2;
 	float3 uvw = (origin + extent) * inv_box_width;
 	return texSdf.SampleLevel(texSdf_s, uvw, 0) * max_distance + dist;
 }
