@@ -34,6 +34,12 @@ namespace sl12
 			}
 		}
 
+		hr = pCmdList_->QueryInterface(IID_PPV_ARGS(&pCmdList5_));
+		if (FAILED(hr))
+		{
+			// todo: error.
+		}
+
 		pCmdList_->Close();
 
 		if (pQueue->listType_ == D3D12_COMMAND_LIST_TYPE_DIRECT || pQueue->listType_ == D3D12_COMMAND_LIST_TYPE_COMPUTE)
@@ -65,6 +71,7 @@ namespace sl12
 		pParentQueue_ = nullptr;
 		SafeDelete(pSamplerDescCache_);
 		SafeDelete(pViewDescStack_);
+		SafeRelease(pCmdList5_);
 		SafeRelease(pDxrCmdList_);
 		SafeRelease(pCmdList_);
 		SafeRelease(pCmdAllocator_);

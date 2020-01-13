@@ -150,6 +150,9 @@
     <ClInclude Include="include\sl12\string_util.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="include\sl12\constant_buffer_cache.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\swapchain.cpp">

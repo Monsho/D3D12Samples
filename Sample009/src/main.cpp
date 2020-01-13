@@ -30,6 +30,22 @@ namespace
 	static LPCWSTR		kClosestHitName		= L"ClosestHitProcessor";
 	static LPCWSTR		kMissName			= L"MissProcessor";
 	static LPCWSTR		kHitGroupName		= L"HitGroup";
+
+	static const sl12::u32	kMipLevelColors[] = {
+		0xffffffff,
+		0xff0000ff,
+		0xff00ff00,
+		0xffff0000,
+		0xffffff00,
+		0xff00ffff,
+		0xffff00ff,
+		0xff3f007f,
+		0xff007f3f,
+		0xff7f3f00,
+		0xff7f003f,
+		0xff003f7f,
+		0xff3f7f00,
+	};
 }
 
 class SampleApplication
@@ -81,6 +97,173 @@ public:
 			if (!imageSampler_.Initialize(&device_, samDesc))
 			{
 				return false;
+			}
+		}
+
+		// Tiled Resourceの初期化
+		{
+			D3D12_RESOURCE_DESC desc = {};
+			desc.Width = 1024;
+			desc.Height = 1024;
+			desc.MipLevels = 11;
+			desc.DepthOrArraySize = 1;
+			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+			desc.SampleDesc.Count = 1;
+			desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+			desc.Layout = D3D12_TEXTURE_LAYOUT_64KB_UNDEFINED_SWIZZLE;
+
+			HRESULT hr = device_.GetDeviceDep()->CreateReservedResource(
+				&desc,
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				nullptr,
+				IID_PPV_ARGS(&pTiledTexture_));
+			assert(SUCCEEDED(hr));
+
+			auto numSubresources = desc.MipLevels;
+			sl12::u64 totalSize;
+			tiledFootprints_.resize(numSubresources);
+			tiledNumRows_.resize(numSubresources);
+			tiledRowSizes_.resize(numSubresources);
+			device_.GetDeviceDep()->GetCopyableFootprints(&desc, 0, numSubresources, 0, tiledFootprints_.data(), tiledNumRows_.data(), tiledRowSizes_.data(), &totalSize);
+
+			UINT numTiles = 0;
+			D3D12_TILE_SHAPE tile_shape = {};
+			UINT subresource_count = desc.MipLevels;
+			std::vector<D3D12_SUBRESOURCE_TILING> tilings(subresource_count);
+			device_.GetDeviceDep()->GetResourceTiling(pTiledTexture_, &numTiles, &packedMipInfo_, &tile_shape, &subresource_count, 0, &tilings[0]);
+			assert(numTiles > 0);
+
+			D3D12_HEAP_DESC hd{};
+			hd.SizeInBytes = numTiles * D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+			hd.Properties.Type = D3D12_HEAP_TYPE_DEFAULT;
+			hd.Properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+			hd.Properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+			hd.Properties.CreationNodeMask = 0x01;
+			hd.Properties.VisibleNodeMask = 0x01;
+			hd.Alignment = 0;
+			hd.Flags = D3D12_HEAP_FLAG_DENY_BUFFERS | D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES;
+			hr = device_.GetDeviceDep()->CreateHeap(&hd, IID_PPV_ARGS(&pTiledHeap_));
+			assert(SUCCEEDED(hr));
+
+			D3D12_SHADER_RESOURCE_VIEW_DESC vd{};
+			vd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			vd.Format = desc.Format;
+			vd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			vd.Texture2D.MostDetailedMip = 0;
+			vd.Texture2D.MipLevels = desc.MipLevels;
+			vd.Texture2D.PlaneSlice = 0;
+			vd.Texture2D.ResourceMinLODClamp = 0.0f;
+
+			tiledDescInfo_ = device_.GetViewDescriptorHeap().Allocate();
+			if (!tiledDescInfo_.IsValid())
+			{
+				return false;
+			}
+
+			device_.GetDeviceDep()->CreateShaderResourceView(pTiledTexture_, &vd, tiledDescInfo_.cpuHandle);
+		}
+
+		// Tiled Resourceの更新
+		{
+			// 最低MipTileの割当を行う
+			// Packed Tileは(基本的に)1つのタイルに対して複数のサブリソースが割り当てられている状態
+			// 高いミップレベル(解像度が低い)に対してサブリソース分のタイル分割は無駄が多いため、一定以下のミップレベルについては1つのタイルで賄ってしまうようになっている
+			// どのレベルからPacked Tileになるかはハードウェアドライバ次第？
+			D3D12_TILED_RESOURCE_COORDINATE start_coordinates[1]{};
+			start_coordinates[0].Subresource = packedMipInfo_.NumStandardMips;
+
+			D3D12_TILE_REGION_SIZE region_sizes[1]{};
+			region_sizes[0].NumTiles = packedMipInfo_.NumTilesForPackedMips;
+
+			D3D12_TILE_RANGE_FLAGS range_flags[1]{};
+			range_flags[0] = D3D12_TILE_RANGE_FLAG_NONE;
+
+			UINT start_offsets[1] = { 0 };
+			UINT range_tile_counts[1] = { 1 };
+
+			device_.GetGraphicsQueue().GetQueueDep()->UpdateTileMappings(
+				pTiledTexture_,
+				1,
+				&start_coordinates[0],
+				&region_sizes[0],
+				pTiledHeap_,
+				1,
+				&range_flags[0],
+				&start_offsets[0],
+				&range_tile_counts[0],
+				D3D12_TILE_MAPPING_FLAG_NONE);
+
+			// Packed Tileに対してコピー命令発行
+			{
+				// アップロード用のオブジェクトを作成
+				D3D12_HEAP_PROPERTIES heapProp = {};
+				heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+				heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+				heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+				heapProp.CreationNodeMask = 1;
+				heapProp.VisibleNodeMask = 1;
+
+				D3D12_RESOURCE_DESC desc = {};
+				desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+				desc.Alignment = 0;
+				desc.Width = 1024 * 1024 * 4;
+				desc.Height = 1;
+				desc.DepthOrArraySize = 1;
+				desc.MipLevels = 1;
+				desc.Format = DXGI_FORMAT_UNKNOWN;
+				desc.SampleDesc.Count = 1;
+				desc.SampleDesc.Quality = 0;
+				desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+				desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+				ID3D12Resource* pSrcImage{ nullptr };
+				auto hr = device_.GetDeviceDep()->CreateCommittedResource(
+					&heapProp,
+					D3D12_HEAP_FLAG_NONE,
+					&desc,
+					D3D12_RESOURCE_STATE_GENERIC_READ,
+					nullptr,
+					IID_PPV_ARGS(&pSrcImage));
+				if (FAILED(hr))
+				{
+					return false;
+				}
+
+				// リソースをマップしてイメージ情報をコピー
+				sl12::u8* pData = nullptr;
+				hr = pSrcImage->Map(0, NULL, reinterpret_cast<void**>(&pData));
+				for (size_t m = packedMipInfo_.NumStandardMips; m < tiledFootprints_.size(); m++)
+				{
+					auto color = kMipLevelColors[m];
+					auto size = tiledFootprints_[m].Footprint.RowPitch * tiledNumRows_[m];
+					for (; size > 0; size -= sizeof(color))
+					{
+						memcpy(pData, &color, sizeof(color));
+						pData += sizeof(color);
+					}
+				}
+				pSrcImage->Unmap(0, nullptr);
+
+				// コピー命令を発行
+				sl12::u64 offset = 0;
+				for (size_t m = packedMipInfo_.NumStandardMips; m < tiledFootprints_.size(); m++)
+				{
+					D3D12_TEXTURE_COPY_LOCATION src, dst;
+					src.pResource = pSrcImage;
+					src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+					src.PlacedFootprint.Footprint = tiledFootprints_[m].Footprint;
+					src.PlacedFootprint.Offset = offset;
+					dst.pResource = pTiledTexture_;
+					dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+					dst.SubresourceIndex = m;
+					cmdLists_[0].GetCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+					offset += tiledFootprints_[m].Footprint.RowPitch * tiledNumRows_[m];
+				}
+
+				// コピーに使用したStagingリソースは破棄対象に
+				device_.PendingKill(new sl12::ReleaseObjectItem<ID3D12Resource>(pSrcImage));
 			}
 		}
 
@@ -578,7 +761,8 @@ private:
 
 			// SRVは3つ
 			D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
-				imageTextureView_.GetDescInfo().cpuHandle,
+				//imageTextureView_.GetDescInfo().cpuHandle,
+				tiledDescInfo_.cpuHandle,
 				glbMesh_.GetSubmesh(i)->GetTexcoordBV().GetDescInfo().cpuHandle,
 				glbMesh_.GetSubmesh(i)->GetIndexBV().GetDescInfo().cpuHandle,
 			};
@@ -730,6 +914,14 @@ private:
 	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
 
 	int		frameIndex_ = 0;
+
+	ID3D12Resource*			pTiledTexture_ = nullptr;
+	ID3D12Heap*				pTiledHeap_ = nullptr;
+	sl12::DescriptorInfo	tiledDescInfo_;
+	D3D12_PACKED_MIP_INFO	packedMipInfo_;
+	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT>	tiledFootprints_;
+	std::vector<sl12::u32>	tiledNumRows_;
+	std::vector<sl12::u64>	tiledRowSizes_;
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

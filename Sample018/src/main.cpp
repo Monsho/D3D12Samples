@@ -658,6 +658,11 @@ public:
 			Dispatch(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
 		}
 
+		D3D12_SHADING_RATE_COMBINER shading_rate_combiners[] = {
+			D3D12_SHADING_RATE_COMBINER_PASSTHROUGH,
+			D3D12_SHADING_RATE_COMBINER_OVERRIDE,
+		};
+
 		// Z pre pass
 		{
 			// レンダーターゲット設定

@@ -64,11 +64,12 @@ namespace sl12
 
 		// getter
 		CommandQueue* GetParentQueue() { return pParentQueue_; }
-		DescriptorStackList* GetViewDescriptorStack() { return pViewDescStack_; };
-		SamplerDescriptorCache* GetSamplerDescriptorCache() { return pSamplerDescCache_; };
+		DescriptorStackList* GetViewDescriptorStack() { return pViewDescStack_; }
+		SamplerDescriptorCache* GetSamplerDescriptorCache() { return pSamplerDescCache_; }
 		ID3D12CommandAllocator* GetCommandAllocator() { return pCmdAllocator_; }
-		ID3D12GraphicsCommandList* GetCommandList() { return pCmdList_; };
-		ID3D12GraphicsCommandList4* GetDxrCommandList() { return pDxrCmdList_; };
+		ID3D12GraphicsCommandList* GetCommandList() { return pCmdList_; }
+		ID3D12GraphicsCommandList4* GetDxrCommandList() { return pDxrCmdList_; }
+		ID3D12GraphicsCommandList5* GetCommandList5() { return pCmdList5_; }
 
 	private:
 		Device*						pParentDevice_{ nullptr };
@@ -78,6 +79,7 @@ namespace sl12
 		ID3D12CommandAllocator*		pCmdAllocator_{ nullptr };
 		ID3D12GraphicsCommandList*	pCmdList_{ nullptr };
 		ID3D12GraphicsCommandList4*	pDxrCmdList_{ nullptr };
+		ID3D12GraphicsCommandList5*	pCmdList5_{ nullptr };
 
 		ID3D12DescriptorHeap*		pCurrentSamplerHeap_{ nullptr };
 		ID3D12DescriptorHeap*		pPrevSamplerHeap_{ nullptr };
