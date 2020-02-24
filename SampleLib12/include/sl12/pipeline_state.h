@@ -199,12 +199,14 @@ namespace sl12
 			*localRS = localRootSig.GetRootSignature();
 			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE, localRS);
 
-			auto assDesc = AllocBinary< D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION>();
-			assDesc->pSubobjectToAssociate = nullptr;
-			assDesc->NumExports = exportsCount;
-			assDesc->pExports = exportsArray;
-			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, assDesc);
-
+			if ((exportsArray != nullptr) && (exportsCount > 0))
+			{
+				auto assDesc = AllocBinary< D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION>();
+				assDesc->pSubobjectToAssociate = nullptr;
+				assDesc->NumExports = exportsCount;
+				assDesc->pExports = exportsArray;
+				AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, assDesc);
+			}
 		}
 
 		void AddGlobalRootSignature(sl12::RootSignature& localRootSig)
@@ -223,12 +225,30 @@ namespace sl12
 			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, rtConfigDesc);
 		}
 
-		D3D12_STATE_OBJECT_DESC GetStateObjectDesc()
+		void AddStateObjectConfig(D3D12_STATE_OBJECT_FLAGS flags)
+		{
+			auto config = AllocBinary< D3D12_STATE_OBJECT_CONFIG>();
+
+			config->Flags = flags;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_STATE_OBJECT_CONFIG, config);
+		}
+
+		void AddExistingCollection(ID3D12StateObject* pso, D3D12_EXPORT_DESC* exportDescs, UINT exportDescsCount)
+		{
+			auto desc = AllocBinary< D3D12_EXISTING_COLLECTION_DESC >();
+
+			desc->pExistingCollection = pso;
+			desc->NumExports = exportDescsCount;
+			desc->pExports = exportDescs;
+			AddSubobject(D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION, desc);
+		}
+
+		D3D12_STATE_OBJECT_DESC GetStateObjectDesc(D3D12_STATE_OBJECT_TYPE type)
 		{
 			ResolveExportAssosiation();
 
 			D3D12_STATE_OBJECT_DESC psoDesc{};
-			psoDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+			psoDesc.Type = type;
 			psoDesc.pSubobjects = subobjects_.data();
 			psoDesc.NumSubobjects = (UINT)subobjects_.size();
 			return psoDesc;
@@ -272,7 +292,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, DxrPipelineStateDesc& dxrDesc);
+		bool Initialize(Device* pDev, DxrPipelineStateDesc& dxrDesc, D3D12_STATE_OBJECT_TYPE type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
 		void Destroy();
 
 		ID3D12StateObject* GetPSO() { return pDxrStateObject_; }

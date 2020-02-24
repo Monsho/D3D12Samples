@@ -51,6 +51,8 @@ namespace
 	static const float	kSponzaScale = 20.0f;
 	static const float	kSuzanneScale = 1.0f;
 
+	static const int	kMaxMaterials = 32;
+
 	static LPCWSTR		kRayGenName = L"RayGenerator";
 	static LPCWSTR		kAnyHitName = L"AnyHitProcessor";
 	static LPCWSTR		kMissName = L"MissProcessor";
@@ -581,7 +583,7 @@ public:
 		}
 
 		// Raytracing用DescriptorHeapの初期化
-		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 4, 2, 0, glbMesh_.GetSubmeshCount()))
+		if (!rtDescMan_.Initialize(&device_, 1, 1, 1, 4, 2, 0, std::min<int>(glbMesh_.GetSubmeshCount(), kMaxMaterials)))
 		{
 			return false;
 		}
@@ -1317,7 +1319,7 @@ private:
 
 		// レイトレースコンフィグサブオブジェクト
 		// TraceRay()を行うことができる最大深度を指定するサブオブジェクトです.
-		dxrDesc.AddRaytracinConfig(2);
+		dxrDesc.AddRaytracinConfig(1);
 
 		// PSO生成
 		if (!stateObject_.Initialize(&device_, dxrDesc))
@@ -1556,7 +1558,7 @@ private:
 		auto sampler_desc_size = rtDescMan_.GetSamplerDescSize();
 		auto local_handle_start = rtDescMan_.IncrementLocalHandleStart();
 
-		for (int i = 0; i < glbMesh_.GetSubmeshCount(); i++)
+		for (int i = 0; i < std::min<int>(glbMesh_.GetSubmeshCount(), kMaxMaterials); i++)
 		{
 			auto submesh = glbMesh_.GetSubmesh(i);
 			auto material = glbMesh_.GetMaterial(submesh->GetMaterialIndex());
@@ -1708,7 +1710,7 @@ private:
 		{
 			return false;
 		}
-		if (!GenShaderTable(hitGroupShaderIdentifier, 1, hitGroupTable_, glbMesh_.GetSubmeshCount(), hitGroupIndices.data()))
+		if (!GenShaderTable(hitGroupShaderIdentifier, 1, hitGroupTable_, std::min<int>(glbMesh_.GetSubmeshCount(), kMaxMaterials), hitGroupIndices.data()))
 		{
 			return false;
 		}

@@ -27,6 +27,7 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
+		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 
 	private:
 		DescriptorInfo	descInfo_;
@@ -49,6 +50,7 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
+		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
@@ -73,6 +75,7 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
+		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 		DXGI_FORMAT	GetFormat() { return format_; }
 
 	private:
@@ -98,6 +101,7 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
+		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 
 	private:
 		DescriptorInfo	descInfo_;

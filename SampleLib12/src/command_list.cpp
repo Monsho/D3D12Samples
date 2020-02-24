@@ -464,14 +464,20 @@ namespace sl12
 				global_handle_start.viewGpuHandle.ptr += pRtDescMan->GetViewDescSize() * cnt;
 			}
 		};
-		SetViewDesc(pDSet->GetCsCbv().maxCount, 0, pDSet->GetCsCbv().cpuHandles);
-		SetViewDesc(pDSet->GetCsSrv().maxCount, asAddressCount, pDSet->GetCsSrv().cpuHandles);
-		SetViewDesc(pDSet->GetCsUav().maxCount, 0, pDSet->GetCsUav().cpuHandles);
+		SetViewDesc(pRtDescMan->GetGlobalCbvCount(), 0, pDSet->GetCsCbv().cpuHandles);
+		SetViewDesc(pRtDescMan->GetGlobalSrvCount(), pRtDescMan->GetASCount(), pDSet->GetCsSrv().cpuHandles);
+		SetViewDesc(pRtDescMan->GetGlobalUavCount(), 0, pDSet->GetCsUav().cpuHandles);
+		//SetViewDesc(pDSet->GetCsCbv().maxCount, 0, pDSet->GetCsCbv().cpuHandles);
+		//SetViewDesc(pDSet->GetCsSrv().maxCount, asAddressCount, pDSet->GetCsSrv().cpuHandles);
+		//SetViewDesc(pDSet->GetCsUav().maxCount, 0, pDSet->GetCsUav().cpuHandles);
 
 		// Samplerの登録
-		if (pDSet->GetCsSampler().maxCount > 0)
+		//if (pDSet->GetCsSampler().maxCount > 0)
+		//{
+		//	auto cnt = pDSet->GetCsSampler().maxCount;
+		if (pRtDescMan->GetGlobalSamplerCount() > 0)
 		{
-			auto cnt = pDSet->GetCsSampler().maxCount;
+			auto cnt = pRtDescMan->GetGlobalSamplerCount();
 			auto handles = pDSet->GetCsSampler().cpuHandles;
 			for (u32 i = 0; i < cnt; i++)
 			{

@@ -57,16 +57,21 @@ namespace sl12
 		{
 			return textureNames_;
 		}
+		bool IsOpaque() const
+		{
+			return isOpaque_;
+		}
 
 	private:
 		std::string					name_;
 		std::vector<std::string>	textureNames_;
+		bool						isOpaque_;
 
 
 		template <class Archive>
 		void serialize(Archive& ar)
 		{
-			ar(CEREAL_NVP(name_), CEREAL_NVP(textureNames_));
+			ar(CEREAL_NVP(name_), CEREAL_NVP(textureNames_), CEREAL_NVP(isOpaque_));
 		}
 	};	// class ResourceMeshMaterial
 
@@ -281,6 +286,7 @@ namespace sl12
 			ResourceHandle	baseColorTex;
 			ResourceHandle	normalTex;
 			ResourceHandle	ormTex;
+			bool			isOpaque;
 		};	// struct Material
 
 		struct Meshlet
@@ -293,6 +299,7 @@ namespace sl12
 		struct Submesh
 		{
 			int					materialIndex;
+			u32					vertexCount;
 			u32					indexCount;
 			VertexBufferView	positionVBV;
 			VertexBufferView	normalVBV;

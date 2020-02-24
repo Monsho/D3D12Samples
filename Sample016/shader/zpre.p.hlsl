@@ -27,7 +27,7 @@ PSOutput main(PSInput In)
 	PSOutput Out;
 
 	float a = texImage.Sample(texImage_s, In.uv).a;
-	clip(a < 1.0 ? -1 : 1);
+	clip(a < 0.33 ? -1 : 1);
 
 	float3 normal = normalize(In.normal);
 	float dN = length(fwidth(normal));

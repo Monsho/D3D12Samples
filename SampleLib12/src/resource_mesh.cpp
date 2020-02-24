@@ -103,6 +103,7 @@ namespace sl12
 				std::string f = path + src_materials[i].GetTextureNames()[2];
 				ret->mateirals_[i].ormTex = pLoader->LoadRequest<ResourceItemTexture>(f);
 			}
+			ret->mateirals_[i].isOpaque = src_materials[i].IsOpaque();
 		}
 
 		// create submeshes.
@@ -115,6 +116,7 @@ namespace sl12
 			auto&& dst = ret->Submeshes_[i];
 
 			dst.materialIndex = src.GetMaterialIndex();
+			dst.vertexCount = src.GetVertexCount();
 			dst.indexCount = src.GetIndexCount();
 
 			dst.positionVBV.Initialize(pDev, &ret->positionVB_, sizeof(DirectX::XMFLOAT3) * src.GetVertexOffset(), sizeof(DirectX::XMFLOAT3) * src.GetVertexCount());

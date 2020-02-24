@@ -26,6 +26,7 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
+		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 
 	private:
 		DescriptorInfo	descInfo_;
@@ -75,7 +76,7 @@ namespace sl12
 		size_t GetBufferOffset() const { return bufferOffset_; }
 
 	private:
-		D3D12_INDEX_BUFFER_VIEW	view_{};
+		D3D12_INDEX_BUFFER_VIEW		view_{};
 		size_t						bufferOffset_ = 0;
 	};	// class IndexBufferView
 
@@ -96,6 +97,7 @@ namespace sl12
 
 		// getter
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
+		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 
 	private:
 		DescriptorInfo	descInfo_;

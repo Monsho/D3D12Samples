@@ -174,9 +174,9 @@ namespace sl12
 
 
 	//----
-	bool DxrPipelineState::Initialize(Device* pDev, DxrPipelineStateDesc& dxrDesc)
+	bool DxrPipelineState::Initialize(Device* pDev, DxrPipelineStateDesc& dxrDesc, D3D12_STATE_OBJECT_TYPE type)
 	{
-		D3D12_STATE_OBJECT_DESC psoDesc = dxrDesc.GetStateObjectDesc();
+		D3D12_STATE_OBJECT_DESC psoDesc = dxrDesc.GetStateObjectDesc(type);
 
 		auto hr = pDev->GetDxrDeviceDep()->CreateStateObject(&psoDesc, IID_PPV_ARGS(&pDxrStateObject_));
 		if (FAILED(hr))

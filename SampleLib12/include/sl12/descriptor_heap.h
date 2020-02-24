@@ -375,6 +375,12 @@ namespace sl12
 		u32 GetViewDescSize() const { return pCurrentHeap_->GetViewDescSize(); }
 		u32 GetSamplerDescSize() const { return pCurrentHeap_->GetSamplerDescSize(); }
 
+		u32 GetASCount() const { return pCurrentHeap_->GetASCount(); }
+		u32 GetGlobalCbvCount() const { return pCurrentHeap_->GetGlobalCbvCount(); }
+		u32 GetGlobalSrvCount() const { return pCurrentHeap_->GetGlobalSrvCount(); }
+		u32 GetGlobalUavCount() const { return pCurrentHeap_->GetGlobalUavCount(); }
+		u32 GetGlobalSamplerCount() const { return pCurrentHeap_->GetGlobalSamplerCount(); }
+
 	private:
 		Device*							pParentDevice_ = nullptr;
 		RaytracingDescriptorHeap*		pCurrentHeap_ = nullptr;
