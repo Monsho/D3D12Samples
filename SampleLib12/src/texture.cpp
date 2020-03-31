@@ -7,6 +7,8 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../../External/stb/stb_image.h"
+#define TINYEXR_IMPLEMENTATION
+#include "../../External/tinyexr/tinyexr.h"
 
 
 namespace sl12
@@ -267,6 +269,32 @@ namespace sl12
 	}
 
 	//----
+	bool Texture::InitializeFromEXR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels)
+	{
+		auto image = InitializeFromEXRwoLoad(pDev, pPngBin, size, mipLevels);
+		if (image.get() == nullptr)
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!InitializeFromDXImage(pDev, *image, false))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
+		{
+			return false;
+		}
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
+
+		return true;
+	}
+
+	//----
 	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromPNGwoLoad(Device* pDev, const void* pPngBin, size_t size, sl12::u32 mipLevels)
 	{
 		if (!pDev)
@@ -318,6 +346,159 @@ namespace sl12
 		}
 
 		stbi_image_free(pixels);
+
+		// ミップマップ生成
+		if (mipLevels != 1)
+		{
+			std::unique_ptr<DirectX::ScratchImage> mipped_image(new DirectX::ScratchImage());
+			DirectX::GenerateMipMaps(*image->GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, *mipped_image);
+			image.swap(mipped_image);
+		}
+
+		return std::move(image);
+	}
+
+	//----
+	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromEXRwoLoad(Device* pDev, const void* pExrBin, size_t size, sl12::u32 mipLevels)
+	{
+		if (!pDev)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		if (!pExrBin || !size)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+
+		// tinyexrでexrを読み込む
+		EXRVersion exr_version;
+		auto ret = ParseEXRVersionFromMemory(&exr_version, (const u8*)pExrBin, size);
+		if (ret != 0)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		if (exr_version.multipart)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		EXRHeader exr_header;
+		InitEXRHeader(&exr_header);
+		const char* err_code;
+		ret = ParseEXRHeaderFromMemory(&exr_header, &exr_version, (const u8*)pExrBin, size, &err_code);
+		if (ret != 0)
+		{
+			FreeEXRErrorMessage(err_code);
+			FreeEXRHeader(&exr_header);
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		if (exr_header.tiled)
+		{
+			FreeEXRHeader(&exr_header);
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		EXRImage exr_image;
+		InitEXRImage(&exr_image);
+		ret = LoadEXRImageFromMemory(&exr_image, &exr_header, (const u8*)pExrBin, size, &err_code);
+		if (ret != 0)
+		{
+			FreeEXRErrorMessage(err_code);
+			FreeEXRImage(&exr_image);
+			FreeEXRHeader(&exr_header);
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+
+		// DirectXTex形式のイメージへ変換
+		std::unique_ptr<DirectX::ScratchImage> image(new DirectX::ScratchImage());
+		if (exr_header.num_channels == 1)
+		{
+			auto pixel_size =
+				exr_header.channels[0].pixel_type == TINYEXR_PIXELTYPE_FLOAT
+				? sizeof(float)
+				: sizeof(short);
+			auto format =
+				exr_header.channels[0].pixel_type == TINYEXR_PIXELTYPE_FLOAT
+				? DXGI_FORMAT_R32_FLOAT
+				: DXGI_FORMAT_R16_FLOAT;
+			auto hr = image->Initialize2D(format, exr_image.width, exr_image.height, 1, 1);
+			if (FAILED(hr))
+			{
+				FreeEXRImage(&exr_image);
+				FreeEXRHeader(&exr_header);
+				return false;
+			}
+
+			auto dst = image->GetPixels();
+			memcpy(dst, &exr_image.images[0][0], exr_image.width * exr_image.height * pixel_size);
+		}
+		else
+		{
+			int idx_r = -1, idx_g = -1, idx_b = -1, idx_a = -1;
+			int pixel_type = -1;
+			for (int c = 0; c < exr_header.num_channels; c++)
+			{
+				if (strcmp(exr_header.channels[c].name, "R") == 0) idx_r = c;
+				else if (strcmp(exr_header.channels[c].name, "G") == 0) idx_g = c;
+				else if (strcmp(exr_header.channels[c].name, "B") == 0) idx_b = c;
+				else if (strcmp(exr_header.channels[c].name, "A") == 0) idx_a = c;
+
+				if (pixel_type < 0)
+					pixel_type = exr_header.channels[c].pixel_type;
+				else if (pixel_type != exr_header.channels[c].pixel_type)
+				{
+					FreeEXRImage(&exr_image);
+					FreeEXRHeader(&exr_header);
+					return false;
+				}
+			}
+
+			auto pixel_size =
+				pixel_type == TINYEXR_PIXELTYPE_FLOAT
+				? sizeof(float)
+				: sizeof(short);
+			auto format =
+				pixel_type == TINYEXR_PIXELTYPE_FLOAT
+				? DXGI_FORMAT_R32G32B32A32_FLOAT
+				: DXGI_FORMAT_R16G16B16A16_FLOAT;
+			auto hr = image->Initialize2D(format, exr_image.width, exr_image.height, 1, 1);
+			if (FAILED(hr))
+			{
+				FreeEXRImage(&exr_image);
+				FreeEXRHeader(&exr_header);
+				return false;
+			}
+
+			if (pixel_type == TINYEXR_PIXELTYPE_FLOAT)
+			{
+				auto dst = (float*)image->GetPixels();
+				for (int i = 0; i < exr_image.width * exr_image.height; i++)
+				{
+					dst[i * 4 + 0] = reinterpret_cast<float**>(exr_image.images)[idx_r][i];
+					dst[i * 4 + 1] = reinterpret_cast<float**>(exr_image.images)[idx_g][i];
+					dst[i * 4 + 2] = reinterpret_cast<float**>(exr_image.images)[idx_b][i];
+					if (idx_a >= 0)
+						dst[i * 4 + 3] = reinterpret_cast<float**>(exr_image.images)[idx_a][i];
+					else
+						dst[i * 4 + 3] = 1.0f;
+				}
+			}
+			else
+			{
+				auto dst = (short*)image->GetPixels();
+				for (int i = 0; i < exr_image.width * exr_image.height; i++)
+				{
+					dst[i * 4 + 0] = reinterpret_cast<short**>(exr_image.images)[idx_r][i];
+					dst[i * 4 + 1] = reinterpret_cast<short**>(exr_image.images)[idx_g][i];
+					dst[i * 4 + 2] = reinterpret_cast<short**>(exr_image.images)[idx_b][i];
+					if (idx_a >= 0)
+						dst[i * 4 + 3] = reinterpret_cast<short**>(exr_image.images)[idx_a][i];
+					else
+						dst[i * 4 + 3] = 0x3c00;
+				}
+			}
+		}
+
+		FreeEXRImage(&exr_image);
+		FreeEXRHeader(&exr_header);
 
 		// ミップマップ生成
 		if (mipLevels != 1)

@@ -48,9 +48,9 @@ namespace sl12
 		std::unique_ptr<ResourceItemTexture> ret(new ResourceItemTexture());
 
 		// check ext.
-		// NOTE: support .png and .tga.
+		// NOTE: support .png, .tga, or .exr.
 		auto ext = GetExtent(filepath);
-		if (ext != ".png" && ext != ".tga")
+		if (ext != ".png" && ext != ".tga" && ext != ".exr")
 		{
 			return nullptr;
 		}
@@ -78,6 +78,10 @@ namespace sl12
 		else if (ext == ".tga")
 		{
 			image = ret->texture_.InitializeFromTGAwoLoad(device, texBin.GetData(), texBin.GetSize(), 0);
+		}
+		else if (ext == ".exr")
+		{
+			image = ret->texture_.InitializeFromEXRwoLoad(device, texBin.GetData(), texBin.GetSize(), 0);
 		}
 		if (image.get() == nullptr)
 		{

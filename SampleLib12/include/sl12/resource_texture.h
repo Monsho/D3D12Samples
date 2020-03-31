@@ -21,7 +21,15 @@ namespace sl12
 		{
 			return texture_;
 		}
+		const Texture& GetTexture() const
+		{
+			return texture_;
+		}
 		TextureView& GetTextureView()
+		{
+			return textureView_;
+		}
+		const TextureView& GetTextureView() const
 		{
 			return textureView_;
 		}

@@ -33,6 +33,11 @@ namespace sl12
 
 		bool IsValid() const;
 
+		u64 GetID() const
+		{
+			return id_;
+		}
+
 		const ResourceItemBase* GetItemBase() const;
 
 		template <typename T>
