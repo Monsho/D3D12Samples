@@ -10,62 +10,83 @@
 #include <map>
 
 
-class MeshletRenderComponent
+namespace sl12
 {
-public:
-	MeshletRenderComponent()
-	{}
-	~MeshletRenderComponent()
+	class MeshletRenderComponent
 	{
-		Destroy();
-	}
+	public:
+		MeshletRenderComponent()
+		{}
+		~MeshletRenderComponent()
+		{
+			Destroy();
+		}
 
-	bool Initialize(sl12::Device* pDev, const std::vector<sl12::ResourceItemMesh::Meshlet>& meshlets);
+		bool Initialize(Device* pDev, const std::vector<ResourceItemMesh::Meshlet>& meshlets);
 
-	void Destroy();
+		void Destroy();
 
-	void TransitionIndirectArgument(sl12::CommandList* pCmdList, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+		void TransitionIndirectArgument(CommandList* pCmdList, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
 
-	sl12::BufferView& GetMeshletBV()
+		BufferView& GetMeshletBV()
+		{
+			return meshletBV_;
+		}
+		Buffer& GetIndirectArgumentB()
+		{
+			return indirectArgumentB_;
+		}
+		UnorderedAccessView& GetIndirectArgumentUAV()
+		{
+			return indirectArgumentUAV_;
+		}
+
+	private:
+		Buffer				meshletB_;				// meshlet info structured buffer.
+		BufferView			meshletBV_;				// meshletB_ view.
+		Buffer				indirectArgumentB_;		// indirect argument buffer.
+		UnorderedAccessView	indirectArgumentUAV_;	// indirectArgumentB_ view.
+	};	// class MeshletRenderComponent
+
+	class MeshInstance
 	{
-		return meshletBV_;
-	}
-	sl12::Buffer& GetIndirectArgumentB()
-	{
-		return indirectArgumentB_;
-	}
-	sl12::UnorderedAccessView& GetIndirectArgumentUAV()
-	{
-		return indirectArgumentUAV_;
-	}
+	public:
+		MeshInstance()
+		{}
+		~MeshInstance()
+		{
+			Destroy();
+		}
 
-private:
-	sl12::Buffer				meshletB_;				// meshlet info structured buffer.
-	sl12::BufferView			meshletBV_;				// meshletB_ view.
-	sl12::Buffer				indirectArgumentB_;		// indirect argument buffer.
-	sl12::UnorderedAccessView	indirectArgumentUAV_;	// indirectArgumentB_ view.
-};	// class MeshletRenderComponent
+		bool Initialize(Device* pDevice, ResourceHandle res);
 
-class MeshInstance
-{
-public:
-	MeshInstance()
-	{}
-	~MeshInstance()
-	{
-		Destroy();
-	}
+		void Destroy();
 
-	bool Initialize(sl12::Device* pDevice, sl12::ResourceHandle res);
+		ResourceHandle GetResMesh()
+		{
+			return hResMesh_;
+		}
+		const ResourceHandle GetResMesh() const
+		{
+			return hResMesh_;
+		}
 
-	void Destroy();
+		void SetMtxTransform(const DirectX::XMFLOAT4X4& t)
+		{
+			mtxTransform_ = t;
+		}
+		const DirectX::XMFLOAT4X4& GetMtxTransform() const
+		{
+			return mtxTransform_;
+		}
 
-private:
-	sl12::Device*							pParentDevice_ = nullptr;
-	sl12::ResourceHandle					hResMesh_;
-	DirectX::XMFLOAT4X4						mtxTransform_;
-	std::vector<MeshletRenderComponent*>	meshletComponents_;
-};	// class MeshInstance
+	private:
+		Device*									pParentDevice_ = nullptr;
+		ResourceHandle							hResMesh_;
+		DirectX::XMFLOAT4X4						mtxTransform_;
+		std::vector<MeshletRenderComponent*>	meshletComponents_;
+	};	// class MeshInstance
 
+}	// namespace sl12
 
 //	EOF

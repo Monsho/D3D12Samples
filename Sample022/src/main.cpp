@@ -25,6 +25,8 @@
 #include "sl12/resource_loader.h"
 #include "sl12/resource_mesh.h"
 #include "sl12/resource_texture.h"
+#include "mesh_instance.h"
+#include "as_manager.h"
 
 #include "CompiledShaders/zpre.vv.hlsl.h"
 #include "CompiledShaders/zpre.p.hlsl.h"
@@ -195,6 +197,9 @@ public:
 
 	bool Initialize() override
 	{
+		// initialize as manager.
+		pAsManager_ = new sl12::ASManager(&device_);
+
 		// リソースロード開始
 		if (!resLoader_.Initialize(&device_))
 		{
@@ -948,6 +953,8 @@ public:
 		device_.WaitDrawDone();
 		device_.Present(1);
 
+		sl12::SafeDelete(pAsManager_);
+
 		DestroyRaytracing();
 
 		for (auto&& v : meshletComponents_) sl12::SafeDelete(v);
@@ -1459,6 +1466,31 @@ private:
 
 	bool CreateAS(sl12::CommandList* pCmdList)
 	{
+		// as manager.
+		{
+			// create mesh instance.
+			DirectX::XMFLOAT4X4 mtxSponza(
+				kSponzaScale, 0, 0, 0,
+				0, kSponzaScale, 0, 0,
+				0, 0, kSponzaScale, 0,
+				0, 0, 0, 1);
+			if (!sponzaInstance_.Initialize(&device_, hMeshRes_[0]))
+			{
+				return false;
+			}
+			sponzaInstance_.SetMtxTransform(mtxSponza);
+
+			// build as.
+			sl12::TlasInstance instances[] = {
+				{&sponzaInstance_, 0xff, 0},
+			};
+			pAsManager_->EntryMeshItem(hMeshRes_[0]);
+			if (!pAsManager_->Build(pCmdList, instances, ARRAYSIZE(instances), 2))
+			{
+				return false;
+			}
+		}
+
 		// create bottom as.
 		auto mesh_resources = GetBaseMeshes();
 		std::vector<int> table_offsets;
@@ -1898,6 +1930,8 @@ private:
 		for (auto&& bas : rtBottomASs_) delete bas;
 		rtBottomASs_.clear();
 		rtTopAS_.Destroy();
+
+		sponzaInstance_.Destroy();
 	}
 
 private:
@@ -2192,6 +2226,9 @@ private:
 	sl12::ResourceHandle	hMeshRes_[2];
 	sl12::ResourceHandle	hBlueNoiseRes_;
 	int						sceneState_ = 0;		// 0:loading scene, 1:main scene
+
+	sl12::MeshInstance		sponzaInstance_;
+	sl12::ASManager*		pAsManager_;
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

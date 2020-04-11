@@ -277,7 +277,7 @@ namespace sl12
 	//-------------------------------------------------------------------
 	// Top AS用のインスタンスバッファを生成する
 	//-------------------------------------------------------------------
-	bool TopAccelerationStructure::CreateInstanceBuffer(sl12::Device* pDevice, TopInstanceDesc* pDescs, int descsCount)
+	bool TopAccelerationStructure::CreateInstanceBuffer(sl12::Device* pDevice, const TopInstanceDesc* pDescs, int descsCount)
 	{
 		if (!pDevice)
 			return false;

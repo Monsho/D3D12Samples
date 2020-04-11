@@ -158,9 +158,11 @@ namespace sl12
 		TopAccelerationStructure()
 		{}
 		~TopAccelerationStructure()
-		{}
+		{
+			Destroy();
+		}
 
-		bool CreateInstanceBuffer(sl12::Device* pDevice, TopInstanceDesc* pDescs, int descsCount);
+		bool CreateInstanceBuffer(sl12::Device* pDevice, const TopInstanceDesc* pDescs, int descsCount);
 
 		bool Build(sl12::CommandList* pCmdList, const StructureInputDesc& desc, bool barrier = true);
 

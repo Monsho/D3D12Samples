@@ -8,53 +8,72 @@
 #include <map>
 
 
-class BottomASItem
+namespace sl12
 {
-public:
-	BottomASItem(const sl12::ResourceItemMesh* pMesh)
-		: pMeshItem_(pMesh)
-	{}
-
-	const sl12::ResourceItemMesh* GetMeshItem() const
+	class BlasItem
 	{
-		return pMeshItem_;
-	}
-	int GetSubmeshCount() const
+	public:
+		BlasItem(const ResourceItemMesh* pMesh)
+			: pMeshItem_(pMesh)
+		{}
+
+		const ResourceItemMesh* GetMeshItem() const
+		{
+			return pMeshItem_;
+		}
+		int GetSubmeshCount() const
+		{
+			return (int)pMeshItem_->GetSubmeshes().size();
+		}
+		BottomAccelerationStructure* GetBlas()
+		{
+			return pBlas_;
+		}
+
+		bool Build(Device* pDevice, CommandList* pCmdList);
+		void Release(Device* pDevice);
+
+	private:
+		~BlasItem()
+		{}
+
+		const ResourceItemMesh*			pMeshItem_ = nullptr;
+		BottomAccelerationStructure*	pBlas_ = nullptr;
+		bool							isInitialized_ = false;
+	};	// class BlasItem
+
+	struct TlasInstance
 	{
-		return (int)pMeshItem_->GetSubmeshes().size();
-	}
-	sl12::BottomAccelerationStructure* GetBottomAS()
+		class MeshInstance*		pInstance = nullptr;
+		u32						mask = 0xff;
+		u8						flags = 0;
+	};	// struct TlasInstance
+
+	class ASManager
 	{
-		return pBottomAS_;
-	}
+	public:
+		ASManager(Device* pDev)
+			: pParentDevice_(pDev)
+		{}
+		~ASManager();
 
-	bool Build(sl12::Device* pDevice, sl12::CommandList* pCmdList);
-	void Release(sl12::Device* pDevice);
+		void EntryMeshItem(ResourceHandle hMesh);
 
-private:
-	~BottomASItem()
-	{}
+		bool Build(CommandList* pCmdList, TlasInstance* ppInstances, u32 instanceCount, u32 recordCountPerMaterial);
 
-	const sl12::ResourceItemMesh*		pMeshItem_ = nullptr;
-	sl12::BottomAccelerationStructure*	pBottomAS_ = nullptr;
-	bool								isInitialized_ = false;
-};	// class BottomASItem
+		bool CreateHitGroupTable(
+			u32 recordSize,
+			u32 recordCountPerMaterial,
+			std::function<u8*(BlasItem*, u8*)> setFunc,
+			Buffer& outTableBuffer);
 
-class ASManager
-{
-public:
-	ASManager(sl12::Device* pDev)
-		: pParentDevice_(pDev)
-	{}
-	~ASManager();
+	private:
+		Device*						pParentDevice_ = nullptr;
+		std::map<u64, BlasItem*>	blasMap_;
+		TopAccelerationStructure*	pTlas_ = nullptr;
+	};	// class ASManager
 
-	void EntryMeshItem(sl12::ResourceHandle hMesh);
+}	// namespace sl12
 
-	bool Build(sl12::CommandList* pCmdList);
-
-private:
-	sl12::Device*						pParentDevice_ = nullptr;
-	std::map<sl12::u64, BottomASItem*>	bottomASMap_;
-};	// class ASManager
 
 //	EOF

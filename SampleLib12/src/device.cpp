@@ -34,21 +34,57 @@ namespace sl12
 
 		// アダプタを取得する
 		bool isWarp = false;
-		IDXGIAdapter1* pAdapter{ nullptr };
-		hr = pFactory_->EnumAdapters1(0, &pAdapter);
-		if (FAILED(hr))
+		IDXGIAdapter1* pAdapter = nullptr;
+		ID3D12Device* pDevice = nullptr;
+		ID3D12Device5* pDxrDevice = nullptr;
+		UINT adapterIndex = 0;
+		while (true)
 		{
-			// 取得できない場合はWarpアダプタを取得
 			SafeRelease(pAdapter);
+			SafeRelease(pDevice);
+			SafeRelease(pDxrDevice);
 
-			hr = pFactory_->EnumWarpAdapter(IID_PPV_ARGS(&pAdapter));
+			hr = pFactory_->EnumAdapters1(adapterIndex++, &pAdapter);
+			if (FAILED(hr))
+				break;
+
+			DXGI_ADAPTER_DESC ad;
+			pAdapter->GetDesc(&ad);
+
+			hr = D3D12CreateDevice(pAdapter, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pDevice));
+			if (FAILED(hr))
+				continue;
+
+			D3D12_FEATURE_DATA_D3D12_OPTIONS5 featureSupportData{};
+			if (SUCCEEDED(pDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &featureSupportData, sizeof(featureSupportData))))
+			{
+				isDxrSupported_ = featureSupportData.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+				if (isDxrSupported_)
+				{
+					pDevice->QueryInterface(IID_PPV_ARGS(&pDxrDevice));
+					break;
+				}
+			}
+		}
+		if (!pDevice)
+		{
+			hr = pFactory_->EnumAdapters1(0, &pAdapter);
 			if (FAILED(hr))
 			{
-				SafeRelease(pAdapter);
-				return false;
+				hr = pFactory_->EnumWarpAdapter(IID_PPV_ARGS(&pAdapter));
+				if (FAILED(hr))
+				{
+					SafeRelease(pAdapter);
+					return false;
+				}
+				isWarp = true;
 			}
-			isWarp = true;
+
+			hr = D3D12CreateDevice(pAdapter, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pDevice));
+			if (FAILED(hr))
+				return false;
 		}
+
 		hr = pAdapter->QueryInterface(IID_PPV_ARGS(&pAdapter_));
 		SafeRelease(pAdapter);
 		if (FAILED(hr))
@@ -56,60 +92,38 @@ namespace sl12
 			return false;
 		}
 
-		if (!isWarp)
-		{
-			// ディスプレイを取得する
-			IDXGIOutput* pOutput{ nullptr };
-			hr = pAdapter_->EnumOutputs(0, &pOutput);
-			if (FAILED(hr))
-			{
-				return false;
-			}
+		pDevice_ = pDevice;
+		pDxrDevice_ = pDxrDevice;
 
+		// ディスプレイを取得する
+		IDXGIOutput* pOutput{ nullptr };
+		hr = pAdapter_->EnumOutputs(0, &pOutput);
+		if (SUCCEEDED(hr))
+		{
 			hr = pOutput->QueryInterface(IID_PPV_ARGS(&pOutput_));
 			SafeRelease(pOutput);
 			if (FAILED(hr))
-			{
-				return false;
-			}
+				SafeRelease(pOutput_);
 		}
 
-		// デバイスの生成
-		hr = D3D12CreateDevice(pAdapter_, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&pDevice_));
-		if (FAILED(hr))
+		// COPY_DESCRIPTORS_INVALID_RANGESエラーを回避
+		ID3D12InfoQueue* pD3DInfoQueue;
+		if (SUCCEEDED(pDevice_->QueryInterface(__uuidof(ID3D12InfoQueue), reinterpret_cast<void**>(&pD3DInfoQueue))))
 		{
-			return false;
-		}
-
-		// DirectX Raytracingが使用可能ならDXR用のデバイスを作成する
-		D3D12_FEATURE_DATA_D3D12_OPTIONS5 featureSupportData{};
-		if (SUCCEEDED(pDevice_->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &featureSupportData, sizeof(featureSupportData))))
-		{
-			isDxrSupported_ = featureSupportData.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-			if (isDxrSupported_)
-			{
-				pDevice_->QueryInterface(IID_PPV_ARGS(&pDxrDevice_));
-			}
-
-			// COPY_DESCRIPTORS_INVALID_RANGESエラーを回避
-			ID3D12InfoQueue* pD3DInfoQueue;
-			if (SUCCEEDED(pDevice_->QueryInterface(__uuidof(ID3D12InfoQueue), reinterpret_cast<void**>(&pD3DInfoQueue))))
-			{
 #if 0
-				// エラー等が出たときに止めたい場合は有効にする
-				pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
-				pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
-				pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
+			// エラー等が出たときに止めたい場合は有効にする
+			pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
+			pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+			pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
 #endif
 
-				D3D12_MESSAGE_ID blockedIds[] = { D3D12_MESSAGE_ID_COPY_DESCRIPTORS_INVALID_RANGES };
-				D3D12_INFO_QUEUE_FILTER filter = {};
-				filter.DenyList.pIDList = blockedIds;
-				filter.DenyList.NumIDs = _countof(blockedIds);
-				pD3DInfoQueue->AddRetrievalFilterEntries(&filter);
-				pD3DInfoQueue->AddStorageFilterEntries(&filter);
-				pD3DInfoQueue->Release();
-			}
+			D3D12_MESSAGE_ID blockedIds[] = { D3D12_MESSAGE_ID_COPY_DESCRIPTORS_INVALID_RANGES };
+			D3D12_INFO_QUEUE_FILTER filter = {};
+			filter.DenyList.pIDList = blockedIds;
+			filter.DenyList.NumIDs = _countof(blockedIds);
+			pD3DInfoQueue->AddRetrievalFilterEntries(&filter);
+			pD3DInfoQueue->AddStorageFilterEntries(&filter);
+			pD3DInfoQueue->Release();
 		}
 
 		// Queueの作成
@@ -216,6 +230,8 @@ namespace sl12
 	//----
 	void Device::Destroy()
 	{
+		SyncKillObjects(true);
+
 		SafeRelease(pFence_);
 
 		SafeDelete(pSwapchain_);
