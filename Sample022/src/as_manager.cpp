@@ -117,6 +117,7 @@ namespace sl12
 			blass_[item.first] = blas;
 			total_submesh_count += item.second->GetSubmeshCount();
 		}
+		totalMaterialCount_ = total_submesh_count;
 
 		// set top as instances.
 		std::vector<TopInstanceDesc> instance_descs(instanceCount);
@@ -168,14 +169,26 @@ namespace sl12
 		return true;
 	}
 
+	bool ASManager::CreateMaterialTable(std::function<bool(BlasItem*)> setMaterialFunc)
+	{
+		for (auto item : blasMap_)
+		{
+			if (!setMaterialFunc(item.second))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	bool ASManager::CreateHitGroupTable(
 		u32 recordSize,
 		u32 recordCountPerMaterial,
-		std::function<u8*(BlasItem*, u8*)> setFunc,
+		std::function<bool(u8*, u32)> setFunc,
 		Buffer& outTableBuffer)
 	{
 		// initialize buffer.
-		u64 buff_size = recordSize * recordCountPerMaterial * blasMap_.size();
+		u64 buff_size = recordSize * recordCountPerMaterial * totalMaterialCount_;
 		if (!outTableBuffer.Initialize(pParentDevice_, buff_size, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
 		{
 			return false;
@@ -185,14 +198,14 @@ namespace sl12
 		auto p = (u8*)outTableBuffer.Map(nullptr);
 
 		// set records.
-		for (auto item : blasMap_)
+		for (u32 i = 0; i < totalMaterialCount_; i++)
 		{
-			p = setFunc(item.second, p);
-			if (!p)
+			if (!setFunc(p, i))
 			{
 				outTableBuffer.Unmap();
 				return false;
 			}
+			p += recordSize * recordCountPerMaterial;
 		}
 
 		// unmap.

@@ -25,6 +25,7 @@
 #include "sl12/resource_loader.h"
 #include "sl12/resource_mesh.h"
 #include "sl12/resource_texture.h"
+#include "sl12/constant_buffer_cache.h"
 #include "mesh_instance.h"
 #include "as_manager.h"
 
@@ -49,8 +50,8 @@
 
 namespace
 {
-	static const int	kScreenWidth = 1920;
-	static const int	kScreenHeight = 1080;
+	static const int	kScreenWidth = 1280;
+	static const int	kScreenHeight = 720;
 	static const int	MaxSample = 512;
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 10000.0f;
@@ -74,92 +75,6 @@ namespace
 
 	static const DXGI_FORMAT	kReytracingResultFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
-	class MeshletRenderComponent
-	{
-	public:
-		MeshletRenderComponent()
-		{}
-		~MeshletRenderComponent()
-		{
-			Destroy();
-		}
-
-		bool Initialize(sl12::Device* pDev, const std::vector<sl12::ResourceItemMesh::Meshlet>& meshlets)
-		{
-			struct MeshletData
-			{
-				DirectX::XMFLOAT3	aabbMin;
-				sl12::u32			indexOffset;
-				DirectX::XMFLOAT3	aabbMax;
-				sl12::u32			indexCount;
-			};
-
-			if (!meshletB_.Initialize(pDev, sizeof(MeshletData) * meshlets.size(), sizeof(MeshletData), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
-			{
-				return false;
-			}
-			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, meshlets.size(), sizeof(MeshletData)))
-			{
-				return false;
-			}
-
-			if (!indirectArgumentB_.Initialize(pDev, sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) * meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, false, true))
-			{
-				return false;
-			}
-			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
-			{
-				return false;
-			}
-
-			{
-				MeshletData* data = (MeshletData*)meshletB_.Map(nullptr);
-				for (auto&& m : meshlets)
-				{
-					data->aabbMin = m.boundingInfo.box.aabbMin;
-					data->aabbMax = m.boundingInfo.box.aabbMax;
-					data->indexOffset = m.indexOffset;
-					data->indexCount = m.indexCount;
-					data++;
-				}
-				meshletB_.Unmap();
-			}
-
-			return true;
-		}
-
-		void Destroy()
-		{
-			meshletBV_.Destroy();
-			meshletB_.Destroy();
-			indirectArgumentUAV_.Destroy();
-			indirectArgumentB_.Destroy();
-		}
-
-		void TransitionIndirectArgument(sl12::CommandList* pCmdList, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
-		{
-			pCmdList->TransitionBarrier(&indirectArgumentB_, before, after);
-		}
-
-		sl12::BufferView& GetMeshletBV()
-		{
-			return meshletBV_;
-		}
-		sl12::Buffer& GetIndirectArgumentB()
-		{
-			return indirectArgumentB_;
-		}
-		sl12::UnorderedAccessView& GetIndirectArgumentUAV()
-		{
-			return indirectArgumentUAV_;
-		}
-
-	private:
-		sl12::Buffer				meshletB_;
-		sl12::BufferView			meshletBV_;
-		sl12::Buffer				indirectArgumentB_;
-		sl12::UnorderedAccessView	indirectArgumentUAV_;
-	};	// class MeshletRenderComponent
 }
 
 class SampleApplication
@@ -199,6 +114,10 @@ public:
 	{
 		// initialize as manager.
 		pAsManager_ = new sl12::ASManager(&device_);
+
+		// initialize constant buffer cache.
+		pCBCache_ = new sl12::ConstantBufferCache();
+		pCBCache_->Initialize(&device_);
 
 		// リソースロード開始
 		if (!resLoader_.Initialize(&device_))
@@ -616,6 +535,28 @@ public:
 
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
+		// ceate mesh cb.
+		struct RenderMeshComponent
+		{
+			sl12::MeshInstance*					pInstance;
+			sl12::ConstantBufferCache::Handle	cbHandle;
+
+			RenderMeshComponent(sl12::MeshInstance* p)
+				: pInstance(p)
+			{}
+		};
+		std::array<RenderMeshComponent, 2> meshes = {
+			RenderMeshComponent(&sponzaInstance_),
+			RenderMeshComponent(&ballInstance_)
+		};
+		pCBCache_->BeginNewFrame();
+		for (auto&& mesh : meshes)
+		{
+			MeshCB cb;
+			cb.mtxLocalToWorld = cb.mtxPrevLocalToWorld = mesh.pInstance->GetMtxTransform();
+			mesh.cbHandle = pCBCache_->GetUnusedConstBuffer(sizeof(cb), &cb);
+		}
+
 		// GPU culling
 		if (isIndirectDraw_)
 		{
@@ -626,33 +567,51 @@ public:
 			cullDescSet_.Reset();
 			cullDescSet_.SetCsCbv(0, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
 
-			auto Dispatch = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+			auto Dispatch = [&](RenderMeshComponent& mesh)
 			{
-				cullDescSet_.SetCsCbv(1, pMeshCBV->GetDescInfo().cpuHandle);
+				auto&& meshlets = mesh.pInstance->GetMeshletComponents();
+				if (meshlets.empty())
+				{
+					return;
+				}
 
+				cullDescSet_.SetCsCbv(1, mesh.cbHandle.GetCBV()->GetDescInfo().cpuHandle);
+
+				auto pMesh = mesh.pInstance->GetResMesh().GetItem<sl12::ResourceItemMesh>();
 				auto&& submeshes = pMesh->GetSubmeshes();
 				auto submesh_count = submeshes.size();
 				for (int i = 0; i < submesh_count; i++)
 				{
 					int dispatch_x = (int)submeshes[i].meshlets.size();
-					auto&& bv = comps[i]->GetMeshletBV();
-					auto&& arg_uav = comps[i]->GetIndirectArgumentUAV();
+					auto&& bv = meshlets[i]->GetMeshletBV();
+					auto&& arg_uav = meshlets[i]->GetIndirectArgumentUAV();
 
 					cullDescSet_.SetCsSrv(0, bv.GetDescInfo().cpuHandle);
 					cullDescSet_.SetCsUav(0, arg_uav.GetDescInfo().cpuHandle);
 
 					pCmdList->SetComputeRootSignatureAndDescriptorSet(&cullRootSig_, &cullDescSet_);
 
-					comps[i]->TransitionIndirectArgument(pCmdList, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+					pCmdList->TransitionBarrier(&meshlets[i]->GetIndirectArgumentB(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 					d3dCmdList->Dispatch(dispatch_x, 1, 1);
 				}
-				for (int i = 0; i < submesh_count; i++)
+			};
+			auto FinishBarrier = [&](RenderMeshComponent& mesh)
+			{
+				auto&& meshlets = mesh.pInstance->GetMeshletComponents();
+				for (auto&& meshlet : meshlets)
 				{
-					comps[i]->TransitionIndirectArgument(pCmdList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+					pCmdList->TransitionBarrier(&meshlet->GetIndirectArgumentB(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 				}
 			};
 
-			Dispatch(hMeshRes_[0].GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+			for (auto&& mesh : meshes)
+			{
+				Dispatch(mesh);
+			}
+			for (auto&& mesh : meshes)
+			{
+				FinishBarrier(mesh);
+			}
 		}
 
 		D3D12_SHADING_RATE_COMBINER shading_rate_combiners[] = {
@@ -694,12 +653,14 @@ public:
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
 
-			int count = 0;
-			int offset = 0;
-			auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+			auto RenderMesh = [&](RenderMeshComponent& mesh)
 			{
-				descSet_.SetVsCbv(1, pMeshCBV->GetDescInfo().cpuHandle);
+				auto&& meshlets = mesh.pInstance->GetMeshletComponents();
+				bool bIndirectDraw = isIndirectDraw_ && !meshlets.empty();
 
+				descSet_.SetVsCbv(1, mesh.cbHandle.GetCBV()->GetDescInfo().cpuHandle);
+
+				auto pMesh = mesh.pInstance->GetResMesh().GetItem<sl12::ResourceItemMesh>();
 				auto&& submeshes = pMesh->GetSubmeshes();
 				auto submesh_count = submeshes.size();
 				for (int i = 0; i < submesh_count; i++)
@@ -722,12 +683,12 @@ public:
 					auto&& ibv = submesh.indexBV.GetView();
 					d3dCmdList->IASetIndexBuffer(&ibv);
 
-					if (isIndirectDraw_)
+					if (bIndirectDraw)
 					{
 						d3dCmdList->ExecuteIndirect(
 							commandSig_,											// command signature
 							submesh.meshlets.size(),								// コマンドの最大発行回数
-							comps[i]->GetIndirectArgumentB().GetResourceDep(),		// indirectコマンドの変数バッファ
+							meshlets[i]->GetIndirectArgumentB().GetResourceDep(),	// indirectコマンドの変数バッファ
 							0,														// indirectコマンドの変数バッファの先頭オフセット
 							nullptr,												// 実際の発行回数を収めたカウントバッファ
 							0);														// カウントバッファの先頭オフセット
@@ -741,7 +702,10 @@ public:
 
 			// DrawCall
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			RenderMesh(hMeshRes_[0].GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+			for (auto&& mesh : meshes)
+			{
+				RenderMesh(mesh);
+			}
 		}
 
 		// リソースバリア
@@ -764,9 +728,9 @@ public:
 
 			// コピーしつつコマンドリストに積む
 			D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
-				rtTopAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
+				pAsManager_->GetTlas()->GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
 			};
-			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, &rtDescMan_, as_address, ARRAYSIZE(as_address));
+			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, pRtDescManager_, as_address, ARRAYSIZE(as_address));
 
 			// レイトレースを実行
 			D3D12_DISPATCH_RAYS_DESC desc{};
@@ -804,9 +768,9 @@ public:
 
 			// コピーしつつコマンドリストに積む
 			D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
-				rtTopAS_.GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
+				pAsManager_->GetTlas()->GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
 			};
-			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, &rtDescMan_, as_address, ARRAYSIZE(as_address));
+			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, pRtDescManager_, as_address, ARRAYSIZE(as_address));
 
 			// レイトレースを実行
 			D3D12_DISPATCH_RAYS_DESC desc{};
@@ -870,12 +834,14 @@ public:
 			descSet_.SetPsSrv(4, rtGIResult_.srv.GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
 
-			int count = 0;
-			int offset = 0;
-			auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+			auto RenderMesh = [&](RenderMeshComponent& mesh)
 			{
-				descSet_.SetVsCbv(1, pMeshCBV->GetDescInfo().cpuHandle);
+				auto&& meshlets = mesh.pInstance->GetMeshletComponents();
+				bool bIndirectDraw = isIndirectDraw_ && !meshlets.empty();
 
+				descSet_.SetVsCbv(1, mesh.cbHandle.GetCBV()->GetDescInfo().cpuHandle);
+
+				auto pMesh = mesh.pInstance->GetResMesh().GetItem<sl12::ResourceItemMesh>();
 				auto&& submeshes = pMesh->GetSubmeshes();
 				auto submesh_count = submeshes.size();
 				for (int i = 0; i < submesh_count; i++)
@@ -905,12 +871,12 @@ public:
 					auto&& ibv = submesh.indexBV.GetView();
 					d3dCmdList->IASetIndexBuffer(&ibv);
 
-					if (isIndirectDraw_)
+					if (bIndirectDraw)
 					{
 						d3dCmdList->ExecuteIndirect(
 							commandSig_,											// command signature
 							submesh.meshlets.size(),								// コマンドの最大発行回数
-							comps[i]->GetIndirectArgumentB().GetResourceDep(),		// indirectコマンドの変数バッファ
+							meshlets[i]->GetIndirectArgumentB().GetResourceDep(),	// indirectコマンドの変数バッファ
 							0,														// indirectコマンドの変数バッファの先頭オフセット
 							nullptr,												// 実際の発行回数を収めたカウントバッファ
 							0);														// カウントバッファの先頭オフセット
@@ -924,7 +890,10 @@ public:
 
 			// DrawCall
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			RenderMesh(hMeshRes_[0].GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+			for (auto&& mesh : meshes)
+			{
+				RenderMesh(mesh);
+			}
 		}
 
 		ImGui::Render();
@@ -954,11 +923,9 @@ public:
 		device_.Present(1);
 
 		sl12::SafeDelete(pAsManager_);
+		sl12::SafeDelete(pCBCache_);
 
 		DestroyRaytracing();
-
-		for (auto&& v : meshletComponents_) sl12::SafeDelete(v);
-		meshletComponents_.clear();
 
 		anisoSampler_.Destroy();
 
@@ -1293,22 +1260,6 @@ private:
 			}
 		}
 
-		// Meshlet描画コンポーネントをサブメッシュ数分生成する
-		{
-			auto mesh_res = hMeshRes_[0].GetItem<sl12::ResourceItemMesh>();
-			auto&& submeshes = mesh_res->GetSubmeshes();
-			meshletComponents_.reserve(submeshes.size());
-			for (auto&& submesh : submeshes)
-			{
-				MeshletRenderComponent* comp = new MeshletRenderComponent();
-				if (!comp->Initialize(&device_, submesh.meshlets))
-				{
-					return false;
-				}
-				meshletComponents_.push_back(comp);
-			}
-		}
-
 		return true;
 	}
 
@@ -1480,58 +1431,36 @@ private:
 			}
 			sponzaInstance_.SetMtxTransform(mtxSponza);
 
+			if (!ballInstance_.Initialize(&device_, hMeshRes_[1]))
+			{
+				return false;
+			}
+
 			// build as.
 			sl12::TlasInstance instances[] = {
 				{&sponzaInstance_, 0xff, 0},
+				{&ballInstance_, 0xff, 0},
 			};
 			pAsManager_->EntryMeshItem(hMeshRes_[0]);
-			if (!pAsManager_->Build(pCmdList, instances, ARRAYSIZE(instances), 2))
-			{
-				return false;
-			}
-		}
-
-		// create bottom as.
-		auto mesh_resources = GetBaseMeshes();
-		std::vector<int> table_offsets;
-		int total_submesh_count = 0;
-		for (int i = 0; i < mesh_resources.size(); i++)
-		{
-			sl12::BottomAccelerationStructure* bas = new sl12::BottomAccelerationStructure();
-			if (!CreateBottomAS(pCmdList, mesh_resources[i], bas))
+			pAsManager_->EntryMeshItem(hMeshRes_[1]);
+			if (!pAsManager_->Build(pCmdList, instances, ARRAYSIZE(instances), kRTMaterialTableCount))
 			{
 				return false;
 			}
 
-			rtBottomASs_.push_back(bas);
-			table_offsets.push_back(total_submesh_count);
-			total_submesh_count += mesh_resources[i]->GetSubmeshes().size();
-		}
-
-		// create top as.
-		DirectX::XMFLOAT4X4 mtxSponza(
-			kSponzaScale, 0, 0, 0,
-			0, kSponzaScale, 0, 0,
-			0, 0, kSponzaScale, 0,
-			0, 0, 0, 1);
-		sl12::TopInstanceDesc top_descs[1];
-		top_descs[0].Initialize(mtxSponza, 0, 0xff, table_offsets[0] * kRTMaterialTableCount, 0, rtBottomASs_[0]);
-		if (!CreateTopAS(pCmdList, top_descs, ARRAYSIZE(top_descs), &rtTopAS_))
-		{
-			return false;
-		}
-
-		// initialize descriptor manager.
-		if (!rtDescMan_.Initialize(&device_,
-			2,		// Render Count
-			1,		// AS Count
-			4,		// Global CBV Count
-			8,		// Global SRV Count
-			4,		// Global UAV Count
-			4,		// Global Sampler Count
-			total_submesh_count))
-		{
-			return false;
+			// initialize descriptor manager.
+			pRtDescManager_ = new sl12::RaytracingDescriptorManager();
+			if (!pRtDescManager_->Initialize(&device_,
+				2,		// renderCount
+				1,		// asCount,
+				4,		// globalCbvCount
+				8,		// globalSrvCount
+				4,		// globalUavCount
+				4,		// globalSamplerCount
+				pAsManager_->GetTotalMaterialCount()))
+			{
+				return false;
+			}
 		}
 
 		return true;
@@ -1720,190 +1649,192 @@ private:
 			D3D12_GPU_DESCRIPTOR_HANDLE	uav;
 			D3D12_GPU_DESCRIPTOR_HANDLE	sampler;
 		};
-		std::vector<LocalTable> material_table;
-		std::vector<bool> opaque_table;
-		auto view_desc_size = rtDescMan_.GetViewDescSize();
-		auto sampler_desc_size = rtDescMan_.GetSamplerDescSize();
-		auto local_handle_start = rtDescMan_.IncrementLocalHandleStart();
-		auto FillTable = [&](const sl12::ResourceItemMesh* pMeshItem)
+
 		{
-			auto&& submeshes = pMeshItem->GetSubmeshes();
-			for (int i = 0; i < submeshes.size(); i++)
+			struct MaterialTable
 			{
-				auto&& submesh = submeshes[i];
-				auto&& material = pMeshItem->GetMaterials()[submesh.materialIndex];
-				auto pTexBC = material.baseColorTex.GetItem<sl12::ResourceItemTexture>();
-
-				opaque_table.push_back(material.isOpaque);
-
-				LocalTable table;
-
-				// CBV
-				table.cbv = local_handle_start.viewGpuHandle;
-
-				// SRV
-				D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
-					submesh.indexView.GetDescInfo().cpuHandle,
-					submesh.normalView.GetDescInfo().cpuHandle,
-					submesh.texcoordView.GetDescInfo().cpuHandle,
-					const_cast<sl12::ResourceItemTexture*>(pTexBC)->GetTextureView().GetDescInfo().cpuHandle,
-				};
-				sl12::u32 srv_cnt = ARRAYSIZE(srv);
-				device_.GetDeviceDep()->CopyDescriptors(
-					1, &local_handle_start.viewCpuHandle, &srv_cnt,
-					srv_cnt, srv, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-				table.srv = local_handle_start.viewGpuHandle;
-				local_handle_start.viewCpuHandle.ptr += view_desc_size * srv_cnt;
-				local_handle_start.viewGpuHandle.ptr += view_desc_size * srv_cnt;
-
-				// UAVはなし
-				table.uav = local_handle_start.viewGpuHandle;
-
-				// Samplerは1つ
-				D3D12_CPU_DESCRIPTOR_HANDLE sampler[] = {
-					imageSampler_.GetDescInfo().cpuHandle,
-				};
-				sl12::u32 sampler_cnt = ARRAYSIZE(sampler);
-				device_.GetDeviceDep()->CopyDescriptors(
-					1, &local_handle_start.samplerCpuHandle, &sampler_cnt,
-					sampler_cnt, sampler, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-				table.sampler = local_handle_start.samplerGpuHandle;
-				local_handle_start.samplerCpuHandle.ptr += sampler_desc_size * sampler_cnt;
-				local_handle_start.samplerGpuHandle.ptr += sampler_desc_size * sampler_cnt;
-
-				material_table.push_back(table);
-			}
-		};
-		auto mesh_resources = GetBaseMeshes();
-		for (auto&& mesh : mesh_resources)
-		{
-			FillTable(mesh);
-		}
-
-		// create shader table.
-		auto Align = [](UINT size, UINT align)
-		{
-			return ((size + align - 1) / align) * align;
-		};
-		UINT shaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-		UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-		UINT shaderRecordSize = Align(descHandleOffset + sizeof(LocalTable), D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
-		rtShaderRecordSize_ = shaderRecordSize;
-
-		auto GenShaderTable = [&](
-			void* const * shaderIds,
-			int tableCountPerMaterial,
-			sl12::Buffer& buffer,
-			int materialCount)
-		{
-			materialCount = (materialCount < 0) ? material_table.size() : materialCount;
-			if (!buffer.Initialize(&device_, shaderRecordSize * tableCountPerMaterial * materialCount, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
+				LocalTable		table;
+				bool			opaque;
+			};
+			std::vector<MaterialTable> material_table;
+			auto view_desc_size = pRtDescManager_->GetViewDescSize();
+			auto sampler_desc_size = pRtDescManager_->GetSamplerDescSize();
+			auto local_handle_start = pRtDescManager_->IncrementLocalHandleStart();
+			auto SetMaterialFunc = [&](const sl12::BlasItem* item)
 			{
-				return false;
-			}
-
-			auto p = reinterpret_cast<char*>(buffer.Map(nullptr));
-			for (int i = 0; i < materialCount; ++i)
-			{
-				for (int id = 0; id < tableCountPerMaterial; ++id)
+				auto pMeshItem = item->GetMeshItem();
+				auto&& submeshes = pMeshItem->GetSubmeshes();
+				for (int i = 0; i < submeshes.size(); i++)
 				{
-					auto start = p;
+					auto&& submesh = submeshes[i];
+					auto&& material = pMeshItem->GetMaterials()[submesh.materialIndex];
+					auto pTexBC = material.baseColorTex.GetItem<sl12::ResourceItemTexture>();
 
-					memcpy(p, shaderIds[i * tableCountPerMaterial + id], shaderIdentifierSize);
-					p += descHandleOffset;
+					MaterialTable table;
+					table.opaque = material.isOpaque;
 
-					memcpy(p, &material_table[i], sizeof(LocalTable));
+					// CBV
+					table.table.cbv = local_handle_start.viewGpuHandle;
 
-					p = start + shaderRecordSize;
+					// SRV
+					D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
+						submesh.indexView.GetDescInfo().cpuHandle,
+						submesh.normalView.GetDescInfo().cpuHandle,
+						submesh.texcoordView.GetDescInfo().cpuHandle,
+						const_cast<sl12::ResourceItemTexture*>(pTexBC)->GetTextureView().GetDescInfo().cpuHandle,
+					};
+					sl12::u32 srv_cnt = ARRAYSIZE(srv);
+					device_.GetDeviceDep()->CopyDescriptors(
+						1, &local_handle_start.viewCpuHandle, &srv_cnt,
+						srv_cnt, srv, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+					table.table.srv = local_handle_start.viewGpuHandle;
+					local_handle_start.viewCpuHandle.ptr += view_desc_size * srv_cnt;
+					local_handle_start.viewGpuHandle.ptr += view_desc_size * srv_cnt;
+
+					// UAVはなし
+					table.table.uav = local_handle_start.viewGpuHandle;
+
+					// Samplerは1つ
+					D3D12_CPU_DESCRIPTOR_HANDLE sampler[] = {
+						imageSampler_.GetDescInfo().cpuHandle,
+					};
+					sl12::u32 sampler_cnt = ARRAYSIZE(sampler);
+					device_.GetDeviceDep()->CopyDescriptors(
+						1, &local_handle_start.samplerCpuHandle, &sampler_cnt,
+						sampler_cnt, sampler, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+					table.table.sampler = local_handle_start.samplerGpuHandle;
+					local_handle_start.samplerCpuHandle.ptr += sampler_desc_size * sampler_cnt;
+					local_handle_start.samplerGpuHandle.ptr += sampler_desc_size * sampler_cnt;
+
+					material_table.push_back(table);
+				}
+				return true;
+			};
+
+			// create material table.
+			material_table.reserve(pAsManager_->GetTotalMaterialCount());
+			pAsManager_->CreateMaterialTable(SetMaterialFunc);
+
+			// create shader table.
+			auto Align = [](UINT size, UINT align)
+			{
+				return ((size + align - 1) / align) * align;
+			};
+			UINT shaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+			UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+			UINT shaderRecordSize = Align(descHandleOffset + sizeof(LocalTable), D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+			rtShaderRecordSize_ = shaderRecordSize;
+
+			auto SetHitGroupFunc = [&](sl12::u8* pBuff, sl12::u32 index, void** ppHgId)
+			{
+				auto&& table = material_table[index];
+				int hg_base_index = table.opaque ? 0 : 2;
+				for (int id = 0; id < kRTMaterialTableCount; id++)
+				{
+					auto start = pBuff;
+
+					memcpy(pBuff, ppHgId[hg_base_index + id], shaderIdentifierSize);
+					pBuff += descHandleOffset;
+
+					memcpy(pBuff, &table.table, sizeof(LocalTable));
+
+					pBuff = start + shaderRecordSize;
+				}
+				return true;
+			};
+			auto CreateRGSorMSTable = [&](
+				void* const* shaderIds,
+				sl12::u32 tableCount,
+				sl12::Buffer& buffer)
+			{
+				if (!buffer.Initialize(&device_, shaderRecordSize * tableCount, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
+				{
+					return false;
+				}
+
+				auto pBuff = reinterpret_cast<char*>(buffer.Map(nullptr));
+
+				for (int id = 0; id < tableCount; id++)
+				{
+					auto start = pBuff;
+
+					memcpy(pBuff, shaderIds[id], shaderIdentifierSize);
+					pBuff += descHandleOffset;
+
+					memcpy(pBuff, &material_table[0].table, sizeof(LocalTable));
+
+					pBuff = start + shaderRecordSize;
+				}
+
+				buffer.Unmap();
+
+				return true;
+			};
+
+			// for DirectShadow.
+			{
+				void* rgs_identifier;
+				void* ms_identifier;
+				void* hg_identifier[4];
+				{
+					ID3D12StateObjectProperties* prop;
+					rtDirectShadowPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
+					rgs_identifier = prop->GetShaderIdentifier(kDirectShadowRGS);
+					ms_identifier = prop->GetShaderIdentifier(kDirectShadowMS);
+					hg_identifier[0] = hg_identifier[1] = prop->GetShaderIdentifier(kOcclusionOpacityHG);
+					hg_identifier[2] = hg_identifier[3] = prop->GetShaderIdentifier(kOcclusionMaskedHG);
+					prop->Release();
+				}
+				if (!CreateRGSorMSTable(&rgs_identifier, 1, rtDirectShadowRGSTable_))
+				{
+					return false;
+				}
+				if (!CreateRGSorMSTable(&ms_identifier, 1, rtDirectShadowMSTable_))
+				{
+					return false;
+				}
+				if (!pAsManager_->CreateHitGroupTable(
+					shaderRecordSize,
+					kRTMaterialTableCount,
+					std::bind(SetHitGroupFunc, std::placeholders::_1, std::placeholders::_2, hg_identifier),
+					rtDirectShadowHGTable_))
+				{
+					return false;
 				}
 			}
-			buffer.Unmap();
-
-			return true;
-		};
-		// for DirectShadow.
-		{
-			void* rgs_identifier;
-			void* ms_identifier;
-			void* hg_identifier[2];
+			// for GlobalIllumination.
 			{
-				ID3D12StateObjectProperties* prop;
-				rtDirectShadowPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
-				rgs_identifier = prop->GetShaderIdentifier(kDirectShadowRGS);
-				ms_identifier = prop->GetShaderIdentifier(kDirectShadowMS);
-				hg_identifier[0] = prop->GetShaderIdentifier(kOcclusionOpacityHG);
-				hg_identifier[1] = prop->GetShaderIdentifier(kOcclusionMaskedHG);
-				prop->Release();
-			}
-			std::vector<void*> hg_table;
-			for (auto v : opaque_table)
-			{
-				if (v)
+				void* rgs_identifier;
+				void* ms_identifier[2];
+				void* hg_identifier[4];
 				{
-					hg_table.push_back(hg_identifier[0]);
-					hg_table.push_back(hg_identifier[0]);
+					ID3D12StateObjectProperties* prop;
+					rtGlobalIlluminationPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
+					rgs_identifier = prop->GetShaderIdentifier(kGlobalIlluminationRGS);
+					ms_identifier[0] = prop->GetShaderIdentifier(kGlobalIlluminationMS);
+					ms_identifier[1] = prop->GetShaderIdentifier(kDirectShadowMS);
+					hg_identifier[0] = prop->GetShaderIdentifier(kMaterialOpacityHG);
+					hg_identifier[1] = prop->GetShaderIdentifier(kOcclusionOpacityHG);
+					hg_identifier[2] = prop->GetShaderIdentifier(kMaterialMaskedHG);
+					hg_identifier[3] = prop->GetShaderIdentifier(kOcclusionMaskedHG);
+					prop->Release();
 				}
-				else
+				if (!CreateRGSorMSTable(&rgs_identifier, 1, rtGlobalIlluminationRGSTable_))
 				{
-					hg_table.push_back(hg_identifier[1]);
-					hg_table.push_back(hg_identifier[1]);
+					return false;
 				}
-			}
-			if (!GenShaderTable(&rgs_identifier, 1, rtDirectShadowRGSTable_, 1))
-			{
-				return false;
-			}
-			if (!GenShaderTable(&ms_identifier, 1, rtDirectShadowMSTable_, 1))
-			{
-				return false;
-			}
-			if (!GenShaderTable(hg_table.data(), kRTMaterialTableCount, rtDirectShadowHGTable_, -1))
-			{
-				return false;
-			}
-		}
-		// for GlobalIllumination.
-		{
-			void* rgs_identifier;
-			void* ms_identifier[2];
-			void* hg_identifier[4];
-			{
-				ID3D12StateObjectProperties* prop;
-				rtGlobalIlluminationPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
-				rgs_identifier = prop->GetShaderIdentifier(kGlobalIlluminationRGS);
-				ms_identifier[0] = prop->GetShaderIdentifier(kGlobalIlluminationMS);
-				ms_identifier[1] = prop->GetShaderIdentifier(kDirectShadowMS);
-				hg_identifier[0] = prop->GetShaderIdentifier(kMaterialOpacityHG);
-				hg_identifier[1] = prop->GetShaderIdentifier(kMaterialMaskedHG);
-				hg_identifier[2] = prop->GetShaderIdentifier(kOcclusionOpacityHG);
-				hg_identifier[3] = prop->GetShaderIdentifier(kOcclusionMaskedHG);
-				prop->Release();
-			}
-			std::vector<void*> hg_table;
-			for (auto v : opaque_table)
-			{
-				if (v)
+				if (!CreateRGSorMSTable(ms_identifier, 2, rtGlobalIlluminationMSTable_))
 				{
-					hg_table.push_back(hg_identifier[0]);
-					hg_table.push_back(hg_identifier[2]);
+					return false;
 				}
-				else
+				if (!pAsManager_->CreateHitGroupTable(
+					shaderRecordSize,
+					kRTMaterialTableCount,
+					std::bind(SetHitGroupFunc, std::placeholders::_1, std::placeholders::_2, hg_identifier),
+					rtGlobalIlluminationHGTable_))
 				{
-					hg_table.push_back(hg_identifier[1]);
-					hg_table.push_back(hg_identifier[3]);
+					return false;
 				}
-			}
-			if (!GenShaderTable(&rgs_identifier, 1, rtGlobalIlluminationRGSTable_, 1))
-			{
-				return false;
-			}
-			if (!GenShaderTable(ms_identifier, 2, rtGlobalIlluminationMSTable_, 1))
-			{
-				return false;
-			}
-			if (!GenShaderTable(hg_table.data(), kRTMaterialTableCount, rtGlobalIlluminationHGTable_, -1))
-			{
-				return false;
 			}
 		}
 
@@ -1926,12 +1857,8 @@ private:
 		rtDirectShadowPSO_.Destroy();
 		rtGlobalIlluminationPSO_.Destroy();
 
-		rtDescMan_.Destroy();
-		for (auto&& bas : rtBottomASs_) delete bas;
-		rtBottomASs_.clear();
-		rtTopAS_.Destroy();
-
 		sponzaInstance_.Destroy();
+		sl12::SafeDelete(pRtDescManager_);
 	}
 
 private:
@@ -2133,15 +2060,11 @@ private:
 	RaytracingResult					rtShadowResult_;
 	RaytracingResult					rtGIResult_;
 	sl12::RootSignature					rtGlobalRootSig_, rtLocalRootSig_;
-	sl12::RaytracingDescriptorManager	rtDescMan_;
 	sl12::DescriptorSet					rtGlobalDescSet_;
 	sl12::DxrPipelineState				rtOcclusionCollection_;
 	sl12::DxrPipelineState				rtMaterialCollection_;
 	sl12::DxrPipelineState				rtDirectShadowPSO_;
 	sl12::DxrPipelineState				rtGlobalIlluminationPSO_;
-
-	std::vector<sl12::BottomAccelerationStructure*>	rtBottomASs_;
-	sl12::TopAccelerationStructure					rtTopAS_;
 
 	sl12::u32				rtShaderRecordSize_;
 	sl12::Buffer			rtDirectShadowRGSTable_;
@@ -2170,7 +2093,6 @@ private:
 	sl12::ConstantBufferView	glbMeshCBV_;
 
 	// multi draw indirect関連
-	std::vector< MeshletRenderComponent*>	meshletComponents_;
 	sl12::Buffer					frustumCBs_[kBufferCount];
 	sl12::ConstantBufferView		frustumCBVs_[kBufferCount];
 	sl12::Shader					cullCS_, countClearCS_;
@@ -2228,7 +2150,10 @@ private:
 	int						sceneState_ = 0;		// 0:loading scene, 1:main scene
 
 	sl12::MeshInstance		sponzaInstance_;
-	sl12::ASManager*		pAsManager_;
+	sl12::MeshInstance		ballInstance_;
+	sl12::ASManager*		pAsManager_ = nullptr;
+	sl12::RaytracingDescriptorManager*	pRtDescManager_ = nullptr;
+	sl12::ConstantBufferCache*	pCBCache_ = nullptr;
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

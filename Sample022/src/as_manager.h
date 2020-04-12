@@ -61,16 +61,29 @@ namespace sl12
 
 		bool Build(CommandList* pCmdList, TlasInstance* ppInstances, u32 instanceCount, u32 recordCountPerMaterial);
 
+		bool CreateMaterialTable(std::function<bool(BlasItem*)> setMaterialFunc);
+
 		bool CreateHitGroupTable(
 			u32 recordSize,
 			u32 recordCountPerMaterial,
-			std::function<u8*(BlasItem*, u8*)> setFunc,
+			std::function<bool(u8*, u32)> setFunc,
 			Buffer& outTableBuffer);
+
+		TopAccelerationStructure* GetTlas()
+		{
+			return pTlas_;
+		}
+
+		u32 GetTotalMaterialCount() const
+		{
+			return totalMaterialCount_;
+		}
 
 	private:
 		Device*						pParentDevice_ = nullptr;
 		std::map<u64, BlasItem*>	blasMap_;
 		TopAccelerationStructure*	pTlas_ = nullptr;
+		u32							totalMaterialCount_ = 0;
 	};	// class ASManager
 
 }	// namespace sl12

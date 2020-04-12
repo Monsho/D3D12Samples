@@ -80,6 +80,11 @@ namespace sl12
 			return mtxTransform_;
 		}
 
+		std::vector<MeshletRenderComponent*>& GetMeshletComponents()
+		{
+			return meshletComponents_;
+		}
+
 	private:
 		Device*									pParentDevice_ = nullptr;
 		ResourceHandle							hResMesh_;
