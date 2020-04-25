@@ -387,7 +387,7 @@ namespace sl12
 			{
 				if (count > 0)
 				{
-					pCmdList->SetGraphicsRootDescriptorTable(index, samplerGpuHandle);
+					pCmdList->SetComputeRootDescriptorTable(index, samplerGpuHandle);
 					samplerGpuHandle.ptr += sampler_desc_size * count;
 				}
 			};

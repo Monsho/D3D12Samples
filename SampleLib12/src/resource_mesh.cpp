@@ -129,7 +129,7 @@ namespace sl12
 			dst.normalView.Initialize(pDev, &ret->normalVB_, src.GetVertexOffset(), src.GetVertexCount(), sizeof(DirectX::XMFLOAT3));
 			dst.tangentView.Initialize(pDev, &ret->tangentVB_, src.GetVertexOffset(), src.GetVertexCount(), sizeof(DirectX::XMFLOAT4));
 			dst.texcoordView.Initialize(pDev, &ret->texcoordVB_, src.GetVertexOffset(), src.GetVertexCount(), sizeof(DirectX::XMFLOAT2));
-			dst.indexView.Initialize(pDev, &ret->indexBuffer_, src.GetVertexOffset(), src.GetIndexCount(), sizeof(u32));
+			dst.indexView.Initialize(pDev, &ret->indexBuffer_, src.GetIndexOffset(), src.GetIndexCount(), sizeof(u32));
 
 			dst.boundingInfo.sphere.center.x = src.GetBoundingSphere().centerX;
 			dst.boundingInfo.sphere.center.y = src.GetBoundingSphere().centerY;

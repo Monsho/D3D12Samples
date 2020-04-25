@@ -106,6 +106,7 @@ namespace sl12
 				SafeRelease(pOutput_);
 		}
 
+#ifdef _DEBUG
 		// COPY_DESCRIPTORS_INVALID_RANGESエラーを回避
 		ID3D12InfoQueue* pD3DInfoQueue;
 		if (SUCCEEDED(pDevice_->QueryInterface(__uuidof(ID3D12InfoQueue), reinterpret_cast<void**>(&pD3DInfoQueue))))
@@ -125,6 +126,7 @@ namespace sl12
 			pD3DInfoQueue->AddStorageFilterEntries(&filter);
 			pD3DInfoQueue->Release();
 		}
+#endif
 
 		// Queueの作成
 		pGraphicsQueue_ = new CommandQueue();

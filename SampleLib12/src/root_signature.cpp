@@ -250,7 +250,7 @@ namespace sl12
 		inputIndex_.csSrvIndex_ = rangeCnt;
 		SetParam(D3D12_SHADER_VISIBILITY_ALL);
 		ranges[rangeCnt++] = kDefaultRange[1];
-		inputIndex_.psSamplerIndex_ = rangeCnt;
+		inputIndex_.csSamplerIndex_ = rangeCnt;
 		SetParam(D3D12_SHADER_VISIBILITY_ALL);
 		ranges[rangeCnt++] = kDefaultRange[2];
 		inputIndex_.csUavIndex_ = rangeCnt;

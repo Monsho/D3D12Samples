@@ -269,32 +269,6 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromEXR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels)
-	{
-		auto image = InitializeFromEXRwoLoad(pDev, pPngBin, size, mipLevels);
-		if (image.get() == nullptr)
-		{
-			return false;
-		}
-
-		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *image, false))
-		{
-			return false;
-		}
-
-		// コピー命令発行
-		ID3D12Resource* pSrcImage = nullptr;
-		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
-		{
-			return false;
-		}
-		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
-
-		return true;
-	}
-
-	//----
 	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromPNGwoLoad(Device* pDev, const void* pPngBin, size_t size, sl12::u32 mipLevels)
 	{
 		if (!pDev)
@@ -356,6 +330,32 @@ namespace sl12
 		}
 
 		return std::move(image);
+	}
+
+	//----
+	bool Texture::InitializeFromEXR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels)
+	{
+		auto image = InitializeFromEXRwoLoad(pDev, pPngBin, size, mipLevels);
+		if (image.get() == nullptr)
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!InitializeFromDXImage(pDev, *image, false))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
+		{
+			return false;
+		}
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
+
+		return true;
 	}
 
 	//----
@@ -499,6 +499,63 @@ namespace sl12
 
 		FreeEXRImage(&exr_image);
 		FreeEXRHeader(&exr_header);
+
+		// ミップマップ生成
+		if (mipLevels != 1)
+		{
+			std::unique_ptr<DirectX::ScratchImage> mipped_image(new DirectX::ScratchImage());
+			DirectX::GenerateMipMaps(*image->GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, *mipped_image);
+			image.swap(mipped_image);
+		}
+
+		return std::move(image);
+	}
+
+	//----
+	bool Texture::InitializeFromHDR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels)
+	{
+		auto image = InitializeFromHDRwoLoad(pDev, pPngBin, size, mipLevels);
+		if (image.get() == nullptr)
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!InitializeFromDXImage(pDev, *image, false))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
+		{
+			return false;
+		}
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
+
+		return true;
+	}
+
+	//----
+	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromHDRwoLoad(Device* pDev, const void* pTgaBin, size_t size, sl12::u32 mipLevels)
+	{
+		if (!pDev)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		if (!pTgaBin || !size)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+
+		// TGAファイルフォーマットからイメージリソースを作成
+		std::unique_ptr<DirectX::ScratchImage> image(new DirectX::ScratchImage());
+		auto hr = DirectX::LoadFromHDRMemory(pTgaBin, size, nullptr, *image);
+		if (FAILED(hr))
+		{
+			return false;
+		}
 
 		// ミップマップ生成
 		if (mipLevels != 1)

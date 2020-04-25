@@ -26,9 +26,6 @@
     <FxCompile Include="shader\lighting.p.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
-    <FxCompile Include="shader\lighting.vv.hlsl">
-      <Filter>shader</Filter>
-    </FxCompile>
     <FxCompile Include="shader\zpre.p.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
@@ -53,6 +50,18 @@
     <FxCompile Include="shader\global_illumination.lib.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
+    <FxCompile Include="shader\rt_reflection.lib.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\mipmapgen.c.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\irr_map_gen.c.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\temporal_blend.c.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -60,6 +69,9 @@
       <Filter>shader</Filter>
     </None>
     <None Include="shader\payload.hlsli">
+      <Filter>shader</Filter>
+    </None>
+    <None Include="shader\raytrace.hlsli">
       <Filter>shader</Filter>
     </None>
   </ItemGroup>

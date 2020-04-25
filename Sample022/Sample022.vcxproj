@@ -153,6 +153,20 @@
       <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_pGlobalIlluminationLib</VariableName>
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
     </FxCompile>
+    <FxCompile Include="shader\irr_map_gen.c.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.3</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_pIrrMapGenCS</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ObjectFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_pIrrMapGenCS</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </ObjectFileOutput>
+    </FxCompile>
     <FxCompile Include="shader\material.lib.hlsl">
       <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       </EntryPointName>
@@ -185,19 +199,19 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </ObjectFileOutput>
     </FxCompile>
-    <FxCompile Include="shader\lighting.vv.hlsl">
-      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_pLightingVS</VariableName>
-      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_pLightingVS</VariableName>
+    <FxCompile Include="shader\mipmapgen.c.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.3</ShaderModel>
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       </ObjectFileOutput>
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </ObjectFileOutput>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.1</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.1</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_pMipmapGenCS</VariableName>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_pMipmapGenCS</VariableName>
     </FxCompile>
     <FxCompile Include="shader\occlusion.lib.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Library</ShaderType>
@@ -216,6 +230,38 @@
       </EntryPointName>
       <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </EntryPointName>
+    </FxCompile>
+    <FxCompile Include="shader\rt_reflection.lib.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Library</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Library</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.3</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_pRTReflectionLib</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ObjectFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_pRTReflectionLib</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </ObjectFileOutput>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </EntryPointName>
+    </FxCompile>
+    <FxCompile Include="shader\temporal_blend.c.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.3</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_pTemporalBlendCS</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ObjectFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_pTemporalBlendCS</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)\CompiledShaders\%(Filename).hlsl.h</HeaderFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="shader\zpre.p.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
@@ -250,6 +296,7 @@
     <None Include="packages.config" />
     <None Include="shader\common.hlsli" />
     <None Include="shader\payload.hlsli" />
+    <None Include="shader\raytrace.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="shader\constant.h" />

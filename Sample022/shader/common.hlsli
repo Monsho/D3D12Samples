@@ -9,6 +9,13 @@ float3 SkyColor(float3 w_dir)
 	return saturate((1.0).xxx * (1.0 - t) + float3(0.5, 0.7, 1.0) * t);
 }
 
+float3 SkyTextureLookup(Texture2D t, SamplerState s, float3 N, float level = 0.0)
+{
+	float u = saturate(atan2(N.z, N.x) / PI * 0.5 + 0.5);
+	float v = saturate(acos(N.y) / PI);
+	return t.SampleLevel(s, float2(u, v), level).rgb;
+}
+
 float ToLinearDepth(float perspDepth, float n, float f)
 {
 	return -n / ((n - f) * perspDepth + f);

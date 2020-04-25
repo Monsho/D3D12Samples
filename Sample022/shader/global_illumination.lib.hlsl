@@ -7,11 +7,13 @@
 RaytracingAccelerationStructure			Scene			: register(t0, space0);
 Texture2D								WorldNormalTex	: register(t1);
 Texture2D<float>						DepthTex		: register(t2);
-Texture2D<float>						BlueNoiseTex	: register(t3);
+Texture2D								SkyHdrTex		: register(t3);
+Texture2D<float>						BlueNoiseTex	: register(t4);
 RWTexture2D<float3>						RenderTarget	: register(u0);
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
 ConstantBuffer<LightCB>					cbLight			: register(b1);
 ConstantBuffer<GlobalIlluminationCB>	cbGI			: register(b2);
+SamplerState							SkyHdrTex_s		: register(s0);
 
 
 float RadicalInverseVdC(uint bits)
@@ -156,7 +158,8 @@ void GlobalIlluminationRGS()
 			float3 N = mat_param.normal;
 			float3 L = -cbLight.lightDir.xyz;
 			float3 DiffuseColor = lerp(mat_param.baseColor.rgb, 0.0, mat_param.metallic);
-			float3 LightResult = (saturate(dot(N, L)) * shadow_factor * cbLight.lightColor.rgb + SkyColor(mat_param.normal) * cbLight.skyPower) * DiffuseColor;
+			float3 LightResult = (saturate(dot(N, L)) * shadow_factor * cbLight.lightColor.rgb
+				+ SkyTextureLookup(SkyHdrTex, SkyHdrTex_s, mat_param.normal) * cbLight.skyPower) * DiffuseColor;
 			float attn = saturate(1.0 / (payload.hitT * payload.hitT));
 			//totalColor += (LightResult * localDir.z * attn);
 			totalColor += LightResult * localDir.z;

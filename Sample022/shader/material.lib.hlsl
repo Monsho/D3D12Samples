@@ -28,12 +28,15 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 	param.hitT = RayTCurrent();
 
 	param.baseColor = texBaseColor.SampleLevel(texBaseColor_s, uv, 0.0);
-	param.metallic = texORM.SampleLevel(texBaseColor_s, uv, 0.0).b;
+	float3 orm = texORM.SampleLevel(texBaseColor_s, uv, 0.0).rgb;
+	param.metallic = orm.b;
+	param.roughness = orm.g;
 
+	// don't use normal maps.
 	float3 n0 = VertexNormal[indices.x];
-	param.normal = n0 +
+	param.normal = normalize(n0 +
 		attr.barycentrics.x * (VertexNormal[indices.y] - n0) +
-		attr.barycentrics.y * (VertexNormal[indices.z] - n0);
+		attr.barycentrics.y * (VertexNormal[indices.z] - n0));
 
 	EncodeMaterialPayload(param, payload);
 }

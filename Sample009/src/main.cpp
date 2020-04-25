@@ -761,8 +761,8 @@ private:
 
 			// SRV‚Í3‚Â
 			D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
-				//imageTextureView_.GetDescInfo().cpuHandle,
-				tiledDescInfo_.cpuHandle,
+				imageTextureView_.GetDescInfo().cpuHandle,
+				//tiledDescInfo_.cpuHandle,
 				glbMesh_.GetSubmesh(i)->GetTexcoordBV().GetDescInfo().cpuHandle,
 				glbMesh_.GetSubmesh(i)->GetIndexBV().GetDescInfo().cpuHandle,
 			};
