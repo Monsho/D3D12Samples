@@ -5,6 +5,8 @@
 #define kMaterialContribution			0
 #define kShadowContribution				1
 
+#define kFlagBackFaceHit				0x01 << 0
+
 struct HitPayload
 {
 	float	hitT;
@@ -24,6 +26,7 @@ struct MaterialParam
 	float	roughness;
 	float4	baseColor;
 	float	hitT;
+	uint	flag;
 };
 
 void EncodeMaterialPayload(
@@ -45,7 +48,8 @@ void EncodeMaterialPayload(
 		uint r = uint(param.baseColor.r * 255.0);
 		uint g = uint(param.baseColor.g * 255.0);
 		uint b = uint(param.baseColor.b * 255.0);
-		payload.baseColorUnorm = (b << 16) | (g << 8) | (r << 0);
+		uint a = param.flag & 0xff;
+		payload.baseColorUnorm = (a << 24) | (b << 16) | (g << 8) | (r << 0);
 	}
 }
 
@@ -70,6 +74,7 @@ void DecodeMaterialPayload(
 		(payload.baseColorUnorm >> 16) & 0xff,
 		0xff);
 	param.baseColor = float4(bc) * (1.0 / 255.0);
+	param.flag = (payload.baseColorUnorm >> 24) & 0xff;
 }
 
 #endif // PAYLOAD_HLSLI

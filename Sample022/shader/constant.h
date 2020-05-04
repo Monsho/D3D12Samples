@@ -23,7 +23,11 @@ struct LightCB
 {
 	float4		lightDir;
 	float4		lightColor;
+	float4		spotLightColor;
+	float4		spotLightPosAndRadius;
+	float4		spotLightDirAndCos;
 	float		skyPower;
+	float		giIntensity;
 };
 
 struct MaterialCB
@@ -41,13 +45,6 @@ struct MeshCB
 {
 	float4x4	mtxLocalToWorld;
 	float4x4	mtxPrevLocalToWorld;
-};
-
-struct GlobalIlluminationCB
-{
-	float		intensity;
-	uint		sampleCount;
-	uint		totalSampleCount;
 };
 
 struct ReflectionCB

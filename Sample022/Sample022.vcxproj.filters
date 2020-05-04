@@ -7,6 +7,9 @@
     <Filter Include="shader">
       <UniqueIdentifier>{ccad6f8a-e2e6-4530-a323-070b554fdb6a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="shader\rtxgi">
+      <UniqueIdentifier>{36676003-1e81-4e1a-ac29-796f5aa05d84}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -16,6 +19,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\mesh_instance.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\rtxgi_component.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,19 +53,43 @@
     <FxCompile Include="shader\direct_shadow.lib.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
-    <FxCompile Include="shader\global_illumination.lib.hlsl">
-      <Filter>shader</Filter>
-    </FxCompile>
     <FxCompile Include="shader\rt_reflection.lib.hlsl">
-      <Filter>shader</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\mipmapgen.c.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
     <FxCompile Include="shader\irr_map_gen.c.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
     <FxCompile Include="shader\temporal_blend.c.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\irradiance_blending.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\distance_blending.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\border_row_update.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\border_column_update.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\probe_relocation.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\state_classifier.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\state_activate_all.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\probe_lighting.lib.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\debug_probe.vv.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\debug_probe.p.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
   </ItemGroup>
@@ -83,6 +113,12 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="src\mesh_instance.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="shader\rtxgi\volume_desc.h">
+      <Filter>shader\rtxgi</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rtxgi_component.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

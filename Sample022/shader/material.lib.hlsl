@@ -38,6 +38,9 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 		attr.barycentrics.x * (VertexNormal[indices.y] - n0) +
 		attr.barycentrics.y * (VertexNormal[indices.z] - n0));
 
+	param.flag = 0;
+	param.flag |= (HitKind() == HIT_KIND_TRIANGLE_BACK_FACE) ? kFlagBackFaceHit : 0;
+
 	EncodeMaterialPayload(param, payload);
 }
 

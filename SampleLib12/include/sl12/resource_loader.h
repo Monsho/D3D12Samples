@@ -20,6 +20,34 @@ namespace sl12
 		return ((u32(s[0]) << 24) | (u32(s[1]) << 16) | (u32(s[2]) << 8) | (u32(s[3]) << 0));
 	}
 
+	class ResourceItemBase
+	{
+		friend class ResourceLoader;
+
+	public:
+		static const u32 kType = TYPE_FOURCC("BASE");
+
+		ResourceItemBase(u32 tid)
+			: typeID_(tid)
+		{}
+		virtual ~ResourceItemBase()
+		{}
+
+		const std::string& GetFilePath() const
+		{
+			return filePath_;
+		}
+		const u32 GetTypeID() const
+		{
+			return typeID_;
+		}
+
+	protected:
+		ResourceLoader* pParentLoader_ = nullptr;
+		std::string		filePath_;
+		u32				typeID_;
+	};	// class ResourceItemBase
+
 	class ResourceHandle
 	{
 		friend class ResourceLoader;
@@ -59,34 +87,6 @@ namespace sl12
 		ResourceLoader*	pParentLoader_ = nullptr;
 		u64				id_ = 0;
 	};	// class ResourceHandle
-
-	class ResourceItemBase
-	{
-		friend class ResourceLoader;
-
-	public:
-		static const u32 kType = TYPE_FOURCC("BASE");
-
-		ResourceItemBase(u32 tid)
-			: typeID_(tid)
-		{}
-		virtual ~ResourceItemBase()
-		{}
-
-		const std::string& GetFilePath() const
-		{
-			return filePath_;
-		}
-		const u32 GetTypeID() const
-		{
-			return typeID_;
-		}
-
-	protected:
-		ResourceLoader*	pParentLoader_ = nullptr;
-		std::string		filePath_;
-		u32				typeID_;
-	};	// class ResourceItemBase
 
 	class ResourceLoader
 	{

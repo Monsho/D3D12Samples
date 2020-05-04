@@ -22,12 +22,13 @@
 #include "sl12/descriptor_set.h"
 #include "sl12/fence.h"
 #include "sl12/death_list.h"
-#include "sl12/resource_loader.h"
 #include "sl12/resource_mesh.h"
 #include "sl12/resource_texture.h"
+#include "sl12/resource_loader.h"
 #include "sl12/constant_buffer_cache.h"
 #include "mesh_instance.h"
 #include "as_manager.h"
+#include "rtxgi_component.h"
 
 #include "CompiledShaders/zpre.vv.hlsl.h"
 #include "CompiledShaders/zpre.p.hlsl.h"
@@ -38,10 +39,12 @@
 #include "CompiledShaders/occlusion.lib.hlsl.h"
 #include "CompiledShaders/material.lib.hlsl.h"
 #include "CompiledShaders/direct_shadow.lib.hlsl.h"
-#include "CompiledShaders/global_illumination.lib.hlsl.h"
 #include "CompiledShaders/rt_reflection.lib.hlsl.h"
+#include "CompiledShaders/probe_lighting.lib.hlsl.h"
 #include "CompiledShaders/irr_map_gen.c.hlsl.h"
 #include "CompiledShaders/temporal_blend.c.hlsl.h"
+#include "CompiledShaders/debug_probe.vv.hlsl.h"
+#include "CompiledShaders/debug_probe.p.hlsl.h"
 
 #define USE_IN_CPP
 #include "../shader/constant.h"
@@ -72,13 +75,14 @@ namespace
 	static LPCWSTR kMaterialMaskedHG = L"MaterialMaskedHG";
 	static LPCWSTR kDirectShadowRGS = L"DirectShadowRGS";
 	static LPCWSTR kDirectShadowMS = L"DirectShadowMS";
-	static LPCWSTR kGlobalIlluminationRGS = L"GlobalIlluminationRGS";
-	static LPCWSTR kGlobalIlluminationMS = L"GlobalIlluminationMS";
 	static LPCWSTR kReflectionRGS = L"RTReflectionRGS";
 	static LPCWSTR kReflectionMS = L"RTReflectionMS";
+	static LPCWSTR kProbeLightingRGS = L"ProbeLightingRGS";
+	static LPCWSTR kMaterialMS = L"MaterialMS";
 
 	static const DXGI_FORMAT	kReytracingResultFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
+	static const int	kRelocationIterationCount = 50;
 }
 
 class SampleApplication
@@ -196,6 +200,22 @@ public:
 				return false;
 			}
 		}
+		{
+			D3D12_SAMPLER_DESC samDesc{};
+			samDesc.AddressU = samDesc.AddressV = samDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+			samDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			samDesc.MinLOD = 0.0f;
+			samDesc.MaxLOD = FLT_MAX;
+			if (!trilinearSampler_.Initialize(&device_, samDesc))
+			{
+				return false;
+			}
+		}
+
+		if (!CreateSphere())
+		{
+			return false;
+		}
 
 		if (!zpreRootSig_.Initialize(&device_, &zpreVS_, &zprePS_, nullptr, nullptr, nullptr))
 		{
@@ -233,7 +253,7 @@ public:
 			desc.blend.rtDesc[0].isBlendEnable = false;
 			desc.blend.rtDesc[0].writeMask = 0xf;
 
-			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_BACK;
 			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
 			desc.rasterizer.isDepthClipEnable = true;
 			desc.rasterizer.isFrontCCW = false;
@@ -333,6 +353,55 @@ public:
 			desc.pCS = &countClearCS_;
 
 			if (!countClearPso_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			if (!debugProbeVS_.Initialize(&device_, sl12::ShaderType::Vertex, g_pDebugProbeVS, sizeof(g_pDebugProbeVS)))
+			{
+				return false;
+			}
+			if (!debugProbePS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pDebugProbePS, sizeof(g_pDebugProbePS)))
+			{
+				return false;
+			}
+			if (!debugProbeRS_.Initialize(&device_, &debugProbeVS_, &debugProbePS_, nullptr, nullptr, nullptr))
+			{
+				return false;
+			}
+
+			sl12::GraphicsPipelineStateDesc desc;
+			desc.pRootSignature = &debugProbeRS_;
+			desc.pVS = &debugProbeVS_;
+			desc.pPS = &debugProbePS_;
+
+			desc.blend.sampleMask = UINT_MAX;
+			desc.blend.rtDesc[0].isBlendEnable = false;
+			desc.blend.rtDesc[0].writeMask = 0xf;
+
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+			desc.rasterizer.isDepthClipEnable = true;
+			desc.rasterizer.isFrontCCW = false;
+
+			desc.depthStencil.isDepthEnable = true;
+			desc.depthStencil.isDepthWriteEnable = true;
+			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+			D3D12_INPUT_ELEMENT_DESC input_elems[] = {
+				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			};
+			desc.inputLayout.numElements = ARRAYSIZE(input_elems);
+			desc.inputLayout.pElements = input_elems;
+
+			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+			desc.numRTVs = 0;
+			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.dsvFormat = DXGI_FORMAT_D32_FLOAT;
+			desc.multisampleCount = 1;
+
+			if (!debugProbePso_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -462,6 +531,12 @@ public:
 			CreateSceneCB();
 			CreateMeshCB();
 
+			rtxgiComponent_.reset(new RtxgiComponent(&device_));
+			if (!rtxgiComponent_->Initialize())
+			{
+				assert(!"FAILED!! initialize rtxgi.");
+			}
+
 			InitializeRaytracingPipeline();
 			utilCmdList_.Reset();
 			InitializeIrradianceMap(&utilCmdList_);
@@ -488,6 +563,7 @@ public:
 		auto&& prevGBuffer = gbuffers_[prevFrameIndex];
 
 		UpdateSceneCB(frameIndex);
+		rtxgiComponent_->UpdateVolume(nullptr);
 
 		pCBCache_->BeginNewFrame();
 		gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
@@ -496,7 +572,6 @@ public:
 		ControlCamera();
 		if (isCameraMove_)
 		{
-			giSampleTotal_ = 0;
 			isCameraMove_ = false;
 		}
 
@@ -504,19 +579,21 @@ public:
 		{
 			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
 			{
-				giSampleTotal_ = 0;
 			}
-			if (ImGui::SliderFloat("Light Intensity", &lightPower_, 0.0f, 10.0f))
+			if (ImGui::SliderFloat("Light Intensity", &lightIntensity_, 0.0f, 10.0f))
 			{
-				giSampleTotal_ = 0;
 			}
 			if (ImGui::ColorEdit3("Light Color", lightColor_))
 			{
-				giSampleTotal_ = 0;
 			}
-			if (ImGui::SliderInt("GI SamplePerPixel", &giSampleCount_, 1, 8))
+			if (ImGui::SliderFloat("Spot Intensity", &spotLightIntensity_, 0.0f, 1000.0f))
 			{
-				giSampleTotal_ = 0;
+			}
+			if (ImGui::SliderFloat("Spot Cone Angle", &spotLightOuterAngle_, 10.0f, 50.0f))
+			{
+			}
+			if (ImGui::ColorEdit3("Spot Color", spotLightColor_))
+			{
 			}
 			if (ImGui::SliderFloat("GI Intensity", &giIntensity_, 0.0f, 10.0f))
 			{
@@ -536,8 +613,29 @@ public:
 			if (ImGui::SliderFloat2("Metallic Range", (float*)&metallicRange_, 0.0f, 1.0f))
 			{
 			}
+			float hysteresis = rtxgiComponent_->GetDDGIVolume()->GetProbeHysteresis();
+			if (ImGui::SliderFloat("Hysteresis", &hysteresis, 0.0f, 1.0f))
+			{
+				rtxgiComponent_->SetDescHysteresis(hysteresis);
+			}
+			float changeT = rtxgiComponent_->GetDDGIVolume()->GetProbeChangeThreshold();
+			if (ImGui::SliderFloat("Change Threshold", &changeT, 0.0f, 1.0f))
+			{
+				rtxgiComponent_->SetDescChangeThreshold(changeT);
+			}
+			float brightT = rtxgiComponent_->GetDDGIVolume()->GetProbeBrightnessThreshold();
+			if (ImGui::SliderFloat("Brightness Threshold", &brightT, 0.0f, 10.0f))
+			{
+				rtxgiComponent_->SetDescBrightnessThreshold(brightT);
+			}
+			if (ImGui::Button("Probe Relocation"))
+			{
+				ddgiRelocationCount_ = kRelocationIterationCount;
+			}
 			ImGui::Checkbox("Indirect Draw", &isIndirectDraw_);
 			ImGui::Checkbox("Freeze Cull", &isFreezeCull_);
+			ImGui::Checkbox("Stop Spot", &isStopSpot_);
+			ImGui::Checkbox("Display Probe", &isDebugProbe_);
 
 			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
 			uint64_t timestamp[6];
@@ -595,9 +693,9 @@ public:
 				: pInstance(p)
 			{}
 		};
-		std::array<RenderMeshComponent, 2> meshes = {
+		RenderMeshComponent meshes[] = {
 			RenderMeshComponent(&sponzaInstance_),
-			RenderMeshComponent(&ballInstance_)
+			//RenderMeshComponent(&ballInstance_)
 		};
 		for (auto&& mesh : meshes)
 		{
@@ -805,6 +903,65 @@ public:
 			pCmdList->TransitionBarrier(&rtShadowResult_.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 		}
 
+		// probe lighting.
+		{
+			// デスクリプタを設定
+			rtGlobalDescSet_.Reset();
+			rtGlobalDescSet_.SetCsCbv(0, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(1, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(2, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(3, irrTexSrv_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(0, rtxgiComponent_->GetRadianceUAV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(1, rtxgiComponent_->GetOffsetUAV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(2, rtxgiComponent_->GetStateUAV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSampler(0, trilinearSampler_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSampler(1, hdrSampler_.GetDescInfo().cpuHandle);
+
+			// コピーしつつコマンドリストに積む
+			D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
+				pAsManager_->GetTlas()->GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
+			};
+			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, pRtDescManager_, as_address, ARRAYSIZE(as_address));
+
+			// レイトレースを実行
+			D3D12_DISPATCH_RAYS_DESC desc{};
+			desc.HitGroupTable.StartAddress = rtProbeLightingHGTable_.GetResourceDep()->GetGPUVirtualAddress();
+			desc.HitGroupTable.SizeInBytes = rtProbeLightingHGTable_.GetSize();
+			desc.HitGroupTable.StrideInBytes = rtShaderRecordSize_;
+			desc.MissShaderTable.StartAddress = rtProbeLightingMSTable_.GetResourceDep()->GetGPUVirtualAddress();
+			desc.MissShaderTable.SizeInBytes = rtProbeLightingMSTable_.GetSize();
+			desc.MissShaderTable.StrideInBytes = rtShaderRecordSize_;
+			desc.RayGenerationShaderRecord.StartAddress = rtProbeLightingRGSTable_.GetResourceDep()->GetGPUVirtualAddress();
+			desc.RayGenerationShaderRecord.SizeInBytes = rtProbeLightingRGSTable_.GetSize();
+			desc.Width = rtxgiComponent_->GetDDGIVolume()->GetNumRaysPerProbe();
+			desc.Height = rtxgiComponent_->GetDDGIVolume()->GetNumProbes();
+			desc.Depth = 1;
+			pCmdList->GetDxrCommandList()->SetPipelineState1(rtProbeLightingPSO_.GetPSO());
+			pCmdList->GetDxrCommandList()->DispatchRays(&desc);
+
+			// uav barrier.
+			pCmdList->UAVBarrier(rtxgiComponent_->GetRadiance());
+
+			// update probes.
+			rtxgiComponent_->UpdateProbes(pCmdList);
+
+			// relocate probes.
+			if (ddgiRelocationCount_ > 0)
+			{
+				float distanceScale = (float)ddgiRelocationCount_ / (float)kRelocationIterationCount;
+				rtxgiComponent_->RelocateProbes(pCmdList, distanceScale);
+				ddgiRelocationCount_--;
+			}
+
+			if (ddgiRelocationCount_ <= 0)
+			{
+				rtxgiComponent_->ClassifyProbes(pCmdList);
+			}
+
+			pCmdList->SetDescriptorHeapDirty();
+		}
+
 		// raytrace reflection.
 		RaytracingResult* pPrevReflResult = nullptr;
 		RaytracingResult* pCurrReflResult = nullptr;
@@ -882,49 +1039,6 @@ public:
 			pCmdList->TransitionBarrier(&pCurrReflResult->tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 		}
 
-		// raytrace global illumination.
-		{
-			pCmdList->TransitionBarrier(&rtGIResult_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-
-			// デスクリプタを設定
-			auto sky = const_cast<sl12::ResourceItemTexture*>(hSkyHdrRes_.GetItem<sl12::ResourceItemTexture>());
-			auto tex = const_cast<sl12::ResourceItemTexture*>(hBlueNoiseRes_.GetItem<sl12::ResourceItemTexture>());
-			rtGlobalDescSet_.Reset();
-			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsCbv(2, giCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(1, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(2, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(3, irrTexSrv_.GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(4, tex->GetTextureView().GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsUav(0, rtGIResult_.uav.GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSampler(0, hdrSampler_.GetDescInfo().cpuHandle);
-
-			// コピーしつつコマンドリストに積む
-			D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
-				pAsManager_->GetTlas()->GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress(),
-			};
-			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, pRtDescManager_, as_address, ARRAYSIZE(as_address));
-
-			// レイトレースを実行
-			D3D12_DISPATCH_RAYS_DESC desc{};
-			desc.HitGroupTable.StartAddress = rtGlobalIlluminationHGTable_.GetResourceDep()->GetGPUVirtualAddress();
-			desc.HitGroupTable.SizeInBytes = rtGlobalIlluminationHGTable_.GetSize();
-			desc.HitGroupTable.StrideInBytes = rtShaderRecordSize_;
-			desc.MissShaderTable.StartAddress = rtGlobalIlluminationMSTable_.GetResourceDep()->GetGPUVirtualAddress();
-			desc.MissShaderTable.SizeInBytes = rtGlobalIlluminationMSTable_.GetSize();
-			desc.MissShaderTable.StrideInBytes = rtShaderRecordSize_;
-			desc.RayGenerationShaderRecord.StartAddress = rtGlobalIlluminationRGSTable_.GetResourceDep()->GetGPUVirtualAddress();
-			desc.RayGenerationShaderRecord.SizeInBytes = rtGlobalIlluminationRGSTable_.GetSize();
-			desc.Width = kScreenWidth;
-			desc.Height = kScreenHeight;
-			desc.Depth = 1;
-			pCmdList->GetDxrCommandList()->SetPipelineState1(rtGlobalIlluminationPSO_.GetPSO());
-			pCmdList->GetDxrCommandList()->DispatchRays(&desc);
-
-			pCmdList->TransitionBarrier(&rtGIResult_.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
-		}
-
 		// コマンドリスト変更
 		pCmdList = &litCmdList;
 		d3dCmdList = pCmdList->GetCommandList();
@@ -935,7 +1049,8 @@ public:
 		{
 			// set rendar target.
 			auto&& rtv = swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle;
-			d3dCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
+			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
 
 			// set viewport and scissor rect.
 			D3D12_VIEWPORT vp;
@@ -960,23 +1075,58 @@ public:
 			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(2, giCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(3, hReflectionCB.GetCBV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(2, hReflectionCB.GetCBV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(3, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(1, curGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(2, curGBuffer.gbufferSRV[2].GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(3, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(4, rtShadowResult_.srv.GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(5, rtGIResult_.srv.GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(6, pCurrReflResult->srv.GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(7, irrTexSrv_.GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(5, pCurrReflResult->srv.GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(6, irrTexSrv_.GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(7, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(8, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsUav(0, rtxgiComponent_->GetOffsetUAV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsUav(1, rtxgiComponent_->GetStateUAV()->GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(1, hdrSampler_.GetDescInfo().cpuHandle);
+			descSet_.SetPsSampler(2, trilinearSampler_.GetDescInfo().cpuHandle);
 
 			pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&lightingRootSig_, &descSet_);
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			d3dCmdList->IASetIndexBuffer(nullptr);
 			d3dCmdList->DrawInstanced(3, 1, 0, 0);
+		}
+
+		// display probe.
+		if (isDebugProbe_)
+		{
+			// PSO設定
+			d3dCmdList->SetPipelineState(debugProbePso_.GetPSO());
+
+			// 基本Descriptor設定
+			descSet_.Reset();
+			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetVsCbv(1, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(2, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(0, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(1, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsUav(0, rtxgiComponent_->GetOffsetUAV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsUav(1, rtxgiComponent_->GetStateUAV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSampler(0, trilinearSampler_.GetDescInfo().cpuHandle);
+			pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&debugProbeRS_, &descSet_);
+
+			const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
+				sphereVBV_.GetView(),
+			};
+			d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
+
+			auto&& ibv = sphereIBV_.GetView();
+			d3dCmdList->IASetIndexBuffer(&ibv);
+
+			d3dCmdList->DrawIndexedInstanced(sphereIndexCount_, rtxgiComponent_->GetDDGIVolume()->GetNumProbes(), 0, 0, 0);
 		}
 
 		ImGui::Render();
@@ -1015,6 +1165,7 @@ public:
 		imageSampler_.Destroy();
 		anisoSampler_.Destroy();
 		hdrSampler_.Destroy();
+		trilinearSampler_.Destroy();
 
 		glbMeshCBV_.Destroy();
 		glbMeshCB_.Destroy();
@@ -1024,9 +1175,6 @@ public:
 
 		for (auto&& v : lightCBVs_) v.Destroy();
 		for (auto&& v : lightCBs_) v.Destroy();
-
-		for (auto&& v : giCBVs_) v.Destroy();
-		for (auto&& v : giCBs_) v.Destroy();
 
 		for (auto&& v : materialCBVs_) v.Destroy();
 		for (auto&& v : materialCBs_) v.Destroy();
@@ -1105,10 +1253,7 @@ private:
 		DirectX::XMStoreFloat4x4(&mtxWorldToView_, mtxWorldToView);
 		mtxPrevWorldToView_ = mtxWorldToView_;
 
-		DirectX::XMFLOAT4 lightDir = { 0.0f, -1.0f, 0.0f, 0.0f };
-		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
-
-		DirectX::XMFLOAT4 lightColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+		spotLightRotation_ = DirectX::XMQuaternionRotationRollPitchYaw(0.0f, 0.0f, DirectX::XMConvertToRadians(60.0));
 
 		for (int i = 0; i < kBufferCount; i++)
 		{
@@ -1126,15 +1271,6 @@ private:
 				return false;
 			}
 			if (!lightCBVs_[i].Initialize(&device_, &lightCBs_[i]))
-			{
-				return false;
-			}
-
-			if (!giCBs_[i].Initialize(&device_, sizeof(GlobalIlluminationCB), 0, sl12::BufferUsage::ConstantBuffer, true, false))
-			{
-				return false;
-			}
-			if (!giCBVs_[i].Initialize(&device_, &giCBs_[i]))
 			{
 				return false;
 			}
@@ -1188,8 +1324,22 @@ private:
 
 		DirectX::XMFLOAT4 lightDir = { 0.1f, -1.0f, 0.1f, 0.0f };
 		DirectX::XMStoreFloat4(&lightDir, DirectX::XMVector3Normalize(DirectX::XMLoadFloat4(&lightDir)));
+		DirectX::XMFLOAT4 lightColor = { lightColor_[0] * lightIntensity_, lightColor_[1] * lightIntensity_, lightColor_[2] * lightIntensity_, 1.0f };
 
-		DirectX::XMFLOAT4 lightColor = { lightColor_[0] * lightPower_, lightColor_[1] * lightPower_, lightColor_[2] * lightPower_, 1.0f };
+		DirectX::XMFLOAT4 spotLightColor = { spotLightColor_[0] * spotLightIntensity_, spotLightColor_[1] * spotLightIntensity_, spotLightColor_[2] * spotLightIntensity_, 1.0f };
+		DirectX::XMFLOAT4 spotLightPosAndRadius(spotLightPosition_.x, spotLightPosition_.y, spotLightPosition_.z, spotLightRadius_);
+		DirectX::XMFLOAT4 spotLightDirBase(0.0f, -1.0f, 0.0f, 0.0f);
+		auto spotLightDir = DirectX::XMLoadFloat4(&spotLightDirBase);
+		spotLightDir = DirectX::XMVector3Rotate(spotLightDir, spotLightRotation_);
+		DirectX::XMFLOAT4 spotLightDirAndCos;
+		DirectX::XMStoreFloat4(&spotLightDirAndCos, spotLightDir);
+		spotLightDirAndCos.w = cosf(DirectX::XMConvertToRadians(spotLightOuterAngle_));
+
+		if (!isStopSpot_)
+		{
+			auto rotQuat = DirectX::XMQuaternionRotationRollPitchYaw(0.0f, DirectX::XMConvertToRadians(1.0f), 0.0f);
+			spotLightRotation_ = DirectX::XMQuaternionMultiply(spotLightRotation_, rotQuat);
+		}
 
 		{
 			auto cb = reinterpret_cast<SceneCB*>(sceneCBs_[frameIndex].Map(nullptr));
@@ -1209,17 +1359,12 @@ private:
 			auto cb = reinterpret_cast<LightCB*>(lightCBs_[frameIndex].Map(nullptr));
 			cb->lightDir = lightDir;
 			cb->lightColor = lightColor;
+			cb->spotLightColor = spotLightColor;
+			cb->spotLightPosAndRadius = spotLightPosAndRadius;
+			cb->spotLightDirAndCos = spotLightDirAndCos;
 			cb->skyPower = skyPower_;
+			cb->giIntensity = giIntensity_;
 			lightCBs_[frameIndex].Unmap();
-		}
-
-		{
-			auto cb = reinterpret_cast<GlobalIlluminationCB*>(giCBs_[frameIndex].Map(nullptr));
-			cb->intensity = giIntensity_;
-			cb->sampleCount = giSampleCount_;
-			cb->totalSampleCount = giSampleTotal_;
-			giCBs_[frameIndex].Unmap();
-			giSampleTotal_ += giSampleCount_;
 		}
 
 		{
@@ -1519,15 +1664,21 @@ private:
 			}
 			sponzaInstance_.SetMtxTransform(mtxSponza);
 
+			DirectX::XMFLOAT4X4 mtxBall(
+				1, 0, 0, 0,
+				0, 1, 0, 0,
+				0, 0, 1, 0,
+				0, -4, 0, 1);
 			if (!ballInstance_.Initialize(&device_, hMeshRes_[1]))
 			{
 				return false;
 			}
+			ballInstance_.SetMtxTransform(mtxBall);
 
 			// build as.
 			sl12::TlasInstance instances[] = {
 				{&sponzaInstance_, 0xff, 0},
-				{&ballInstance_, 0xff, 0},
+				//{&ballInstance_, 0xff, 0},
 			};
 			pAsManager_->EntryMeshItem(hMeshRes_[0]);
 			pAsManager_->EntryMeshItem(hMeshRes_[1]);
@@ -1660,36 +1811,6 @@ private:
 
 			// export shader from library.
 			D3D12_EXPORT_DESC libExport[] = {
-				{ kGlobalIlluminationRGS,	nullptr, D3D12_EXPORT_FLAG_NONE },
-				{ kGlobalIlluminationMS,	nullptr, D3D12_EXPORT_FLAG_NONE },
-				{ kDirectShadowMS,			nullptr, D3D12_EXPORT_FLAG_NONE },
-			};
-			dxrDesc.AddDxilLibrary(g_pGlobalIlluminationLib, sizeof(g_pGlobalIlluminationLib), libExport, ARRAYSIZE(libExport));
-
-			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
-
-			// global root signature.
-			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
-
-			// TraceRay recursive count.
-			dxrDesc.AddRaytracinConfig(1);
-
-			// hit group collection.
-			dxrDesc.AddExistingCollection(rtMaterialCollection_.GetPSO(), nullptr, 0);
-			dxrDesc.AddExistingCollection(rtOcclusionCollection_.GetPSO(), nullptr, 0);
-
-			// PSO生成
-			if (!rtGlobalIlluminationPSO_.Initialize(&device_, dxrDesc))
-			{
-				return false;
-			}
-		}
-		{
-			sl12::DxrPipelineStateDesc dxrDesc;
-
-			// export shader from library.
-			D3D12_EXPORT_DESC libExport[] = {
 				{ kReflectionMS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 				{ kReflectionRGS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 				{ kDirectShadowMS,	nullptr, D3D12_EXPORT_FLAG_NONE },
@@ -1711,6 +1832,36 @@ private:
 
 			// PSO生成
 			if (!rtReflectionPSO_.Initialize(&device_, dxrDesc))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::DxrPipelineStateDesc dxrDesc;
+
+			// export shader from library.
+			D3D12_EXPORT_DESC libExport[] = {
+				{ kProbeLightingRGS,	nullptr, D3D12_EXPORT_FLAG_NONE },
+				{ kMaterialMS,			nullptr, D3D12_EXPORT_FLAG_NONE },
+				{ kDirectShadowMS,		nullptr, D3D12_EXPORT_FLAG_NONE },
+			};
+			dxrDesc.AddDxilLibrary(g_pProbeLightingLib, sizeof(g_pProbeLightingLib), libExport, ARRAYSIZE(libExport));
+
+			// payload size and intersection attr size.
+			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+
+			// global root signature.
+			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
+
+			// TraceRay recursive count.
+			dxrDesc.AddRaytracinConfig(1);
+
+			// hit group collection.
+			dxrDesc.AddExistingCollection(rtMaterialCollection_.GetPSO(), nullptr, 0);
+			dxrDesc.AddExistingCollection(rtOcclusionCollection_.GetPSO(), nullptr, 0);
+
+			// PSO生成
+			if (!rtProbeLightingPSO_.Initialize(&device_, dxrDesc))
 			{
 				return false;
 			}
@@ -1746,7 +1897,7 @@ private:
 		// create render targets.
 		{
 			sl12::TextureDesc desc{};
-			desc.format = DXGI_FORMAT_R8_UNORM;
+			desc.format = DXGI_FORMAT_R8G8_UNORM;
 			desc.width = kScreenWidth;
 			desc.height = kScreenHeight;
 			desc.depth = 1;
@@ -1758,24 +1909,6 @@ private:
 			desc.isUav = true;
 
 			if (!rtShadowResult_.Initialize(&device_, desc))
-			{
-				return false;
-			}
-		}
-		{
-			sl12::TextureDesc desc{};
-			desc.format = DXGI_FORMAT_R11G11B10_FLOAT;
-			desc.width = kScreenWidth;
-			desc.height = kScreenHeight;
-			desc.depth = 1;
-			desc.dimension = sl12::TextureDimension::Texture2D;
-			desc.mipLevels = 1;
-			desc.sampleCount = 1;
-			desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
-			desc.isRenderTarget = true;
-			desc.isUav = true;
-
-			if (!rtGIResult_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -1965,40 +2098,6 @@ private:
 					return false;
 				}
 			}
-			// for GlobalIllumination.
-			{
-				void* rgs_identifier;
-				void* ms_identifier[2];
-				void* hg_identifier[4];
-				{
-					ID3D12StateObjectProperties* prop;
-					rtGlobalIlluminationPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
-					rgs_identifier = prop->GetShaderIdentifier(kGlobalIlluminationRGS);
-					ms_identifier[0] = prop->GetShaderIdentifier(kGlobalIlluminationMS);
-					ms_identifier[1] = prop->GetShaderIdentifier(kDirectShadowMS);
-					hg_identifier[0] = prop->GetShaderIdentifier(kMaterialOpacityHG);
-					hg_identifier[1] = prop->GetShaderIdentifier(kOcclusionOpacityHG);
-					hg_identifier[2] = prop->GetShaderIdentifier(kMaterialMaskedHG);
-					hg_identifier[3] = prop->GetShaderIdentifier(kOcclusionMaskedHG);
-					prop->Release();
-				}
-				if (!CreateRGSorMSTable(&rgs_identifier, 1, rtGlobalIlluminationRGSTable_))
-				{
-					return false;
-				}
-				if (!CreateRGSorMSTable(ms_identifier, 2, rtGlobalIlluminationMSTable_))
-				{
-					return false;
-				}
-				if (!pAsManager_->CreateHitGroupTable(
-					shaderRecordSize,
-					kRTMaterialTableCount,
-					std::bind(SetHitGroupFunc, std::placeholders::_1, std::placeholders::_2, hg_identifier),
-					rtGlobalIlluminationHGTable_))
-				{
-					return false;
-				}
-			}
 			// for RTReflection.
 			{
 				void* rgs_identifier;
@@ -2033,6 +2132,40 @@ private:
 					return false;
 				}
 			}
+			// for ProbeLighting.
+			{
+				void* rgs_identifier;
+				void* ms_identifier[2];
+				void* hg_identifier[4];
+				{
+					ID3D12StateObjectProperties* prop;
+					rtProbeLightingPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
+					rgs_identifier = prop->GetShaderIdentifier(kProbeLightingRGS);
+					ms_identifier[0] = prop->GetShaderIdentifier(kMaterialMS);
+					ms_identifier[1] = prop->GetShaderIdentifier(kDirectShadowMS);
+					hg_identifier[0] = prop->GetShaderIdentifier(kMaterialOpacityHG);
+					hg_identifier[1] = prop->GetShaderIdentifier(kOcclusionOpacityHG);
+					hg_identifier[2] = prop->GetShaderIdentifier(kMaterialMaskedHG);
+					hg_identifier[3] = prop->GetShaderIdentifier(kOcclusionMaskedHG);
+					prop->Release();
+				}
+				if (!CreateRGSorMSTable(&rgs_identifier, 1, rtProbeLightingRGSTable_))
+				{
+					return false;
+				}
+				if (!CreateRGSorMSTable(ms_identifier, 2, rtProbeLightingMSTable_))
+				{
+					return false;
+				}
+				if (!pAsManager_->CreateHitGroupTable(
+					shaderRecordSize,
+					kRTMaterialTableCount,
+					std::bind(SetHitGroupFunc, std::placeholders::_1, std::placeholders::_2, hg_identifier),
+					rtProbeLightingHGTable_))
+				{
+					return false;
+				}
+			}
 		}
 
 		return true;
@@ -2044,12 +2177,12 @@ private:
 		temporalBlendRS_.Destroy();
 		temporalBlendCS_.Destroy();
 
+		rtProbeLightingRGSTable_.Destroy();
+		rtProbeLightingMSTable_.Destroy();
+		rtProbeLightingHGTable_.Destroy();
 		rtReflectionRGSTable_.Destroy();
 		rtReflectionMSTable_.Destroy();
 		rtReflectionHGTable_.Destroy();
-		rtGlobalIlluminationRGSTable_.Destroy();
-		rtGlobalIlluminationMSTable_.Destroy();
-		rtGlobalIlluminationHGTable_.Destroy();
 		rtDirectShadowRGSTable_.Destroy();
 		rtDirectShadowMSTable_.Destroy();
 		rtDirectShadowHGTable_.Destroy();
@@ -2059,8 +2192,8 @@ private:
 		rtOcclusionCollection_.Destroy();
 		rtMaterialCollection_.Destroy();
 		rtDirectShadowPSO_.Destroy();
-		rtGlobalIlluminationPSO_.Destroy();
 		rtReflectionPSO_.Destroy();
+		rtProbeLightingPSO_.Destroy();
 
 		sponzaInstance_.Destroy();
 		sl12::SafeDelete(pRtDescManager_);
@@ -2165,6 +2298,84 @@ private:
 		irrGenPso_.Destroy();
 		irrGenRS_.Destroy();
 		irrGenCS_.Destroy();
+	}
+
+	bool CreateSphere()
+	{
+		const int kLongitudeCount = 16;
+		const int kLatitudeCount = 8;
+
+		const int kVertexCount = kLongitudeCount * (kLatitudeCount - 1) + 2;
+		if (!sphereVB_.Initialize(&device_, sizeof(DirectX::XMFLOAT3) * kVertexCount, sizeof(DirectX::XMFLOAT3), sl12::BufferUsage::VertexBuffer, true, false))
+		{
+			return false;
+		}
+		if (!sphereVBV_.Initialize(&device_, &sphereVB_))
+		{
+			return false;
+		}
+		{
+			auto p = (DirectX::XMFLOAT3*)sphereVB_.Map(nullptr);
+			*p = DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f); p++;
+			for (int y = 1; y < kLatitudeCount; y++)
+			{
+				float ay = DirectX::XM_PI * (float)y / (float)kLatitudeCount;
+				float py = cos(ay);
+				for (int x = 0; x < kLongitudeCount; x++)
+				{
+					float ax = DirectX::XM_2PI * (float)x / (float)kLongitudeCount;
+					float px = cos(ax) * sin(ay);
+					float pz = sin(ax) * sin(ay);
+					*p = DirectX::XMFLOAT3(px, py, pz); p++;
+				}
+			}
+			*p = DirectX::XMFLOAT3(0.0f, -1.0f, 0.0f); p++;
+			sphereVB_.Unmap();
+		}
+
+		sphereIndexCount_ = (kLongitudeCount * 2 + kLongitudeCount * 2 * (kLatitudeCount - 2)) * 3;
+		if (!sphereIB_.Initialize(&device_, sizeof(sl12::u32) * sphereIndexCount_, sizeof(sl12::u32), sl12::BufferUsage::IndexBuffer, true, false))
+		{
+			return false;
+		}
+		if (!sphereIBV_.Initialize(&device_, &sphereIB_))
+		{
+			return false;
+		}
+		{
+			auto p = (sl12::u32*)sphereIB_.Map(nullptr);
+			sl12::u32 startIndex = 0;
+			for (int i = 0; i < kLongitudeCount; i++)
+			{
+				*p = startIndex; p++;
+				*p = startIndex + i + 1; p++;
+				*p = startIndex + ((i + 1) % kLongitudeCount) + 1; p++;
+			}
+			startIndex += 1;
+			for (int y = 1; y < kLatitudeCount - 1; y++)
+			{
+				for (int x = 0; x < kLongitudeCount; x++)
+				{
+					*p = startIndex + x; p++;
+					*p = startIndex + x + kLongitudeCount; p++;
+					*p = startIndex + ((x + 1) % kLongitudeCount); p++;
+
+					*p = startIndex + ((x + 1) % kLongitudeCount); p++;
+					*p = startIndex + x + kLongitudeCount; p++;
+					*p = startIndex + ((x + 1) % kLongitudeCount) + kLongitudeCount; p++;
+				}
+				startIndex += kLongitudeCount;
+			}
+			for (int i = 0; i < kLongitudeCount; i++)
+			{
+				*p = startIndex + i; p++;
+				*p = startIndex + kLongitudeCount; p++;
+				*p = startIndex + ((i + 1) % kLongitudeCount); p++;
+			}
+			sphereIB_.Unmap();
+		}
+
+		return true;
 	}
 
 private:
@@ -2365,7 +2576,6 @@ private:
 	sl12::CommandList		utilCmdList_;
 
 	RaytracingResult			rtShadowResult_;
-	RaytracingResult			rtGIResult_;
 	RaytracingResult			rtReflectionResults_[2];
 	int							rtCurrentReflectionResultIndex_ = -1;
 	sl12::RootSignature			rtGlobalRootSig_, rtLocalRootSig_;
@@ -2373,8 +2583,8 @@ private:
 	sl12::DxrPipelineState		rtOcclusionCollection_;
 	sl12::DxrPipelineState		rtMaterialCollection_;
 	sl12::DxrPipelineState		rtDirectShadowPSO_;
-	sl12::DxrPipelineState		rtGlobalIlluminationPSO_;
 	sl12::DxrPipelineState		rtReflectionPSO_;
+	sl12::DxrPipelineState		rtProbeLightingPSO_;
 
 	sl12::Shader				temporalBlendCS_;
 	sl12::RootSignature			temporalBlendRS_;
@@ -2391,25 +2601,23 @@ private:
 	sl12::Buffer			rtDirectShadowRGSTable_;
 	sl12::Buffer			rtDirectShadowMSTable_;
 	sl12::Buffer			rtDirectShadowHGTable_;
-	sl12::Buffer			rtGlobalIlluminationRGSTable_;
-	sl12::Buffer			rtGlobalIlluminationMSTable_;
-	sl12::Buffer			rtGlobalIlluminationHGTable_;
 	sl12::Buffer			rtReflectionRGSTable_;
 	sl12::Buffer			rtReflectionMSTable_;
 	sl12::Buffer			rtReflectionHGTable_;
+	sl12::Buffer			rtProbeLightingRGSTable_;
+	sl12::Buffer			rtProbeLightingMSTable_;
+	sl12::Buffer			rtProbeLightingHGTable_;
 
 	sl12::Sampler			imageSampler_;
 	sl12::Sampler			anisoSampler_;
 	sl12::Sampler			hdrSampler_;
+	sl12::Sampler			trilinearSampler_;
 
 	sl12::Buffer				sceneCBs_[kBufferCount];
 	sl12::ConstantBufferView	sceneCBVs_[kBufferCount];
 
 	sl12::Buffer				lightCBs_[kBufferCount];
 	sl12::ConstantBufferView	lightCBVs_[kBufferCount];
-
-	sl12::Buffer				giCBs_[kBufferCount];
-	sl12::ConstantBufferView	giCBVs_[kBufferCount];
 
 	sl12::Buffer				materialCBs_[kBufferCount];
 	sl12::ConstantBufferView	materialCBVs_[kBufferCount];
@@ -2436,6 +2644,16 @@ private:
 
 	sl12::DescriptorSet			descSet_;
 
+	sl12::Buffer				sphereVB_;
+	sl12::VertexBufferView		sphereVBV_;
+	sl12::Buffer				sphereIB_;
+	sl12::IndexBufferView		sphereIBV_;
+	sl12::u32					sphereIndexCount_;
+
+	sl12::Shader				debugProbeVS_, debugProbePS_;
+	sl12::RootSignature			debugProbeRS_;
+	sl12::GraphicsPipelineState	debugProbePso_;
+
 	sl12::Gui				gui_;
 	sl12::InputData			inputData_{};
 
@@ -2445,20 +2663,24 @@ private:
 	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
 	float					skyPower_ = 0.1f;
-	float					reflectionPower_ = 0.1f;
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
-	float					lightPower_ = 1.0f;
+	float					lightIntensity_ = 1.0f;
+	DirectX::XMFLOAT3		spotLightPosition_ = { -3.0f, -1.0f, 0.0f };
+	DirectX::XMVECTOR		spotLightRotation_ = DirectX::XMQuaternionIdentity();
+	float					spotLightColor_[3] = { 0.8f, 0.4f, 0.1f };
+	float					spotLightIntensity_ = 50.0f;
+	float					spotLightRadius_ = 10.0f;
+	float					spotLightOuterAngle_ = 30.0f;
 	DirectX::XMFLOAT2		roughnessRange_ = { 0.0f, 1.0f };
 	DirectX::XMFLOAT2		metallicRange_ = { 0.0f, 1.0f };
 	uint32_t				loopCount_ = 0;
 	bool					isClearTarget_ = true;
 	float					giIntensity_ = 1.0f;
-	sl12::u32				giSampleTotal_ = 0;
-	int						giSampleCount_ = 1;
-	float					reflectionIntensity_ = 1.0f;
+	float					reflectionIntensity_ = 0.0f;
 	float					reflectionBlend_ = 0.02f;
-	float					reflectionRoughnessMax_ = 0.6f;
+	float					reflectionRoughnessMax_ = 0.4f;
 	sl12::u32				reflectionFrameMax_ = 32;
+	int						ddgiRelocationCount_ = 0;
 	sl12::u32				frameTime_;
 
 	DirectX::XMFLOAT4X4		mtxWorldToView_, mtxPrevWorldToView_;
@@ -2471,6 +2693,8 @@ private:
 
 	bool					isIndirectDraw_ = true;
 	bool					isFreezeCull_ = false;
+	bool					isStopSpot_ = false;
+	bool					isDebugProbe_ = false;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;
@@ -2486,6 +2710,8 @@ private:
 	sl12::ASManager*		pAsManager_ = nullptr;
 	sl12::RaytracingDescriptorManager*	pRtDescManager_ = nullptr;
 	sl12::ConstantBufferCache*	pCBCache_ = nullptr;
+
+	std::unique_ptr<RtxgiComponent>	rtxgiComponent_;
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

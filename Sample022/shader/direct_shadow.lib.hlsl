@@ -7,7 +7,7 @@
 RaytracingAccelerationStructure		Scene			: register(t0, space0);
 Texture2D							WorldNormalTex	: register(t1);
 Texture2D							DepthTex		: register(t2);
-RWTexture2D<float>					RenderTarget	: register(u0);
+RWTexture2D<float2>					RenderTarget	: register(u0);
 ConstantBuffer<SceneCB>				cbScene			: register(b0);
 ConstantBuffer<LightCB>				cbLight			: register(b1);
 
@@ -115,20 +115,50 @@ void DirectShadowRGS()
 	float4 worldPos = mul(cbScene.mtxProjToWorld, float4(clipSpacePos, depth, 1));
 	worldPos.xyz /= worldPos.w;
 
-	// シャドウ用レイの生成
-	float3 direction = -cbLight.lightDir.xyz;
 	float3 origin = worldPos.xyz + normal * 1e-2;
-
 	uint ray_flags = RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
 
-	// シャドウ計算
-	RayDesc ray = { origin, 0.0, direction, TMax };
-	HitPayload payload;
-	payload.hitT = -1;
-	TraceRay(Scene, ray_flags, ~0, kShadowContribution, kGeometricContributionMult, 0, ray, payload);
+	// directional light.
+	{
+		// prepare shadow ray.
+		float3 direction = -cbLight.lightDir.xyz;
+		RayDesc ray = { origin, 0.0, direction, TMax };
+		HitPayload payload;
+		payload.hitT = -1;
 
-	// output result.
-	RenderTarget[index] = (payload.hitT >= 0.0) ? 0.0 : 1.0;
+		// trace ray.
+		TraceRay(Scene, ray_flags, ~0, kShadowContribution, kGeometricContributionMult, 0, ray, payload);
+
+		// output result.
+		RenderTarget[index].r = (payload.hitT >= 0.0) ? 0.0 : 1.0;
+	}
+
+	// spot light.
+	{
+		float3 spotPos = cbLight.spotLightPosAndRadius.xyz;
+		float spotR = cbLight.spotLightPosAndRadius.w;
+		float3 spotDir = cbLight.spotLightDirAndCos.xyz;
+		float spotCos = cbLight.spotLightDirAndCos.w;
+		float3 direction = origin - spotPos;
+		float len = length(direction);
+		direction *= 1.0 / len;
+		float c = dot(spotDir, direction);
+
+		[branch]
+		if (len < spotR && c > spotCos)
+		{
+			// prepare shadow ray.
+			RayDesc ray = { origin, 0.0, -direction, len };
+			HitPayload payload;
+			payload.hitT = -1;
+
+			// trace ray.
+			TraceRay(Scene, ray_flags, ~0, kShadowContribution, kGeometricContributionMult, 0, ray, payload);
+
+			// output result.
+			RenderTarget[index].g = (payload.hitT >= 0.0) ? 0.0 : 1.0;
+		}
+	}
 }
 
 [shader("miss")]

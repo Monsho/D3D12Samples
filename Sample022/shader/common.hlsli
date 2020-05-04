@@ -118,6 +118,18 @@ float3 BrdfGGX(in float3 diffuseColor, in float3 specularColor, in float linearR
 	return (DResult + SResult) * NoL;
 }
 
+float ComputePointLightAttenuation(float radius, float len)
+{
+	float attn = saturate(1.0 / (len * len + Epsilon));
+	attn *= smoothstep(radius, radius * 0.95, len);
+	return attn;
+}
+float ComputeSpotLightAttenuation(float3 spotDir, float spotRadius, float spotConeCos, float3 dir, float len)
+{
+	float attn = ComputePointLightAttenuation(spotRadius, len);
+	attn *= saturate(1.0 - (1.0 - dot(dir, spotDir)) / (1.0 - spotConeCos));
+	return attn;
+}
 
 // get triangle indices functions.
 uint3 GetTriangleIndices2byte(uint offset, ByteAddressBuffer indexBuffer)

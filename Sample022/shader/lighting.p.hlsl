@@ -1,4 +1,6 @@
 #include "common.hlsli"
+#include "ddgi/Irradiance.hlsl"
+#include "ddgi/../../include/rtxgi/ddgi/DDGIVolumeDescGPU.h"
 
 struct PSInput
 {
@@ -8,19 +10,25 @@ struct PSInput
 
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
 ConstantBuffer<LightCB>					cbLight			: register(b1);
-ConstantBuffer<GlobalIlluminationCB>	cbGI			: register(b2);
-ConstantBuffer<ReflectionCB>			cbReflection	: register(b3);
+ConstantBuffer<ReflectionCB>			cbReflection	: register(b2);
+ConstantBuffer<DDGIVolumeDescGPU>		cbDDGIVolume	: register(b3);
 
-Texture2D			texNormal		: register(t0);
-Texture2D			texBaseColor	: register(t1);
-Texture2D			texMotionRM		: register(t2);
-Texture2D<float>	texDepth		: register(t3);
-Texture2D<float>	texScreenShadow	: register(t4);
-Texture2D<float3>	texGI			: register(t5);
-Texture2D			texReflection	: register(t6);
-Texture2D			texSkyHdr		: register(t7);
-SamplerState		texColor_s		: register(s0);
-SamplerState		texSkyHdr_s		: register(s1);
+Texture2D			texNormal			: register(t0);
+Texture2D			texBaseColor		: register(t1);
+Texture2D			texMotionRM			: register(t2);
+Texture2D<float>	texDepth			: register(t3);
+Texture2D<float2>	texScreenShadow		: register(t4);
+Texture2D			texReflection		: register(t5);
+Texture2D			texSkyHdr			: register(t6);
+Texture2D<float4>	DDGIProbeIrradianceSRV	: register(t7);
+Texture2D<float4>	DDGIProbeDistanceSRV	: register(t8);
+
+RWTexture2D<float4>	DDGIProbeOffsets	: register(u0);
+RWTexture2D<uint>	DDGIProbeStates		: register(u1);
+
+SamplerState		texColor_s			: register(s0);
+SamplerState		texSkyHdr_s			: register(s1);
+SamplerState		TrilinearSampler	: register(s2);
 
 float4 main(PSInput In) : SV_TARGET0
 {
@@ -38,7 +46,7 @@ float4 main(PSInput In) : SV_TARGET0
 	float4 baseColor = texBaseColor[pixel];
 	float3 normalInWS = texNormal[pixel].xyz * 2.0 - 1.0;
 	float2 rm = texMotionRM[pixel].zw;
-	float direct_shadow = texScreenShadow[pixel];
+	float2 direct_shadow = texScreenShadow[pixel];
 
 	float roughness = rm.x + Epsilon;
 	float metallic = rm.y;
@@ -47,14 +55,63 @@ float4 main(PSInput In) : SV_TARGET0
 	float3 specularColor = 0.04 * (1 - metallic) + baseColor.rgb * metallic;
 
 	float3 V = normalize(cbScene.camPos.xyz - worldPos.xyz);
-	float3 directColor = BrdfGGX(diffuseColor, specularColor, roughness, normalInWS, -cbLight.lightDir.rgb, V) * cbLight.lightColor.rgb;
-	float3 giColor = texGI[pixel] * cbGI.intensity * diffuseColor;
+
+	// directional light.
+	float3 directionalColor = 0;
+	{
+		directionalColor = BrdfGGX(diffuseColor, specularColor, roughness, normalInWS, -cbLight.lightDir.rgb, V) * cbLight.lightColor.rgb;
+	}
+
+	// spot light.
+	float3 spotColor = 0;
+	{
+		float3 dir = worldPos.xyz - cbLight.spotLightPosAndRadius.xyz;
+		float len = length(dir);
+		dir *= 1.0 / len;
+		float attn = ComputeSpotLightAttenuation(
+			cbLight.spotLightDirAndCos.xyz, cbLight.spotLightPosAndRadius.w, cbLight.spotLightDirAndCos.w,
+			dir, len);
+		[branch]
+		if (attn > 0)
+		{
+			spotColor = BrdfGGX(diffuseColor, specularColor, roughness, normalInWS, -dir, V) * cbLight.spotLightColor.rgb * attn;
+		}
+	}
+
+	// reflection.
 	float3 reflectionColor = SpecularFSchlick(saturate(dot(V, normalInWS)), baseColor.rgb * metallic)
 		* texReflection.SampleLevel(texColor_s, In.uv, 0).rgb * cbReflection.intensity;
-	//float3 reflectionColor = (1 - pow(1 - saturate(dot(V, normalInWS)), 10.0)) * baseColor.rgb * metallic
-	//	* texReflection.SampleLevel(texColor_s, In.uv, 0).rgb * cbReflection.intensity;
+
+	// sky light.
 	float3 skyColor = SkyTextureLookup(texSkyHdr, texSkyHdr_s, normalInWS) * cbLight.skyPower * diffuseColor;
-	//float3 finalColor = directColor * direct_shadow + giColor + reflectionColor;
-	float3 finalColor = directColor * direct_shadow + skyColor + reflectionColor;
+
+	// RTXGI compute irradiance.
+	float3 irradiance = 0;
+	{
+		float3 surfaceBias = DDGIGetSurfaceBias(normalInWS, -V, cbDDGIVolume);
+
+		DDGIVolumeResources resources;
+		resources.probeIrradianceSRV = DDGIProbeIrradianceSRV;
+		resources.probeDistanceSRV = DDGIProbeDistanceSRV;
+		resources.trilinearSampler = TrilinearSampler;
+		resources.probeOffsets = DDGIProbeOffsets;
+		resources.probeStates = DDGIProbeStates;
+
+		irradiance = DDGIGetVolumeIrradiance(
+			worldPos.xyz,
+			surfaceBias,
+			normalInWS,
+			cbDDGIVolume,
+			resources);
+
+		// todo: multiply ao.
+	}
+
+	float3 finalColor =
+		directionalColor * direct_shadow.r
+		+ spotColor * direct_shadow.g
+		+ skyColor
+		+ reflectionColor
+		+ (diffuseColor / PI) * irradiance * cbLight.giIntensity;
 	return float4(pow(saturate(finalColor), 1 / 2.2), 1);
 }
