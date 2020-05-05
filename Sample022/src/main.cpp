@@ -577,6 +577,8 @@ public:
 
 		// GUI
 		{
+			ImGui::Text("This software contains source code");
+			ImGui::Text("  provided by NVIDIA Corporation.");
 			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
 			{
 			}
