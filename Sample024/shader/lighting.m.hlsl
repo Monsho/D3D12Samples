@@ -15,6 +15,7 @@ struct VSOutput
 	float4	tangent		: TANGENT;
 	float2	uv			: TEXCOORD;
 	float3	viewDir		: VIEDIR;
+	float4	color		: COLOR;
 };
 
 struct Meshlet
@@ -140,6 +141,18 @@ void main(
 		Out.tangent.w = InTangent.w;
 		Out.uv = InUV;
 		Out.viewDir = mul(cbMesh.mtxLocalToWorld, float4(InPos, 1)).xyz - cbScene.camPos.xyz;
+
+		float4 kMeshletColors[8] = {
+			float4(1, 0, 0, 1),
+			float4(0, 1, 0, 1),
+			float4(0, 0, 1, 1),
+			float4(1, 0, 1, 1),
+			float4(1, 1, 0, 1),
+			float4(0, 0, 1, 1),
+			float4(1, 1, 1, 1),
+			float4(0, 0, 0, 1),
+		};
+		Out.color = kMeshletColors[gid & 0xf];
 
 		verts[gtid] = Out;
 	}

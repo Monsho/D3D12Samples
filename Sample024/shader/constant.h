@@ -17,7 +17,8 @@ struct SceneCB
 	float4x4	mtxPrevProjToWorld;
 	float4		screenInfo;
 	float4		camPos;
-	bool		isFrustumCull;
+	uint		isFrustumCull;
+	uint		isMeshletColor;
 };
 
 struct LightCB

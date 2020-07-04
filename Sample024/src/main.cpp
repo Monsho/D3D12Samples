@@ -602,6 +602,7 @@ public:
 			}
 			ImGui::Checkbox("Frustum Cull", &isFrustumCulling_);
 			ImGui::Checkbox("Freeze Cull", &isFreezeCull_);
+			ImGui::Checkbox("Meshlet Color", &isMeshletColor_);
 
 			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
 			uint64_t timestamp[6];
@@ -1098,6 +1099,7 @@ private:
 			cb->screenInfo.y = kFarZ;
 			DirectX::XMStoreFloat4(&cb->camPos, cp);
 			cb->isFrustumCull = isFrustumCulling_;
+			cb->isMeshletColor = isMeshletColor_;
 			sceneCBs_[frameIndex].Unmap();
 		}
 
@@ -2168,6 +2170,7 @@ private:
 
 	bool					isFrustumCulling_ = true;
 	bool					isFreezeCull_ = false;
+	bool					isMeshletColor_ = false;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;

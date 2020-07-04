@@ -7,6 +7,7 @@ struct PSInput
 	float4	tangent		: TANGENT;
 	float2	uv			: TEXCOORD0;
 	float3	viewDir		: VIEDIR;
+	float4	color		: COLOR;
 };
 
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
@@ -23,6 +24,12 @@ SamplerState		texColor_s		: register(s0);
 
 float4 main(PSInput In) : SV_TARGET0
 {
+	float4 mult_culor = (1.0).xxxx;
+	if (cbScene.isMeshletColor)
+	{
+		mult_culor = In.color;
+	}
+
 	uint2 pixel = uint2(In.position.xy);
 	float direct_shadow = texScreenShadow[pixel];
 
@@ -43,5 +50,5 @@ float4 main(PSInput In) : SV_TARGET0
 	float3 giColor = texGI[pixel] * cbGI.intensity * diffuseColor;
 	//float3 skyColor = SkyColor(normalInWS) * cbLight.skyPower * diffuseColor;
 	float3 finalColor = directColor * direct_shadow + giColor;
-	return float4(pow(saturate(finalColor), 1 / 2.2), 1);
+	return float4(pow(saturate(finalColor), 1 / 2.2), 1) * mult_culor;
 }
