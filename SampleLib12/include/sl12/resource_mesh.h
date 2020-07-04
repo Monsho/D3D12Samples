@@ -93,6 +93,22 @@ namespace sl12
 		{
 			return indexCount_;
 		}
+		u32 GetPrimitiveOffset() const
+		{
+			return primitiveOffset_;
+		}
+		u32 GetPrimitiveCount() const
+		{
+			return primitiveCount_;
+		}
+		u32 GetVertexIndexOffset() const
+		{
+			return vertexIndexOffset_;
+		}
+		u32 GetVertexIndexCount() const
+		{
+			return vertexIndexCount_;
+		}
 		const ResourceMeshBoundingSphere& GetBoundingSphere() const
 		{
 			return boundingSphere_;
@@ -105,6 +121,10 @@ namespace sl12
 	private:
 		u32							indexOffset_;
 		u32							indexCount_;
+		u32							primitiveOffset_;
+		u32							primitiveCount_;
+		u32							vertexIndexOffset_;
+		u32							vertexIndexCount_;
 		ResourceMeshBoundingSphere	boundingSphere_;
 		ResourceMeshBoundingBox		boundingBox_;
 
@@ -114,6 +134,10 @@ namespace sl12
 		{
 			ar(CEREAL_NVP(indexOffset_),
 				CEREAL_NVP(indexCount_),
+				CEREAL_NVP(primitiveOffset_),
+				CEREAL_NVP(primitiveCount_),
+				CEREAL_NVP(vertexIndexOffset_),
+				CEREAL_NVP(vertexIndexCount_),
 				CEREAL_NVP(boundingSphere_),
 				CEREAL_NVP(boundingBox_));
 		}
@@ -137,17 +161,33 @@ namespace sl12
 		{
 			return vertexOffset_;
 		}
-		u32 GetIndexOffset() const
-		{
-			return indexOffset_;
-		}
 		u32 GetVertexCount() const
 		{
 			return vertexCount_;
 		}
+		u32 GetIndexOffset() const
+		{
+			return indexOffset_;
+		}
 		u32 GetIndexCount() const
 		{
 			return indexCount_;
+		}
+		u32 GetMeshletPrimitiveOffset() const
+		{
+			return meshletPrimitiveOffset_;
+		}
+		u32 GetMeshletPrimitiveCount() const
+		{
+			return meshletPrimitiveCount_;
+		}
+		u32 GetMeshletVertexIndexOffset() const
+		{
+			return meshletVertexIndexOffset_;
+		}
+		u32 GetMeshletVertexIndexCount() const
+		{
+			return meshletVertexIndexCount_;
 		}
 		const std::vector<ResourceMeshMeshlet>& GetMeshlets() const
 		{
@@ -165,9 +205,13 @@ namespace sl12
 	private:
 		int									materialIndex_;
 		u32									vertexOffset_;
-		u32									indexOffset_;
 		u32									vertexCount_;
+		u32									indexOffset_;
 		u32									indexCount_;
+		u32									meshletPrimitiveOffset_;
+		u32									meshletPrimitiveCount_;
+		u32									meshletVertexIndexOffset_;
+		u32									meshletVertexIndexCount_;
 		std::vector<ResourceMeshMeshlet>	meshlets_;
 		ResourceMeshBoundingSphere			boundingSphere_;
 		ResourceMeshBoundingBox				boundingBox_;
@@ -178,9 +222,13 @@ namespace sl12
 		{
 			ar(CEREAL_NVP(materialIndex_),
 				CEREAL_NVP(vertexOffset_),
-				CEREAL_NVP(indexOffset_),
 				CEREAL_NVP(vertexCount_),
+				CEREAL_NVP(indexOffset_),
 				CEREAL_NVP(indexCount_),
+				CEREAL_NVP(meshletPrimitiveOffset_),
+				CEREAL_NVP(meshletPrimitiveCount_),
+				CEREAL_NVP(meshletVertexIndexOffset_),
+				CEREAL_NVP(meshletVertexIndexCount_),
 				CEREAL_NVP(meshlets_),
 				CEREAL_NVP(boundingSphere_),
 				CEREAL_NVP(boundingBox_));
@@ -234,6 +282,14 @@ namespace sl12
 		{
 			return indexBuffer_;
 		}
+		const std::vector<u8>& GetMeshletPackedPrimitive() const
+		{
+			return meshletPackedPrimitive_;
+		}
+		const std::vector<u8>& GetMeshletVertexIndex() const
+		{
+			return meshletVertexIndex_;
+		}
 
 	private:
 		std::vector<ResourceMeshMaterial>	materials_;
@@ -246,6 +302,8 @@ namespace sl12
 		std::vector<u8>						vbTangent_;
 		std::vector<u8>						vbTexcoord_;
 		std::vector<u8>						indexBuffer_;
+		std::vector<u8>						meshletPackedPrimitive_;
+		std::vector<u8>						meshletVertexIndex_;
 
 
 		template <class Archive>
@@ -259,7 +317,9 @@ namespace sl12
 				CEREAL_NVP(vbNormal_),
 				CEREAL_NVP(vbTangent_),
 				CEREAL_NVP(vbTexcoord_),
-				CEREAL_NVP(indexBuffer_));
+				CEREAL_NVP(indexBuffer_),
+				CEREAL_NVP(meshletPackedPrimitive_),
+				CEREAL_NVP(meshletVertexIndex_));
 		}
 	};	// class ResourceMesh
 
@@ -293,6 +353,10 @@ namespace sl12
 		{
 			u32			indexOffset;
 			u32			indexCount;
+			u32			primitiveOffset;
+			u32			primitiveCount;
+			u32			vertexIndexOffset;
+			u32			vertexIndexCount;
 			Bounding	boundingInfo;
 		};	// struct Meshlet
 
@@ -311,6 +375,8 @@ namespace sl12
 			BufferView			tangentView;
 			BufferView			texcoordView;
 			BufferView			indexView;
+			BufferView			packedPrimitiveView;
+			BufferView			vertexIndexView;
 			Bounding			boundingInfo;
 
 			std::vector<Meshlet>	meshlets;
@@ -353,6 +419,14 @@ namespace sl12
 		{
 			return indexBuffer_;
 		}
+		Buffer& GetMeshletPackedPrimitive()
+		{
+			return meshletPackedPrimitive_;
+		}
+		Buffer& GetMeshletVertexIndex()
+		{
+			return meshletVertexIndex_;
+		}
 
 		static ResourceItemBase* LoadFunction(ResourceLoader* pLoader, const std::string& filepath);
 
@@ -371,6 +445,8 @@ namespace sl12
 		Buffer		tangentVB_;
 		Buffer		texcoordVB_;
 		Buffer		indexBuffer_;
+		Buffer		meshletPackedPrimitive_;
+		Buffer		meshletVertexIndex_;
 	};	// class ResourceItemMesh
 
 }	// namespace sl12

@@ -189,7 +189,7 @@ public:
 		{
 			return false;
 		}
-		hMeshRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/test/test.rmesh");
+		hMeshRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 
 		// コマンドリストの初期化
 		auto&& gqueue = device_.GetGraphicsQueue();
@@ -869,30 +869,30 @@ public:
 			switch (vrsType_)
 			{
 			case 0:	// All 1x1
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_1X1, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_1X1, nullptr);
 				break;
 			case 1:	// All 2x1
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_2X1, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_2X1, nullptr);
 				break;
 			case 2:	// All 1x2
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_1X2, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_1X2, nullptr);
 				break;
 			case 3:	// All 2x2
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_2X2, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_2X2, nullptr);
 				break;
 			case 4:	// All 4x2
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_4X2, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_4X2, nullptr);
 				break;
 			case 5:	// All 2x4
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_2X4, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_2X4, nullptr);
 				break;
 			case 6:	// All 4x4
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_4X4, nullptr);
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_4X4, nullptr);
 				break;
 			case 7:	// Tile 2x2
 			case 8:	// Tile 4x4
-				pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_1X1, shading_rate_combiners);
-				pCmdList->GetCommandList5()->RSSetShadingRateImage(vrsImage_.GetResourceDep());
+				pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_1X1, shading_rate_combiners);
+				pCmdList->GetLatestCommandList()->RSSetShadingRateImage(vrsImage_.GetResourceDep());
 				break;
 			}
 
@@ -919,8 +919,8 @@ public:
 			auto&& rtv = swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle;
 			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
 			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
-			pCmdList->GetCommandList5()->RSSetShadingRate(D3D12_SHADING_RATE_1X1, nullptr);
-			pCmdList->GetCommandList5()->RSSetShadingRateImage(nullptr);
+			pCmdList->GetLatestCommandList()->RSSetShadingRate(D3D12_SHADING_RATE_1X1, nullptr);
+			pCmdList->GetLatestCommandList()->RSSetShadingRateImage(nullptr);
 		}
 
 		ImGui::Render();

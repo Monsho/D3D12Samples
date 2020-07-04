@@ -1,12 +1,15 @@
 ﻿#include <sl12/device.h>
 
+#include <sl12/util.h>
 #include <sl12/swapchain.h>
 #include <sl12/command_queue.h>
 #include <sl12/descriptor_heap.h>
-
+#include <string>
 
 namespace sl12
 {
+	LARGE_INTEGER CpuTimer::frequency_;
+
 	//----
 	bool Device::Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs)
 	{
@@ -37,6 +40,7 @@ namespace sl12
 		IDXGIAdapter1* pAdapter = nullptr;
 		ID3D12Device* pDevice = nullptr;
 		ID3D12Device5* pDxrDevice = nullptr;
+		LatestDevice* pLatestDevice = nullptr;
 		UINT adapterIndex = 0;
 		while (true)
 		{
@@ -62,6 +66,7 @@ namespace sl12
 				if (isDxrSupported_)
 				{
 					pDevice->QueryInterface(IID_PPV_ARGS(&pDxrDevice));
+					pDevice->QueryInterface(IID_PPV_ARGS(&pLatestDevice));
 					break;
 				}
 			}
@@ -94,6 +99,7 @@ namespace sl12
 
 		pDevice_ = pDevice;
 		pDxrDevice_ = pDxrDevice;
+		pLatestDevice_ = pLatestDevice;
 
 		// ディスプレイを取得する
 		IDXGIOutput* pOutput{ nullptr };
@@ -111,7 +117,7 @@ namespace sl12
 		ID3D12InfoQueue* pD3DInfoQueue;
 		if (SUCCEEDED(pDevice_->QueryInterface(__uuidof(ID3D12InfoQueue), reinterpret_cast<void**>(&pD3DInfoQueue))))
 		{
-#if 0
+#if 1
 			// エラー等が出たときに止めたい場合は有効にする
 			pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
 			pD3DInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
@@ -251,6 +257,7 @@ namespace sl12
 		SafeDelete(pComputeQueue_);
 		SafeDelete(pCopyQueue_);
 
+		SafeRelease(pLatestDevice_);
 		SafeRelease(pDxrDevice_);
 
 		SafeRelease(pDevice_);

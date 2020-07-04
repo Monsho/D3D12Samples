@@ -78,6 +78,8 @@ namespace sl12
 		// Windowの初期化
 		hWnd_ = InitializeWindow(hInstance, nCmdShow, screenWidth, screenHeight);
 
+		CpuTimer::Initialize();
+
 		// D3D12デバイスの初期化
 		std::array<uint32_t, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> kDescNums
 		{ 65535, 128, 256, 64 };

@@ -17,6 +17,8 @@ namespace sl12
 			Domain,
 			Hull,
 			Compute,
+			Mesh,
+			Amplification,
 
 			Max
 		};

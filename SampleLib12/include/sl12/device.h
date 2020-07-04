@@ -8,6 +8,7 @@
 #include <sl12/descriptor_heap.h>
 #include <sl12/death_list.h>
 
+#define LatestDevice	ID3D12Device6
 
 namespace sl12
 {
@@ -85,6 +86,10 @@ namespace sl12
 		{
 			return pFactory_;
 		}
+		LatestDevice* GetLatestDeviceDep()
+		{
+			return pLatestDevice_;
+		}
 		ID3D12Device*	GetDeviceDep()
 		{
 			return pDevice_;
@@ -146,6 +151,8 @@ namespace sl12
 		IDXGIFactory4*	pFactory_{ nullptr };
 		IDXGIAdapter3*	pAdapter_{ nullptr };
 		IDXGIOutput4*	pOutput_{ nullptr };
+
+		LatestDevice*	pLatestDevice_{ nullptr };
 		ID3D12Device*	pDevice_{ nullptr };
 
 		ID3D12Device5*	pDxrDevice_{ nullptr };

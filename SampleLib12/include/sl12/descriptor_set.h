@@ -63,6 +63,12 @@ namespace sl12
 		inline void SetCsSrv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
 		inline void SetCsSampler(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
 		inline void SetCsUav(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
+		inline void SetMsCbv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
+		inline void SetMsSrv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
+		inline void SetMsSampler(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
+		inline void SetAsCbv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
+		inline void SetAsSrv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
+		inline void SetAsSampler(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle);
 
 		// getter
 		const Handles<kCbvMax>& GetVsCbv() const { return vsCbv_; }
@@ -85,6 +91,12 @@ namespace sl12
 		const Handles<kSrvMax>& GetCsSrv() const { return csSrv_; }
 		const Handles<kSamplerMax>& GetCsSampler() const { return csSampler_; }
 		const Handles<kUavMax>& GetCsUav() const { return csUav_; }
+		const Handles<kCbvMax>& GetMsCbv() const { return msCbv_; }
+		const Handles<kSrvMax>& GetMsSrv() const { return msSrv_; }
+		const Handles<kSamplerMax>& GetMsSampler() const { return msSampler_; }
+		const Handles<kCbvMax>& GetAsCbv() const { return asCbv_; }
+		const Handles<kSrvMax>& GetAsSrv() const { return asSrv_; }
+		const Handles<kSamplerMax>& GetAsSampler() const { return asSampler_; }
 
 	private:
 		Handles<kCbvMax>		vsCbv_;
@@ -107,6 +119,12 @@ namespace sl12
 		Handles<kSrvMax>		csSrv_;
 		Handles<kSamplerMax>	csSampler_;
 		Handles<kUavMax>		csUav_;
+		Handles<kCbvMax>		msCbv_;
+		Handles<kSrvMax>		msSrv_;
+		Handles<kSamplerMax>	msSampler_;
+		Handles<kCbvMax>		asCbv_;
+		Handles<kSrvMax>		asSrv_;
+		Handles<kSamplerMax>	asSampler_;
 	};	// class DescriptorSet
 
 	inline void DescriptorSet::Reset()
@@ -131,6 +149,12 @@ namespace sl12
 		csSrv_.Reset();
 		csSampler_.Reset();
 		csUav_.Reset();
+		msCbv_.Reset();
+		msSrv_.Reset();
+		msSampler_.Reset();
+		asCbv_.Reset();
+		asSrv_.Reset();
+		asSampler_.Reset();
 	}
 
 	inline void DescriptorSet::SetVsCbv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
@@ -212,6 +236,30 @@ namespace sl12
 	inline void DescriptorSet::SetCsUav(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
 	{
 		csUav_.SetHandle(index, handle);
+	}
+	inline void DescriptorSet::SetMsCbv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
+	{
+		msCbv_.SetHandle(index, handle);
+	}
+	inline void DescriptorSet::SetMsSrv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
+	{
+		msSrv_.SetHandle(index, handle);
+	}
+	inline void DescriptorSet::SetMsSampler(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
+	{
+		msSampler_.SetHandle(index, handle);
+	}
+	inline void DescriptorSet::SetAsCbv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
+	{
+		asCbv_.SetHandle(index, handle);
+	}
+	inline void DescriptorSet::SetAsSrv(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
+	{
+		asSrv_.SetHandle(index, handle);
+	}
+	inline void DescriptorSet::SetAsSampler(u32 index, const D3D12_CPU_DESCRIPTOR_HANDLE& handle)
+	{
+		asSampler_.SetHandle(index, handle);
 	}
 
 }	// namespace sl12

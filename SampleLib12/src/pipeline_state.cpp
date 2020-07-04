@@ -8,6 +8,33 @@
 
 namespace sl12
 {
+	template <D3D12_PIPELINE_STATE_SUBOBJECT_TYPE Type, typename Data>
+	struct alignas(void*) PipelineSubobject
+	{
+		D3D12_PIPELINE_STATE_SUBOBJECT_TYPE	type;
+		Data								data;
+
+		PipelineSubobject()
+			: type(Type)
+			, data()
+		{}
+		PipelineSubobject(const Data& d)
+			: PipelineSubobject()
+			, data(d)
+		{}
+		PipelineSubobject operator=(const Data& d)
+		{
+			data = d;
+			return *this;
+		}
+	};	// struct PipelineSubobject
+
+	inline D3D12_SHADER_BYTECODE ToD3D12Shader(Shader* p)
+	{
+		D3D12_SHADER_BYTECODE ret = { reinterpret_cast<const UINT8*>(p->GetData()), p->GetSize() };
+		return ret;
+	}
+
 	//----
 	bool GraphicsPipelineState::Initialize(Device* pDev, const GraphicsPipelineStateDesc& desc)
 	{
@@ -89,43 +116,88 @@ namespace sl12
 			return (t < D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) ? kTypes[t] : D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 		};
 
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.InputLayout = { desc.inputLayout.pElements, desc.inputLayout.numElements };
+		struct GraphicsPipelineDesc
+		{
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, ID3D12RootSignature*>					pRootSignature;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS, D3D12_SHADER_BYTECODE>							VS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS, D3D12_SHADER_BYTECODE>							AS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, D3D12_SHADER_BYTECODE>							MS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS, D3D12_SHADER_BYTECODE>							PS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_GS, D3D12_SHADER_BYTECODE>							GS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DS, D3D12_SHADER_BYTECODE>							DS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_HS, D3D12_SHADER_BYTECODE>							HS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND, D3D12_BLEND_DESC>								BlendState;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_MASK, UINT>									SampleMask;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER, D3D12_RASTERIZER_DESC>					RasterizerState;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, D3D12_DEPTH_STENCIL_DESC>				DepthStencilState;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_INPUT_LAYOUT, D3D12_INPUT_LAYOUT_DESC>				InputLayout;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY, D3D12_PRIMITIVE_TOPOLOGY_TYPE>	PrimitiveTopologyType;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS, D3D12_RT_FORMAT_ARRAY>			RenderTargets;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, DXGI_FORMAT>					DepthTarget;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, DXGI_SAMPLE_DESC>						SampleDesc;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_NODE_MASK, UINT>										NodeMask;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_FLAGS, D3D12_PIPELINE_STATE_FLAGS>					Flags;
+		};
+
+		GraphicsPipelineDesc psoDesc = {};
+		D3D12_INPUT_LAYOUT_DESC input_layout_desc = { desc.inputLayout.pElements, desc.inputLayout.numElements };
+		psoDesc.InputLayout = input_layout_desc;
 		psoDesc.pRootSignature = desc.pRootSignature->GetRootSignature();
 		if (desc.pVS)
 		{
-			psoDesc.VS = { reinterpret_cast<const UINT8*>(desc.pVS->GetData()), desc.pVS->GetSize() };
+			psoDesc.VS = ToD3D12Shader(desc.pVS);
+		}
+		else if (desc.pMS)
+		{
+			psoDesc.InputLayout.data.NumElements = 0;
+			psoDesc.InputLayout.data.pInputElementDescs = nullptr;
+
+			psoDesc.MS = ToD3D12Shader(desc.pMS);
+			if (desc.pAS)
+			{
+				psoDesc.AS = ToD3D12Shader(desc.pAS);
+			}
 		}
 		if (desc.pPS)
 		{
-			psoDesc.PS = { reinterpret_cast<const UINT8*>(desc.pPS->GetData()), desc.pPS->GetSize() };
+			psoDesc.PS = ToD3D12Shader(desc.pPS);
 		}
 		if (desc.pGS)
 		{
-			psoDesc.GS = { reinterpret_cast<const UINT8*>(desc.pGS->GetData()), desc.pGS->GetSize() };
+			psoDesc.GS = ToD3D12Shader(desc.pGS);
 		}
 		if (desc.pDS)
 		{
-			psoDesc.DS = { reinterpret_cast<const UINT8*>(desc.pDS->GetData()), desc.pDS->GetSize() };
+			psoDesc.DS = ToD3D12Shader(desc.pDS);
 		}
 		if (desc.pHS)
 		{
-			psoDesc.HS = { reinterpret_cast<const UINT8*>(desc.pHS->GetData()), desc.pHS->GetSize() };
+			psoDesc.HS = ToD3D12Shader(desc.pHS);
 		}
-		blendFunc(psoDesc.BlendState);
+		blendFunc(psoDesc.BlendState.data);
 		psoDesc.SampleMask = desc.blend.sampleMask;
-		rasterFunc(psoDesc.RasterizerState);
-		depthFunc(psoDesc.DepthStencilState);
+		rasterFunc(psoDesc.RasterizerState.data);
+		depthFunc(psoDesc.DepthStencilState.data);
 		psoDesc.PrimitiveTopologyType = topoFunc(desc.primTopology);
-		psoDesc.NumRenderTargets = desc.numRTVs;
+
+		D3D12_RT_FORMAT_ARRAY rt_formats = {};
+		rt_formats.NumRenderTargets = desc.numRTVs;
 		for (u32 i = 0; i < desc.numRTVs; i++)
 		{
-			psoDesc.RTVFormats[i] = desc.rtvFormats[i];
+			rt_formats.RTFormats[i] = desc.rtvFormats[i];
 		}
-		psoDesc.DSVFormat = desc.dsvFormat;
-		psoDesc.SampleDesc.Count = desc.multisampleCount;
+		psoDesc.RenderTargets = rt_formats;
 
-		auto hr = pDev->GetDeviceDep()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pPipelineState_));
+		psoDesc.DepthTarget = desc.dsvFormat;
+
+		DXGI_SAMPLE_DESC sample_desc = {};
+		sample_desc.Count = desc.multisampleCount;
+		psoDesc.SampleDesc = sample_desc;
+
+		D3D12_PIPELINE_STATE_STREAM_DESC strmDesc = {};
+		strmDesc.pPipelineStateSubobjectStream = &psoDesc;
+		strmDesc.SizeInBytes = sizeof(psoDesc);
+		auto hr = pDev->GetLatestDeviceDep()->CreatePipelineState(&strmDesc, IID_PPV_ARGS(&pPipelineState_));
 		if (FAILED(hr))
 		{
 			return false;
@@ -153,11 +225,20 @@ namespace sl12
 			return false;
 		}
 
-		D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.pRootSignature = desc.pRootSignature->GetRootSignature();
-		psoDesc.CS = { reinterpret_cast<const UINT8*>(desc.pCS->GetData()), desc.pCS->GetSize() };
+		struct ComputePipelineDesc
+		{
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_CS, D3D12_SHADER_BYTECODE>			CS;
+			PipelineSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, ID3D12RootSignature*>	pRootSignature;
+		};
+		ComputePipelineDesc d{};
+		d.pRootSignature = desc.pRootSignature->GetRootSignature();
+		d.CS = ToD3D12Shader(desc.pCS);
 
-		auto hr = pDev->GetDeviceDep()->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&pPipelineState_));
+		D3D12_PIPELINE_STATE_STREAM_DESC strmDesc = {};
+		strmDesc.pPipelineStateSubobjectStream = &d;
+		strmDesc.SizeInBytes = sizeof(d);
+		auto hr = pDev->GetLatestDeviceDep()->CreatePipelineState(&strmDesc, IID_PPV_ARGS(&pPipelineState_));
+
 		if (FAILED(hr))
 		{
 			return false;

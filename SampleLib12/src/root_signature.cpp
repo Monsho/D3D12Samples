@@ -107,6 +107,33 @@ namespace sl12
 	}
 
 	//----
+	bool RootSignature::Initialize(Device* pDev, const D3D12_VERSIONED_ROOT_SIGNATURE_DESC& desc)
+	{
+		ID3DBlob* blob = nullptr;
+		ID3DBlob* error = nullptr;
+		bool ret = true;
+
+		auto hr = D3D12SerializeVersionedRootSignature(&desc, &blob, &error);
+		if (FAILED(hr))
+		{
+			ret = false;
+			goto D3D_ERROR;
+		}
+
+		hr = pDev->GetDeviceDep()->CreateRootSignature(1, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&pRootSignature_));
+		if (FAILED(hr))
+		{
+			ret = false;
+			goto D3D_ERROR;
+		}
+
+	D3D_ERROR:
+		sl12::SafeRelease(blob);
+		sl12::SafeRelease(error);
+		return ret;
+	}
+
+	//----
 	bool RootSignature::Initialize(Device* pDev, Shader* vs, Shader* ps, Shader* gs, Shader* hs, Shader* ds)
 	{
 		/*
@@ -214,6 +241,84 @@ namespace sl12
 		desc.NumStaticSamplers = 0;
 		desc.pStaticSamplers = nullptr;
 		desc.Flags = flags;
+
+		return Initialize(pDev, desc);
+	}
+
+	//----
+	bool RootSignature::Initialize(Device* pDev, Shader* as, Shader* ms, Shader* ps)
+	{
+		D3D12_DESCRIPTOR_RANGE_FLAGS range_flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE;
+		const D3D12_DESCRIPTOR_RANGE1 kDefaultRange[] = {
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 16, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 48, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 16, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+		};
+		D3D12_DESCRIPTOR_RANGE1 ranges[16];
+		D3D12_ROOT_PARAMETER1 params[16];
+		int rangeCnt = 0;
+		auto SetParam = [&](D3D12_SHADER_VISIBILITY vis)
+		{
+			params[rangeCnt].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			params[rangeCnt].ShaderVisibility = vis;
+			params[rangeCnt].DescriptorTable.pDescriptorRanges = ranges + rangeCnt;
+			params[rangeCnt].DescriptorTable.NumDescriptorRanges = 1;
+		};
+		D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+
+		if (as)
+		{
+			inputIndex_.asCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.asSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.asSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS;
+		}
+		if (ms)
+		{
+			inputIndex_.msCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_MESH);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.msSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_MESH);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.msSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_MESH);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
+		}
+		if (ps)
+		{
+			inputIndex_.psCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.psSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.psSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			inputIndex_.psUavIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[3];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		}
+
+		D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc{};
+		desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+		desc.Desc_1_1.NumParameters = rangeCnt;
+		desc.Desc_1_1.pParameters = params;
+		desc.Desc_1_1.NumStaticSamplers = 0;
+		desc.Desc_1_1.pStaticSamplers = nullptr;
+		desc.Desc_1_1.Flags = flags;
 
 		return Initialize(pDev, desc);
 	}

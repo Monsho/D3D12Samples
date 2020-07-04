@@ -16,6 +16,8 @@ namespace sl12
 		tangentVB_.Destroy();
 		texcoordVB_.Destroy();
 		indexBuffer_.Destroy();
+		meshletPackedPrimitive_.Destroy();
+		meshletVertexIndex_.Destroy();
 	}
 
 	//---------------
@@ -78,6 +80,14 @@ namespace sl12
 		{
 			return nullptr;
 		}
+		if (!CreateBuffer(ret->meshletPackedPrimitive_, mesh_bin.GetMeshletPackedPrimitive(), sizeof(u32), BufferUsage::ShaderResource))
+		{
+			return nullptr;
+		}
+		if (!CreateBuffer(ret->meshletVertexIndex_, mesh_bin.GetMeshletVertexIndex(), sizeof(u32), BufferUsage::ShaderResource))
+		{
+			return nullptr;
+		}
 
 		auto path = sl12::GetFilePath(filepath);
 
@@ -130,6 +140,8 @@ namespace sl12
 			dst.tangentView.Initialize(pDev, &ret->tangentVB_, src.GetVertexOffset(), src.GetVertexCount(), sizeof(DirectX::XMFLOAT4));
 			dst.texcoordView.Initialize(pDev, &ret->texcoordVB_, src.GetVertexOffset(), src.GetVertexCount(), sizeof(DirectX::XMFLOAT2));
 			dst.indexView.Initialize(pDev, &ret->indexBuffer_, src.GetIndexOffset(), src.GetIndexCount(), sizeof(u32));
+			dst.packedPrimitiveView.Initialize(pDev, &ret->meshletPackedPrimitive_, src.GetMeshletPrimitiveOffset(), src.GetMeshletPrimitiveCount(), sizeof(u32));
+			dst.vertexIndexView.Initialize(pDev, &ret->meshletVertexIndex_, src.GetMeshletVertexIndexOffset(), src.GetMeshletVertexIndexCount(), sizeof(u32));
 
 			dst.boundingInfo.sphere.center.x = src.GetBoundingSphere().centerX;
 			dst.boundingInfo.sphere.center.y = src.GetBoundingSphere().centerY;
@@ -152,6 +164,10 @@ namespace sl12
 				{
 					dst.meshlets[j].indexCount = src_meshlets[j].GetIndexCount();
 					dst.meshlets[j].indexOffset = src_meshlets[j].GetIndexOffset();
+					dst.meshlets[j].primitiveCount = src_meshlets[j].GetPrimitiveCount();
+					dst.meshlets[j].primitiveOffset = src_meshlets[j].GetPrimitiveOffset();
+					dst.meshlets[j].vertexIndexCount = src_meshlets[j].GetVertexIndexCount();
+					dst.meshlets[j].vertexIndexOffset = src_meshlets[j].GetVertexIndexOffset();
 
 					dst.meshlets[j].boundingInfo.sphere.center.x = src_meshlets[j].GetBoundingSphere().centerX;
 					dst.meshlets[j].boundingInfo.sphere.center.y = src_meshlets[j].GetBoundingSphere().centerY;

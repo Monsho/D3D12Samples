@@ -3,6 +3,8 @@
 #include <sl12/util.h>
 
 
+#define LatestCommandList	ID3D12GraphicsCommandList6
+
 namespace sl12
 {
 	class Device;
@@ -52,6 +54,7 @@ namespace sl12
 		}
 		// RootSignatureとDescriptorをコマンドリストに積み込む
 		void SetGraphicsRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
+		void SetMeshRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
 		void SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
 
 		// Raytracing用のGlobal RootSignatureとDescriptorをコマンドに積み込む
@@ -67,9 +70,10 @@ namespace sl12
 		DescriptorStackList* GetViewDescriptorStack() { return pViewDescStack_; }
 		SamplerDescriptorCache* GetSamplerDescriptorCache() { return pSamplerDescCache_; }
 		ID3D12CommandAllocator* GetCommandAllocator() { return pCmdAllocator_; }
+		LatestCommandList* GetLatestCommandList() { return pLatestCmdList_; }
 		ID3D12GraphicsCommandList* GetCommandList() { return pCmdList_; }
-		ID3D12GraphicsCommandList4* GetDxrCommandList() { return pDxrCmdList_; }
-		ID3D12GraphicsCommandList5* GetCommandList5() { return pCmdList5_; }
+		LatestCommandList* GetDxrCommandList() { return pLatestCmdList_; }
+		//ID3D12GraphicsCommandList4* GetDxrCommandList() { return pDxrCmdList_; }
 
 	private:
 		Device*						pParentDevice_{ nullptr };
@@ -78,8 +82,7 @@ namespace sl12
 		SamplerDescriptorCache*		pSamplerDescCache_{ nullptr };
 		ID3D12CommandAllocator*		pCmdAllocator_{ nullptr };
 		ID3D12GraphicsCommandList*	pCmdList_{ nullptr };
-		ID3D12GraphicsCommandList4*	pDxrCmdList_{ nullptr };
-		ID3D12GraphicsCommandList5*	pCmdList5_{ nullptr };
+		LatestCommandList*			pLatestCmdList_{ nullptr };
 
 		ID3D12DescriptorHeap*		pCurrentSamplerHeap_{ nullptr };
 		ID3D12DescriptorHeap*		pPrevSamplerHeap_{ nullptr };

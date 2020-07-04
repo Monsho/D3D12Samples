@@ -85,6 +85,75 @@ namespace sl12
 		return hash;
 	}
 
+	class CpuTimer
+	{
+	public:
+		static void Initialize()
+		{
+			QueryPerformanceFrequency(&frequency_);
+		}
+
+		static CpuTimer CurrentTime()
+		{
+			CpuTimer r;
+			QueryPerformanceCounter(&r.time_);
+			return r;
+		}
+
+		CpuTimer& operator=(const CpuTimer& v)
+		{
+			time_ = v.time_;
+			return *this;
+		}
+
+		CpuTimer& operator+=(const CpuTimer& v)
+		{
+			time_.QuadPart += v.time_.QuadPart;
+			return *this;
+		}
+
+		CpuTimer& operator-=(const CpuTimer& v)
+		{
+			time_.QuadPart -= v.time_.QuadPart;
+			return *this;
+		}
+
+		CpuTimer operator+(const CpuTimer& v) const
+		{
+			CpuTimer r;
+			r.time_.QuadPart = time_.QuadPart + v.time_.QuadPart;
+			return r;
+		}
+
+		CpuTimer operator-(const CpuTimer& v) const
+		{
+			CpuTimer r;
+			r.time_.QuadPart = time_.QuadPart - v.time_.QuadPart;
+			return r;
+		}
+
+		float ToSecond() const
+		{
+			return (float)time_.QuadPart / (float)frequency_.QuadPart;
+		}
+		float ToMilliSecond() const
+		{
+			return (float)(time_.QuadPart * 1000) / (float)frequency_.QuadPart;
+		}
+		float ToMicroSecond() const
+		{
+			return (float)(time_.QuadPart * 1000 * 1000) / (float)frequency_.QuadPart;
+		}
+		float ToNanoSecond() const
+		{
+			return (float)(time_.QuadPart * 1000 * 1000 * 1000) / (float)frequency_.QuadPart;
+		}
+
+	private:
+		static LARGE_INTEGER	frequency_;
+		LARGE_INTEGER			time_;
+	};	// class CpuTimer
+
 }	// namespace sl12
 
 //	EOF

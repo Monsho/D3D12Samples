@@ -1534,12 +1534,21 @@ private:
 			dxrDesc.AddHitGroup(kOcclusionOpacityHG, true, nullptr, kOcclusionCHS, nullptr);
 			dxrDesc.AddHitGroup(kOcclusionMaskedHG, true, kOcclusionAHS, kOcclusionCHS, nullptr);
 
+			// payload size and intersection attr size.
+			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+
+			// global root signature.
+			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
+
+			// TraceRay recursive count.
+			dxrDesc.AddRaytracinConfig(1);
+
 			// local root signature.
 			// if use only one root signature, do not need export association.
 			dxrDesc.AddLocalRootSignatureAndExportAssociation(rtLocalRootSig_, nullptr, 0);
 
 			// RaytracingPipelineConfigをリンク先で設定するため、このフラグが必要
-			dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
+			//dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
 
 			// PSO生成
 			if (!rtOcclusionCollection_.Initialize(&device_, dxrDesc, D3D12_STATE_OBJECT_TYPE_COLLECTION))
@@ -1561,18 +1570,31 @@ private:
 			dxrDesc.AddHitGroup(kMaterialOpacityHG, true, nullptr, kMaterialCHS, nullptr);
 			dxrDesc.AddHitGroup(kMaterialMaskedHG, true, kMaterialAHS, kMaterialCHS, nullptr);
 
+			// payload size and intersection attr size.
+			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+
+			// global root signature.
+			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
+
+			// TraceRay recursive count.
+			dxrDesc.AddRaytracinConfig(1);
+
 			// local root signature.
 			// if use only one root signature, do not need export association.
 			dxrDesc.AddLocalRootSignatureAndExportAssociation(rtLocalRootSig_, nullptr, 0);
 
 			// RaytracingPipelineConfigをリンク先で設定するため、このフラグが必要
-			dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
+			//dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
 
 			// PSO生成
+			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
 			if (!rtMaterialCollection_.Initialize(&device_, dxrDesc, D3D12_STATE_OBJECT_TYPE_COLLECTION))
 			{
 				return false;
 			}
+			time = sl12::CpuTimer::CurrentTime() - time;
+			std::string str = std::string("Create Mat Collection : ") + std::to_string(time.ToMicroSecond()) + std::string("(us)\n");
+			OutputDebugStringA(str.c_str());
 		}
 
 		// create pipeline state.
@@ -1587,8 +1609,8 @@ private:
 			dxrDesc.AddDxilLibrary(g_pDirectShadowLib, sizeof(g_pDirectShadowLib), libExport, ARRAYSIZE(libExport));
 
 			// payload size and intersection attr size.
-			//dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
-			dxrDesc.AddShaderConfig(sizeof(float) * 1, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			//dxrDesc.AddShaderConfig(sizeof(float) * 1, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -1630,10 +1652,14 @@ private:
 			dxrDesc.AddExistingCollection(rtOcclusionCollection_.GetPSO(), nullptr, 0);
 
 			// PSO生成
+			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
 			if (!rtGlobalIlluminationPSO_.Initialize(&device_, dxrDesc))
 			{
 				return false;
 			}
+			time = sl12::CpuTimer::CurrentTime() - time;
+			std::string str = std::string("Create GI PSO : ") + std::to_string(time.ToMicroSecond()) + std::string("(us)\n");
+			OutputDebugStringA(str.c_str());
 		}
 
 		return true;

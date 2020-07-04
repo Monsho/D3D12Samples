@@ -79,6 +79,12 @@ namespace sl12
 			u8		csSrvIndex_ = 0;
 			u8		csSamplerIndex_ = 0;
 			u8		csUavIndex_ = 0;
+			u8		msCbvIndex_ = 0;
+			u8		msSrvIndex_ = 0;
+			u8		msSamplerIndex_ = 0;
+			u8		asCbvIndex_ = 0;
+			u8		asSrvIndex_ = 0;
+			u8		asSamplerIndex_ = 0;
 		};	// struct InputIndex
 
 	public:
@@ -91,7 +97,9 @@ namespace sl12
 
 		bool Initialize(Device* pDev, const RootSignatureDesc& desc);
 		bool Initialize(Device* pDev, const D3D12_ROOT_SIGNATURE_DESC& desc);
+		bool Initialize(Device* pDev, const D3D12_VERSIONED_ROOT_SIGNATURE_DESC& desc);
 		bool Initialize(Device* pDev, Shader* vs, Shader* ps, Shader* gs, Shader* hs, Shader* ds);
+		bool Initialize(Device* pDev, Shader* as, Shader* ms, Shader* ps);
 		bool Initialize(Device* pDev, Shader* cs);
 		void Destroy();
 

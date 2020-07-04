@@ -206,17 +206,17 @@ public:
 		cmd_list.TransitionBarrier(swapchain.GetCurrentTexture(kSwapchainBufferOffset), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		{
 			float color[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
-			cmd_list.GetCommandList5()->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle, color, 0, nullptr);
+			cmd_list.GetLatestCommandList()->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle, color, 0, nullptr);
 		}
 
 		// set viewport.
 		D3D12_VIEWPORT viewport{ 0.0f, 0.0f, (float)kScreenWidth, (float)kScreenHeight, 0.0f, 1.0f };
 		D3D12_RECT scissor{ 0, 0, kScreenWidth, kScreenHeight };
-		cmd_list.GetCommandList5()->RSSetViewports(1, &viewport);
-		cmd_list.GetCommandList5()->RSSetScissorRects(1, &scissor);
+		cmd_list.GetLatestCommandList()->RSSetViewports(1, &viewport);
+		cmd_list.GetLatestCommandList()->RSSetScissorRects(1, &scissor);
 
 		// set render target.
-		cmd_list.GetCommandList5()->OMSetRenderTargets(1, &swapchain.GetCurrentDescHandle(kSwapchainBufferOffset), false, nullptr);
+		cmd_list.GetLatestCommandList()->OMSetRenderTargets(1, &swapchain.GetCurrentDescHandle(kSwapchainBufferOffset), false, nullptr);
 
 		// draw texture.
 		if (s_Raw)
@@ -225,11 +225,11 @@ public:
 			dset_.SetPsSrv(0, resTexHandle_.GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle);
 			dset_.SetPsSampler(0, sampler_.GetDescInfo().cpuHandle);
 
-			cmd_list.GetCommandList5()->SetPipelineState(psoTextureView_.GetPSO());
+			cmd_list.GetLatestCommandList()->SetPipelineState(psoTextureView_.GetPSO());
 			cmd_list.SetGraphicsRootSignatureAndDescriptorSet(&rsTextureView_, &dset_);
 
-			cmd_list.GetCommandList5()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			cmd_list.GetCommandList5()->DrawInstanced(3, 1, 0, 0);
+			cmd_list.GetLatestCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			cmd_list.GetLatestCommandList()->DrawInstanced(3, 1, 0, 0);
 		}
 		else
 		{
@@ -251,11 +251,11 @@ public:
 					dset_.SetPsSampler(v->samplerSlotIndex, sampler_.GetDescInfo().cpuHandle);
 			}
 
-			cmd_list.GetCommandList5()->SetPipelineState(pPsoOCIOView_->GetPSO());
+			cmd_list.GetLatestCommandList()->SetPipelineState(pPsoOCIOView_->GetPSO());
 			cmd_list.SetGraphicsRootSignatureAndDescriptorSet(pRsOCIOView_, &dset_);
 
-			cmd_list.GetCommandList5()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			cmd_list.GetCommandList5()->DrawInstanced(3, 1, 0, 0);
+			cmd_list.GetLatestCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			cmd_list.GetLatestCommandList()->DrawInstanced(3, 1, 0, 0);
 		}
 
 		// draw GUI.
@@ -607,7 +607,7 @@ private:
 			dst.pResource = tset->texture.GetResourceDep();
 			dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 			dst.SubresourceIndex = 0;
-			pCmdList->GetCommandList5()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+			pCmdList->GetLatestCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 			pCmdList->TransitionBarrier(&tset->texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 			// find slot.
@@ -693,7 +693,7 @@ private:
 			dst.pResource = tset->texture.GetResourceDep();
 			dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 			dst.SubresourceIndex = 0;
-			pCmdList->GetCommandList5()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+			pCmdList->GetLatestCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 			pCmdList->TransitionBarrier(&tset->texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 			// find slot.

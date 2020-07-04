@@ -75,6 +75,8 @@ namespace sl12
 		Shader*					pGS = nullptr;
 		Shader*					pDS = nullptr;
 		Shader*					pHS = nullptr;
+		Shader*					pAS = nullptr;
+		Shader*					pMS = nullptr;
 		BlendDesc				blend{};
 		RasterizerDesc			rasterizer{};
 		DepthStencilDesc		depthStencil{};
