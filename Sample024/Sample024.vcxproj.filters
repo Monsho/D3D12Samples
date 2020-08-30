@@ -47,6 +47,18 @@
     <FxCompile Include="shader\lighting.m.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
+    <FxCompile Include="shader\zpre_a.m.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\zpre_a.a.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\lighting_a.a.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\lighting_a.m.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -1,13 +1,5 @@
 #include "common.hlsli"
 
-struct VSInput
-{
-	float3	position	: POSITION;
-	float3	normal		: NORMAL;
-	float4	tangent		: TANGENT;
-	float2	uv			: TEXCOORD;
-};
-
 struct VSOutput
 {
 	float4	position	: SV_POSITION;

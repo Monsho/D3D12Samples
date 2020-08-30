@@ -28,8 +28,12 @@
 
 #include "CompiledShaders/zpre.m.hlsl.h"
 #include "CompiledShaders/zpre.p.hlsl.h"
+#include "CompiledShaders/zpre_a.m.hlsl.h"
+#include "CompiledShaders/zpre_a.a.hlsl.h"
 #include "CompiledShaders/lighting.m.hlsl.h"
 #include "CompiledShaders/lighting.p.hlsl.h"
+#include "CompiledShaders/lighting_a.m.hlsl.h"
+#include "CompiledShaders/lighting_a.a.hlsl.h"
 #include "CompiledShaders/fullscreen.vv.hlsl.h"
 #include "CompiledShaders/frustum_cull.c.hlsl.h"
 #include "CompiledShaders/count_clear.c.hlsl.h"
@@ -44,6 +48,7 @@
 
 #include <windowsx.h>
 
+#define LANE_COUNT_IN_WAVE	32
 
 namespace
 {
@@ -292,7 +297,15 @@ public:
 		{
 			return false;
 		}
+		if (!zpreARootSig_.Initialize(&device_, &zpreAAS_, &zpreAMS_, &zprePS_))
+		{
+			return false;
+		}
 		if (!lightingRootSig_.Initialize(&device_, nullptr, &lightingMS_, &lightingPS_))
+		{
+			return false;
+		}
+		if (!lightingARootSig_.Initialize(&device_, &lightingAAS_, &lightingAMS_, &lightingPS_))
 		{
 			return false;
 		}
@@ -311,6 +324,14 @@ public:
 				return false;
 			}
 			if (!zprePS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pZprePS, sizeof(g_pZprePS)))
+			{
+				return false;
+			}
+			if (!zpreAMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pZpreAMS, sizeof(g_pZpreAMS)))
+			{
+				return false;
+			}
+			if (!zpreAAS_.Initialize(&device_, sl12::ShaderType::Amplification, g_pZpreAAS, sizeof(g_pZpreAAS)))
 			{
 				return false;
 			}
@@ -346,6 +367,15 @@ public:
 			{
 				return false;
 			}
+
+			desc.pRootSignature = &zpreARootSig_;
+			desc.pAS = &zpreAAS_;
+			desc.pMS = &zpreAMS_;
+
+			if (!zpreAPso_.Initialize(&device_, desc))
+			{
+				return false;
+			}
 		}
 		{
 			if (!lightingMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pLightingMS, sizeof(g_pLightingMS)))
@@ -353,6 +383,14 @@ public:
 				return false;
 			}
 			if (!lightingPS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pLightingPS, sizeof(g_pLightingPS)))
+			{
+				return false;
+			}
+			if (!lightingAMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pLightingAMS, sizeof(g_pLightingAMS)))
+			{
+				return false;
+			}
+			if (!lightingAAS_.Initialize(&device_, sl12::ShaderType::Amplification, g_pLightingAAS, sizeof(g_pLightingAAS)))
 			{
 				return false;
 			}
@@ -382,6 +420,15 @@ public:
 			desc.multisampleCount = 1;
 
 			if (!lightingPso_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pRootSignature = &lightingARootSig_;
+			desc.pAS = &lightingAAS_;
+			desc.pMS = &lightingAMS_;
+
+			if (!lightingAPso_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -603,6 +650,7 @@ public:
 			ImGui::Checkbox("Frustum Cull", &isFrustumCulling_);
 			ImGui::Checkbox("Freeze Cull", &isFreezeCull_);
 			ImGui::Checkbox("Meshlet Color", &isMeshletColor_);
+			ImGui::Checkbox("Enable Amp", &isEnableAmp_);
 
 			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
 			uint64_t timestamp[6];
@@ -666,11 +714,16 @@ public:
 
 		// Z pre pass
 		{
+			auto myPso = isEnableAmp_ ? &zpreAPso_ : &zprePso_;
+			auto myRS = isEnableAmp_ ? &zpreARootSig_ : &zpreRootSig_;
+
 			// PSOê›íË
-			d3dCmdList->SetPipelineState(zprePso_.GetPSO());
+			d3dCmdList->SetPipelineState(myPso->GetPSO());
 
 			// äÓñ{Descriptorê›íË
 			descSet_.Reset();
+			descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
@@ -680,6 +733,7 @@ public:
 			int offset = 0;
 			auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
 			{
+				descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
 				descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
 
 				auto&& submeshes = pMesh->GetSubmeshes();
@@ -688,6 +742,7 @@ public:
 				{
 					auto&& submesh = submeshes[i];
 
+					descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
 					descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
 					descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
 					descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
@@ -700,9 +755,14 @@ public:
 					auto&& base_color_srv = bc_tex_res->GetTextureView();
 
 					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
-					pCmdList->SetMeshRootSignatureAndDescriptorSet(&zpreRootSig_, &descSet_);
+					pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-					d3dCmdList->DispatchMesh(submesh.meshlets.size(), 1, 1);
+					UINT dispatch_count = (UINT)submesh.meshlets.size();
+					if (isEnableAmp_)
+					{
+						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
+					}
+					d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
 				}
 			};
 
@@ -824,11 +884,16 @@ public:
 
 		// lighting pass
 		{
+			auto myPso = isEnableAmp_ ? &lightingAPso_ : &lightingPso_;
+			auto myRS = isEnableAmp_ ? &lightingARootSig_ : &lightingRootSig_;
+
 			// PSOê›íË
-			d3dCmdList->SetPipelineState(lightingPso_.GetPSO());
+			d3dCmdList->SetPipelineState(myPso->GetPSO());
 
 			// äÓñ{Descriptorê›íË
 			descSet_.Reset();
+			descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
@@ -843,6 +908,7 @@ public:
 			int offset = 0;
 			auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
 			{
+				descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
 				descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
 
 				auto&& submeshes = pMesh->GetSubmeshes();
@@ -851,6 +917,7 @@ public:
 				{
 					auto&& submesh = submeshes[i];
 
+					descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
 					descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
 					descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
 					descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
@@ -870,9 +937,14 @@ public:
 					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
 					descSet_.SetPsSrv(1, normal_srv.GetDescInfo().cpuHandle);
 					descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
-					pCmdList->SetMeshRootSignatureAndDescriptorSet(&lightingRootSig_, &descSet_);
+					pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-					d3dCmdList->DispatchMesh(submesh.meshlets.size(), 1, 1);
+					UINT dispatch_count = submesh.meshlets.size();
+					if (isEnableAmp_)
+					{
+						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
+					}
+					d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
 				}
 			};
 
@@ -941,16 +1013,24 @@ public:
 		cullPso_.Destroy();
 		cullCS_.Destroy();
 		fullscreenVS_.Destroy();
+		lightingAPso_.Destroy();
 		lightingPso_.Destroy();
+		lightingAMS_.Destroy();
+		lightingAAS_.Destroy();
 		lightingMS_.Destroy();
 		lightingPS_.Destroy();
+		zpreAPso_.Destroy();
 		zprePso_.Destroy();
+		zpreAMS_.Destroy();
+		zpreAAS_.Destroy();
 		zpreMS_.Destroy();
 		zprePS_.Destroy();
 
 		countClearRootSig_.Destroy();
 		cullRootSig_.Destroy();
+		lightingARootSig_.Destroy();
 		lightingRootSig_.Destroy();
+		zpreARootSig_.Destroy();
 		zpreRootSig_.Destroy();
 
 		utilCmdList_.Destroy();
@@ -2132,11 +2212,11 @@ private:
 
 	GBuffers				gbuffers_[kBufferCount];
 
-	sl12::Shader				zpreMS_, zprePS_;
-	sl12::Shader				lightingMS_, lightingPS_;
+	sl12::Shader				zpreMS_, zprePS_, zpreAMS_, zpreAAS_;
+	sl12::Shader				lightingMS_, lightingPS_, lightingAMS_, lightingAAS_;
 	sl12::Shader				fullscreenVS_;
-	sl12::RootSignature			zpreRootSig_, lightingRootSig_;
-	sl12::GraphicsPipelineState	zprePso_, lightingPso_;
+	sl12::RootSignature			zpreRootSig_, zpreARootSig_, lightingRootSig_, lightingARootSig_;
+	sl12::GraphicsPipelineState	zprePso_, zpreAPso_, lightingPso_, lightingAPso_;
 	ID3D12CommandSignature*		commandSig_ = nullptr;
 
 	sl12::DescriptorSet			descSet_;
@@ -2171,6 +2251,7 @@ private:
 	bool					isFrustumCulling_ = true;
 	bool					isFreezeCull_ = false;
 	bool					isMeshletColor_ = false;
+	bool					isEnableAmp_ = true;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;

@@ -3,6 +3,8 @@
 
 #include "constant.h"
 
+#define LANE_COUNT_IN_WAVE	32
+
 float3 SkyColor(float3 w_dir)
 {
 	float3 t = w_dir.y * 0.5 + 0.5;
