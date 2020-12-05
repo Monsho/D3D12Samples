@@ -154,6 +154,46 @@ namespace sl12
 		LARGE_INTEGER			time_;
 	};	// class CpuTimer
 
+	class Random
+	{
+	public:
+		Random()
+		{}
+		Random(u32 seed)
+		{
+			x_ = seed = 1812433253 * (seed ^ (seed >> 30));
+			y_ = seed = 1812433253 * (seed ^ (seed >> 30)) + 1;
+			z_ = seed = 1812433253 * (seed ^ (seed >> 30)) + 2;
+			w_ = seed = 1812433253 * (seed ^ (seed >> 30)) + 3;
+		}
+
+		u32 GetValue()
+		{
+			u32 t = x_ ^ (x_ << 11);
+			x_ = y_;
+			y_ = z_;
+			z_ = w_;
+			return w_ = (w_ ^ (w_ >> 19)) ^ (t ^ (t >> 8));
+		}
+
+		float GetFValue()
+		{
+			return (float)GetValue() / (float)UINT_MAX;
+		}
+
+		float GetFValueRange(float minV, float maxV)
+		{
+			return minV + (maxV - minV) * GetFValue();
+		}
+
+	private:
+		u32		x_ = 123456789;
+		u32		y_ = 362436069;
+		u32		z_ = 521288629;
+		u32		w_ = 88675123;
+	};	// class Random
+
+	extern Random GlobalRandom;
 }	// namespace sl12
 
 //	EOF

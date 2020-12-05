@@ -4,6 +4,7 @@
 
 namespace sl12
 {
+	Random	GlobalRandom;
 
 	namespace
 	{
