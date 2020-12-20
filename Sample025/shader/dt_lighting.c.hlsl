@@ -61,9 +61,6 @@ float3 Lighting(uint2 pixelPos, float depth)
 	float4 baseColor = texBindless[NonUniformResourceIndex(info.baseColorIndex)].SampleGrad(samTexture, uv, derivativeUV.xy, derivativeUV.zw);
 	float3 normalInTS = texBindless[NonUniformResourceIndex(info.normalMapIndex)].SampleGrad(samTexture, uv, derivativeUV.xy, derivativeUV.zw).rgb * 2 - 1;
 	float4 orm = texBindless[NonUniformResourceIndex(info.ormMapIndex)].SampleGrad(samTexture, uv, derivativeUV.xy, derivativeUV.zw);
-	//float4 baseColor = texBindless[NonUniformResourceIndex(info.baseColorIndex)].SampleLevel(samTexture, uv, 0);
-	//float3 normalInTS = texBindless[NonUniformResourceIndex(info.normalMapIndex)].SampleLevel(samTexture, uv, 0).rgb * 2 - 1;
-	//float4 orm = texBindless[NonUniformResourceIndex(info.ormMapIndex)].SampleLevel(samTexture, uv, 0);
 
 	normalInTS *= (binormalSign ? float3(1, -1, 1) : 1);
 
