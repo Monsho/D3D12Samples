@@ -171,6 +171,8 @@ https://sites.google.com/site/monshonosuana/directxno-hanashi-1/directx-172
 This sample is implementation of meshlet culling using Mesh Shader and Amplification Shader.
 
 ## Sample025
+https://sites.google.com/site/monshonosuana/directxno-hanashi-1/directx-173
+
 バインドレステクスチャを用いたDeferred Textureの実装サンプルです。
 
 This sample is implementation of deferred texture rendering using bindless textures.
