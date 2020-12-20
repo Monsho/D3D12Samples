@@ -12,6 +12,7 @@ struct VSOutput
 	float4	tangent		: TANGENT;
 	float2	uv			: TEXCOORD;
 	float4	color		: COLOR;
+	nointerpolation uint	materialId	: MATERIALID;
 };
 
 struct Meshlet
@@ -24,9 +25,10 @@ struct Meshlet
 	uint		vertexIndexCount;
 };
 
-ConstantBuffer<SceneCB>		cbScene			: register(b0);
-ConstantBuffer<FrustumCB>	cbFrustum		: register(b1);
-ConstantBuffer<MeshCB>		cbMesh			: register(b2);
+ConstantBuffer<SceneCB>			cbScene			: register(b0);
+ConstantBuffer<FrustumCB>		cbFrustum		: register(b1);
+ConstantBuffer<MeshCB>			cbMesh			: register(b2);
+ConstantBuffer<MaterialIdCB>	cbMaterialId	: register(b3);
 
 StructuredBuffer<Meshlet>	inputMeshlets	: register(t0);
 StructuredBuffer<float3>	vertexPosition	: register(t1);
@@ -110,6 +112,7 @@ void main(
 		VSOutput Out;
 
 		float4x4 mtxLocalToProj = mul(cbScene.mtxWorldToProj, cbMesh.mtxLocalToWorld);
+		float4x4 mtxPrevLocalToProj = mul(cbScene.mtxPrevWorldToProj, cbMesh.mtxPrevLocalToWorld);
 
 		uint index = vertexIndex[ml.vertexIndexOffset + gtid];
 		float3 InPos = vertexPosition[index];
@@ -133,6 +136,8 @@ void main(
 			float4(0, 0, 0, 1),
 		};
 		Out.color = kMeshletColors[meshletIndex & 0xf];
+
+		Out.materialId = cbMaterialId.materialId;
 
 		verts[gtid] = Out;
 	}

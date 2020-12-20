@@ -373,6 +373,77 @@ namespace sl12
 	}
 
 	//----
+	bool RootSignature::InitializeWithBindless(Device* pDev, Shader* cs, const RootBindlessInfo* bindlessInfos, u32 bindlessCount)
+	{
+		if (!bindlessInfos || !bindlessCount)
+		{
+			return Initialize(pDev, cs);
+		}
+
+		const D3D12_DESCRIPTOR_RANGE kDefaultRange[] = {
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV,     16, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV,     48, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV,     16, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+		};
+		std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
+		std::vector<D3D12_ROOT_PARAMETER> params;
+		ranges.resize(4 + (size_t)bindlessCount);
+		params.resize(4 + (size_t)bindlessCount);
+		int rangeCnt = 0;
+		auto SetParam = [&](D3D12_SHADER_VISIBILITY vis)
+		{
+			params[rangeCnt].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			params[rangeCnt].ShaderVisibility = vis;
+			params[rangeCnt].DescriptorTable.pDescriptorRanges = ranges.data() + rangeCnt;
+			params[rangeCnt].DescriptorTable.NumDescriptorRanges = 1;
+		};
+
+		// default table.
+		inputIndex_.csCbvIndex_ = rangeCnt;
+		SetParam(D3D12_SHADER_VISIBILITY_ALL);
+		ranges[rangeCnt++] = kDefaultRange[0];
+		inputIndex_.csSrvIndex_ = rangeCnt;
+		SetParam(D3D12_SHADER_VISIBILITY_ALL);
+		ranges[rangeCnt++] = kDefaultRange[1];
+		inputIndex_.csSamplerIndex_ = rangeCnt;
+		SetParam(D3D12_SHADER_VISIBILITY_ALL);
+		ranges[rangeCnt++] = kDefaultRange[2];
+		inputIndex_.csUavIndex_ = rangeCnt;
+		SetParam(D3D12_SHADER_VISIBILITY_ALL);
+		ranges[rangeCnt++] = kDefaultRange[3];
+
+		// bindless table.
+		bindlessInfos_.reserve(bindlessCount);
+		for (u32 i = 0; i < bindlessCount; i++)
+		{
+			RootBindlessInfo info = bindlessInfos[i];
+
+			D3D12_DESCRIPTOR_RANGE range;
+			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+			range.NumDescriptors = info.maxResources_;
+			range.BaseShaderRegister = 0;
+			range.RegisterSpace = info.space_;
+			range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+			info.index_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_ALL);
+			ranges[rangeCnt++] = range;
+
+			bindlessInfos_.push_back(info);
+		}
+
+		D3D12_ROOT_SIGNATURE_DESC desc{};
+		desc.NumParameters = rangeCnt;
+		desc.pParameters = params.data();
+		desc.NumStaticSamplers = 0;
+		desc.pStaticSamplers = nullptr;
+		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+		return Initialize(pDev, desc);
+	}
+
+	//----
 	void RootSignature::Destroy()
 	{
 		SafeRelease(pRootSignature_);

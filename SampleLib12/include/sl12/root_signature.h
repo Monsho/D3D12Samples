@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <sl12/util.h>
+#include <vector>
 
 
 namespace sl12
@@ -54,6 +55,17 @@ namespace sl12
 		D3D12_ROOT_SIGNATURE_FLAGS	flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 	};	// struct RootSignatureDesc
 
+	struct RootBindlessInfo
+	{
+		u8		space_ = 0;
+		u8		index_ = 0;
+		u32		maxResources_ = 0;
+
+		RootBindlessInfo(u8 space = 0, u32 maxRes = 0)
+			: space_(space), maxResources_(maxRes)
+		{}
+	};	// struct RootBindlessInfo
+
 	class RootSignature
 	{
 	public:
@@ -101,15 +113,18 @@ namespace sl12
 		bool Initialize(Device* pDev, Shader* vs, Shader* ps, Shader* gs, Shader* hs, Shader* ds);
 		bool Initialize(Device* pDev, Shader* as, Shader* ms, Shader* ps);
 		bool Initialize(Device* pDev, Shader* cs);
+		bool InitializeWithBindless(Device* pDev, Shader* cs, const RootBindlessInfo* bindlessInfos, u32 bindlessCount);
 		void Destroy();
 
 		// getter
 		ID3D12RootSignature* GetRootSignature() { return pRootSignature_; }
 		const InputIndex& GetInputIndex() const { return inputIndex_; }
+		const std::vector<RootBindlessInfo>& GetBindlessInfos() { return bindlessInfos_; }
 
 	private:
-		ID3D12RootSignature*		pRootSignature_{ nullptr };
-		InputIndex					inputIndex_;
+		ID3D12RootSignature*			pRootSignature_{ nullptr };
+		InputIndex						inputIndex_;
+		std::vector<RootBindlessInfo>	bindlessInfos_;
 	};	// class RootSignature
 
 

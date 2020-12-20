@@ -32,6 +32,9 @@
 #include "CompiledShaders/gbuffer.m.hlsl.h"
 #include "CompiledShaders/gbuffer.p.hlsl.h"
 #include "CompiledShaders/gbuffer.a.hlsl.h"
+#include "CompiledShaders/dt_pre.m.hlsl.h"
+#include "CompiledShaders/dt_pre.p.hlsl.h"
+#include "CompiledShaders/dt_pre.a.hlsl.h"
 #include "CompiledShaders/lighting.c.hlsl.h"
 #include "CompiledShaders/toldr.p.hlsl.h"
 #include "CompiledShaders/fullscreen.vv.hlsl.h"
@@ -41,6 +44,7 @@
 #include "CompiledShaders/material.lib.hlsl.h"
 #include "CompiledShaders/direct_shadow.lib.hlsl.h"
 #include "CompiledShaders/cluster_cull.c.hlsl.h"
+#include "CompiledShaders/dt_lighting.c.hlsl.h"
 
 #define USE_IN_CPP
 #include "../shader/constant.h"
@@ -270,6 +274,10 @@ public:
 				return false;
 			}
 		}
+		if (!dtbuffers_.Initialize(&device_, kScreenWidth, kScreenHeight))
+		{
+			return false;
+		}
 
 		{
 			sl12::TextureDesc desc;
@@ -322,9 +330,22 @@ public:
 		{
 			return false;
 		}
-		if (!lightingRootSig_.Initialize(&device_, &lightingCS_))
+		if (!dtpreRootSig_.Initialize(&device_, &dtpreAS_, &dtpreMS_, &dtprePS_))
 		{
 			return false;
+		}
+		{
+			sl12::RootBindlessInfo bindless[] = {
+				sl12::RootBindlessInfo(1, 1024),
+			};
+			if (!lightingRootSig_.InitializeWithBindless(&device_, &lightingCS_, nullptr, 0))
+			{
+				return false;
+			}
+			if (!dtLightingRootSig_.InitializeWithBindless(&device_, &dtLightingCS_, bindless, ARRAYSIZE(bindless)))
+			{
+				return false;
+			}
 		}
 		if (!clusterCullRootSig_.Initialize(&device_, &clusterCullCS_))
 		{
@@ -426,6 +447,53 @@ public:
 			}
 		}
 		{
+			if (!dtpreMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pDtPreMS, sizeof(g_pDtPreMS)))
+			{
+				return false;
+			}
+			if (!dtprePS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pDtPrePS, sizeof(g_pDtPrePS)))
+			{
+				return false;
+			}
+			if (!dtpreAS_.Initialize(&device_, sl12::ShaderType::Amplification, g_pDtPreAS, sizeof(g_pDtPreAS)))
+			{
+				return false;
+			}
+
+			sl12::GraphicsPipelineStateDesc desc;
+			desc.pRootSignature = &dtpreRootSig_;
+			desc.pAS = &dtpreAS_;
+			desc.pMS = &dtpreMS_;
+			desc.pPS = &dtprePS_;
+
+			desc.blend.sampleMask = UINT_MAX;
+			desc.blend.rtDesc[0].isBlendEnable = false;
+			desc.blend.rtDesc[0].writeMask = 0xf;
+
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+			desc.rasterizer.isDepthClipEnable = true;
+			desc.rasterizer.isFrontCCW = false;
+
+			desc.depthStencil.isDepthEnable = true;
+			desc.depthStencil.isDepthWriteEnable = true;
+			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+			desc.numRTVs = 0;
+			for (int i = 0; i < ARRAYSIZE(dtbuffers_.dtbufferTex); i++)
+			{
+				desc.rtvFormats[desc.numRTVs++] = dtbuffers_.dtbufferTex[i].GetTextureDesc().format;
+			}
+			desc.dsvFormat = DXGI_FORMAT_D32_FLOAT;
+			desc.multisampleCount = 1;
+
+			if (!dtprePso_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
 			if (!lightingCS_.Initialize(&device_, sl12::ShaderType::Compute, g_pLightingCS, sizeof(g_pLightingCS)))
 			{
 				return false;
@@ -436,6 +504,21 @@ public:
 			desc.pCS = &lightingCS_;
 
 			if (!lightingPso_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			if (!dtLightingCS_.Initialize(&device_, sl12::ShaderType::Compute, g_pDtLightingCS, sizeof(g_pDtLightingCS)))
+			{
+				return false;
+			}
+
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &dtLightingRootSig_;
+			desc.pCS = &dtLightingCS_;
+
+			if (!dtLightingPso_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -466,7 +549,7 @@ public:
 			}
 
 			sl12::GraphicsPipelineStateDesc desc;
-			desc.pRootSignature = &zpreRootSig_;
+			desc.pRootSignature = &toLdrRootSig_;
 			desc.pVS = &fullscreenVS_;
 			desc.pPS = &toLdrPS_;
 
@@ -496,7 +579,7 @@ public:
 		}
 
 		// ポイントライト
-		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 1.0f, 5.0f, 1.0f, 10.0f))
+		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 3.0f, 10.0f, 1.0f, 10.0f))
 		{
 			return false;
 		}
@@ -625,6 +708,19 @@ public:
 			CreateSceneCB();
 			CreateMeshCB();
 
+			auto pMeshRes = hMeshRes_.GetItem<sl12::ResourceItemMesh>();
+			auto&& submeshes = pMeshRes->GetSubmeshes();
+			auto&& materials = pMeshRes->GetMaterials();
+			for (auto&& submesh : submeshes)
+			{
+				auto&& mat = materials[submesh.materialIndex];
+				dtMaterialInfo_.AddMaterial(&device_,
+					mat.baseColorTex.GetItem<sl12::ResourceItemTexture>()->GetTextureView(),
+					mat.normalTex.GetItem<sl12::ResourceItemTexture>()->GetTextureView(),
+					mat.ormTex.GetItem<sl12::ResourceItemTexture>()->GetTextureView());
+			}
+			dtMaterialInfo_.CreateMaterialInfoBuffer(&device_);
+
 			InitializeRaytracingPipeline();
 			utilCmdList_.Reset();
 			CreateAS(&utilCmdList_);
@@ -684,6 +780,7 @@ public:
 			if (ImGui::SliderFloat2("Metallic Range", (float*)&metallicRange_, 0.0f, 1.0f))
 			{
 			}
+			ImGui::Checkbox("Deferred Texture", &isDeferredTexture_);
 			ImGui::Checkbox("Frustum Cull", &isFrustumCulling_);
 			ImGui::Checkbox("Freeze Cull", &isFreezeCull_);
 			ImGui::Checkbox("Meshlet Color", &isMeshletColor_);
@@ -712,18 +809,19 @@ public:
 		}
 
 		d3dCmdList->ClearDepthStencilView(curGBuffer.depthDSV.GetDescInfo().cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+		d3dCmdList->ClearDepthStencilView(dtbuffers_.depthDSV.GetDescInfo().cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[0], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[1], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[2], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[3], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[0], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[1], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[2], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[3], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[4], D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		gpuTimestamp_[frameIndex].Query(pCmdList);
-
-		D3D12_SHADING_RATE_COMBINER shading_rate_combiners[] = {
-			D3D12_SHADING_RATE_COMBINER_PASSTHROUGH,
-			D3D12_SHADING_RATE_COMBINER_OVERRIDE,
-		};
 
 		// cluster culling.
 		{
@@ -739,171 +837,261 @@ public:
 			d3dCmdList->Dispatch(1, 1, CLUSTER_DIV_Z);
 		}
 
-		// レンダーターゲット設定
+		if (!isDeferredTexture_)
 		{
-			D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
-				curGBuffer.gbufferRTV[0].GetDescInfo().cpuHandle,
-			};
-			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
-			d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
-
-			D3D12_VIEWPORT vp;
-			vp.TopLeftX = vp.TopLeftY = 0.0f;
-			vp.Width = kScreenWidth;
-			vp.Height = kScreenHeight;
-			vp.MinDepth = 0.0f;
-			vp.MaxDepth = 1.0f;
-			d3dCmdList->RSSetViewports(1, &vp);
-
-			D3D12_RECT rect;
-			rect.left = rect.top = 0;
-			rect.right = kScreenWidth;
-			rect.bottom = kScreenHeight;
-			d3dCmdList->RSSetScissorRects(1, &rect);
-		}
-
-		// Z pre pass
-		{
-			auto myPso = &zprePso_;
-			auto myRS = &zpreRootSig_;
-
-			// PSO設定
-			d3dCmdList->SetPipelineState(myPso->GetPSO());
-
-			// 基本Descriptor設定
-			descSet_.Reset();
-			descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
-
-			int count = 0;
-			int offset = 0;
-			auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+			// レンダーターゲット設定
 			{
-				descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
-				descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+				D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
+					curGBuffer.gbufferRTV[0].GetDescInfo().cpuHandle,
+				};
+				auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
+				d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
 
-				auto&& submeshes = pMesh->GetSubmeshes();
-				auto submesh_count = submeshes.size();
-				for (int i = 0; i < submesh_count; i++)
-				{
-					auto&& submesh = submeshes[i];
+				D3D12_VIEWPORT vp;
+				vp.TopLeftX = vp.TopLeftY = 0.0f;
+				vp.Width = kScreenWidth;
+				vp.Height = kScreenHeight;
+				vp.MinDepth = 0.0f;
+				vp.MaxDepth = 1.0f;
+				d3dCmdList->RSSetViewports(1, &vp);
 
-					descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(3, submesh.texcoordView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(4, submesh.packedPrimitiveView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(5, submesh.vertexIndexView.GetDescInfo().cpuHandle);
+				D3D12_RECT rect;
+				rect.left = rect.top = 0;
+				rect.right = kScreenWidth;
+				rect.bottom = kScreenHeight;
+				d3dCmdList->RSSetScissorRects(1, &rect);
+			}
 
-					auto&& material = pMesh->GetMaterials()[submesh.materialIndex];
-					auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
-					auto&& base_color_srv = bc_tex_res->GetTextureView();
-
-					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
-					pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
-
-					UINT dispatch_count = (UINT)submesh.meshlets.size();
-					dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
-					d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
-				}
-			};
-
-			// DrawCall
-			RenderMesh(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
-		}
-
-		// レンダーターゲット設定
-		{
-			D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
-				curGBuffer.gbufferRTV[0].GetDescInfo().cpuHandle,
-				curGBuffer.gbufferRTV[1].GetDescInfo().cpuHandle,
-				curGBuffer.gbufferRTV[2].GetDescInfo().cpuHandle,
-				curGBuffer.gbufferRTV[3].GetDescInfo().cpuHandle,
-			};
-			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
-			d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
-
-			D3D12_VIEWPORT vp;
-			vp.TopLeftX = vp.TopLeftY = 0.0f;
-			vp.Width = kScreenWidth;
-			vp.Height = kScreenHeight;
-			vp.MinDepth = 0.0f;
-			vp.MaxDepth = 1.0f;
-			d3dCmdList->RSSetViewports(1, &vp);
-
-			D3D12_RECT rect;
-			rect.left = rect.top = 0;
-			rect.right = kScreenWidth;
-			rect.bottom = kScreenHeight;
-			d3dCmdList->RSSetScissorRects(1, &rect);
-		}
-
-		// gbuffer pass
-		{
-			auto myPso = &gbufferPso_;
-			auto myRS = &gbufferRootSig_;
-
-			// PSO設定
-			d3dCmdList->SetPipelineState(myPso->GetPSO());
-
-			// 基本Descriptor設定
-			descSet_.Reset();
-			descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(1, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
-
-			int count = 0;
-			int offset = 0;
-			auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+			// Z pre pass
 			{
-				descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
-				descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+				auto myPso = &zprePso_;
+				auto myRS = &zpreRootSig_;
 
-				auto&& submeshes = pMesh->GetSubmeshes();
-				auto submesh_count = submeshes.size();
-				for (int i = 0; i < submesh_count; i++)
+				// PSO設定
+				d3dCmdList->SetPipelineState(myPso->GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
+
+				int count = 0;
+				int offset = 0;
+				auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
 				{
-					auto&& submesh = submeshes[i];
+					descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+					descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
 
-					descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(3, submesh.tangentView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(4, submesh.texcoordView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(5, submesh.packedPrimitiveView.GetDescInfo().cpuHandle);
-					descSet_.SetMsSrv(6, submesh.vertexIndexView.GetDescInfo().cpuHandle);
+					auto&& submeshes = pMesh->GetSubmeshes();
+					auto submesh_count = submeshes.size();
+					for (int i = 0; i < submesh_count; i++)
+					{
+						auto&& submesh = submeshes[i];
 
-					auto&& material = pMesh->GetMaterials()[submesh.materialIndex];
-					auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
-					auto n_tex_res = const_cast<sl12::ResourceItemTexture*>(material.normalTex.GetItem<sl12::ResourceItemTexture>());
-					auto orm_tex_res = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
-					auto&& base_color_srv = bc_tex_res->GetTextureView();
-					auto&& normal_srv = n_tex_res->GetTextureView();
-					auto&& orm_srv = orm_tex_res->GetTextureView();
+						descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(3, submesh.texcoordView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(4, submesh.packedPrimitiveView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(5, submesh.vertexIndexView.GetDescInfo().cpuHandle);
 
-					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
-					descSet_.SetPsSrv(1, normal_srv.GetDescInfo().cpuHandle);
-					descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
-					pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
+						auto&& material = pMesh->GetMaterials()[submesh.materialIndex];
+						auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+						auto&& base_color_srv = bc_tex_res->GetTextureView();
 
-					UINT dispatch_count = submesh.meshlets.size();
-					dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
-					d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
-				}
-			};
+						descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
+						pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-			// DrawCall
-			RenderMesh(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+						UINT dispatch_count = (UINT)submesh.meshlets.size();
+						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
+						d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
+					}
+				};
+
+				// DrawCall
+				RenderMesh(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+			}
+
+			// レンダーターゲット設定
+			{
+				D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
+					curGBuffer.gbufferRTV[0].GetDescInfo().cpuHandle,
+					curGBuffer.gbufferRTV[1].GetDescInfo().cpuHandle,
+					curGBuffer.gbufferRTV[2].GetDescInfo().cpuHandle,
+					curGBuffer.gbufferRTV[3].GetDescInfo().cpuHandle,
+				};
+				auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
+				d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
+
+				D3D12_VIEWPORT vp;
+				vp.TopLeftX = vp.TopLeftY = 0.0f;
+				vp.Width = kScreenWidth;
+				vp.Height = kScreenHeight;
+				vp.MinDepth = 0.0f;
+				vp.MaxDepth = 1.0f;
+				d3dCmdList->RSSetViewports(1, &vp);
+
+				D3D12_RECT rect;
+				rect.left = rect.top = 0;
+				rect.right = kScreenWidth;
+				rect.bottom = kScreenHeight;
+				d3dCmdList->RSSetScissorRects(1, &rect);
+			}
+
+			// gbuffer pass
+			{
+				auto myPso = &gbufferPso_;
+				auto myRS = &gbufferRootSig_;
+
+				// PSO設定
+				d3dCmdList->SetPipelineState(myPso->GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsCbv(1, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
+
+				int count = 0;
+				int offset = 0;
+				auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+				{
+					descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+					descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+
+					auto&& submeshes = pMesh->GetSubmeshes();
+					auto submesh_count = submeshes.size();
+					for (int i = 0; i < submesh_count; i++)
+					{
+						auto&& submesh = submeshes[i];
+
+						descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(3, submesh.tangentView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(4, submesh.texcoordView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(5, submesh.packedPrimitiveView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(6, submesh.vertexIndexView.GetDescInfo().cpuHandle);
+
+						auto&& material = pMesh->GetMaterials()[submesh.materialIndex];
+						auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+						auto n_tex_res = const_cast<sl12::ResourceItemTexture*>(material.normalTex.GetItem<sl12::ResourceItemTexture>());
+						auto orm_tex_res = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
+						auto&& base_color_srv = bc_tex_res->GetTextureView();
+						auto&& normal_srv = n_tex_res->GetTextureView();
+						auto&& orm_srv = orm_tex_res->GetTextureView();
+
+						descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
+						descSet_.SetPsSrv(1, normal_srv.GetDescInfo().cpuHandle);
+						descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
+						pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
+
+						UINT dispatch_count = submesh.meshlets.size();
+						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
+						d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
+					}
+				};
+
+				// DrawCall
+				RenderMesh(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+			}
+		}
+		else
+		{
+			// レンダーターゲット設定
+			{
+				D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
+					dtbuffers_.dtbufferRTV[0].GetDescInfo().cpuHandle,
+					dtbuffers_.dtbufferRTV[1].GetDescInfo().cpuHandle,
+					dtbuffers_.dtbufferRTV[2].GetDescInfo().cpuHandle,
+					dtbuffers_.dtbufferRTV[3].GetDescInfo().cpuHandle,
+					dtbuffers_.dtbufferRTV[4].GetDescInfo().cpuHandle,
+				};
+				auto&& dsv = dtbuffers_.depthDSV.GetDescInfo().cpuHandle;
+				d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
+
+				D3D12_VIEWPORT vp;
+				vp.TopLeftX = vp.TopLeftY = 0.0f;
+				vp.Width = kScreenWidth;
+				vp.Height = kScreenHeight;
+				vp.MinDepth = 0.0f;
+				vp.MaxDepth = 1.0f;
+				d3dCmdList->RSSetViewports(1, &vp);
+
+				D3D12_RECT rect;
+				rect.left = rect.top = 0;
+				rect.right = kScreenWidth;
+				rect.bottom = kScreenHeight;
+				d3dCmdList->RSSetScissorRects(1, &rect);
+			}
+
+			// dt pre pass
+			{
+				auto myPso = &dtprePso_;
+				auto myRS = &dtpreRootSig_;
+
+				// PSO設定
+				d3dCmdList->SetPipelineState(myPso->GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetAsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetAsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetMsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetMsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
+
+				int count = 0;
+				int offset = 0;
+				auto RenderMesh = [&](const sl12::ResourceItemMesh* pMesh, sl12::ConstantBufferView* pMeshCBV, std::vector<MeshletRenderComponent*>& comps)
+				{
+					descSet_.SetAsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+					descSet_.SetMsCbv(2, pMeshCBV->GetDescInfo().cpuHandle);
+
+					auto&& submeshes = pMesh->GetSubmeshes();
+					auto submesh_count = submeshes.size();
+					for (int i = 0; i < submesh_count; i++)
+					{
+						auto&& submesh = submeshes[i];
+
+						descSet_.SetMsCbv(3, dtMaterialInfo_.materialIdCBs_[i]->GetDescInfo().cpuHandle);
+
+						descSet_.SetAsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(0, comps[i]->GetMeshletForMSBV().GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(1, submesh.positionView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(2, submesh.normalView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(3, submesh.tangentView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(4, submesh.texcoordView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(5, submesh.packedPrimitiveView.GetDescInfo().cpuHandle);
+						descSet_.SetMsSrv(6, submesh.vertexIndexView.GetDescInfo().cpuHandle);
+
+						auto&& material = pMesh->GetMaterials()[submesh.materialIndex];
+						auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+						auto&& base_color_srv = bc_tex_res->GetTextureView();
+
+						descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
+						pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
+
+						UINT dispatch_count = submesh.meshlets.size();
+						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
+						d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
+					}
+				};
+
+				// DrawCall
+				RenderMesh(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, meshletComponents_);
+			}
 		}
 
 		// リソースバリア
@@ -912,6 +1100,12 @@ public:
 		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[2], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 		pCmdList->TransitionBarrier(&curGBuffer.gbufferTex[3], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 		pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[0], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[1], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[2], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[3], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&dtbuffers_.dtbufferTex[4], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&dtbuffers_.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		// raytrace shadow.
 		{
@@ -921,8 +1115,16 @@ public:
 			rtGlobalDescSet_.Reset();
 			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(1, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(2, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+			if (!isDeferredTexture_)
+			{
+				rtGlobalDescSet_.SetCsSrv(1, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
+				rtGlobalDescSet_.SetCsSrv(2, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				rtGlobalDescSet_.SetCsSrv(1, dtbuffers_.dtbufferSRV[0].GetDescInfo().cpuHandle);
+				rtGlobalDescSet_.SetCsSrv(2, dtbuffers_.depthSRV.GetDescInfo().cpuHandle);
+			}
 			rtGlobalDescSet_.SetCsUav(0, rtShadowResult_.uav.GetDescInfo().cpuHandle);
 
 			// コピーしつつコマンドリストに積む
@@ -961,25 +1163,54 @@ public:
 			pCmdList->TransitionBarrier(&clusterInfoBuffer_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 			pCmdList->TransitionBarrier(&accumTex_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-			descSet_.Reset();
-			descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(1, curGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(2, curGBuffer.gbufferSRV[2].GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(3, curGBuffer.gbufferSRV[3].GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(4, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(5, rtShadowResult_.srv.GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(6, pointLightsPosSRV_.GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(7, pointLightsColorSRV_.GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(8, clusterInfoSRV_.GetDescInfo().cpuHandle);
-			descSet_.SetCsUav(0, accumUAV_.GetDescInfo().cpuHandle);
+			if (!isDeferredTexture_)
+			{
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(1, curGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(2, curGBuffer.gbufferSRV[2].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(3, curGBuffer.gbufferSRV[3].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(4, curGBuffer.depthSRV.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(5, rtShadowResult_.srv.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(6, pointLightsPosSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(7, pointLightsColorSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(8, clusterInfoSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(0, accumUAV_.GetDescInfo().cpuHandle);
 
-			d3dCmdList->SetPipelineState(lightingPso_.GetPSO());
-			pCmdList->SetComputeRootSignatureAndDescriptorSet(&lightingRootSig_, &descSet_);
-			UINT dx = (kScreenWidth + 7) / 8;
-			UINT dy = (kScreenHeight + 7) / 8;
-			d3dCmdList->Dispatch(dx, dy, 1);
+				d3dCmdList->SetPipelineState(lightingPso_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&lightingRootSig_, &descSet_);
+				UINT dx = (kScreenWidth + 7) / 8;
+				UINT dy = (kScreenHeight + 7) / 8;
+				d3dCmdList->Dispatch(dx, dy, 1);
+			}
+			else
+			{
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(2, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, dtbuffers_.dtbufferSRV[0].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(1, dtbuffers_.dtbufferSRV[1].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(2, dtbuffers_.dtbufferSRV[2].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(3, dtbuffers_.dtbufferSRV[3].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(4, dtbuffers_.dtbufferSRV[4].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(5, dtbuffers_.depthSRV.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(6, rtShadowResult_.srv.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(7, dtMaterialInfo_.materialInfoSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(8, pointLightsPosSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(9, pointLightsColorSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(10, clusterInfoSRV_.GetDescInfo().cpuHandle);
+				descSet_.SetCsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(0, accumUAV_.GetDescInfo().cpuHandle);
+
+				d3dCmdList->SetPipelineState(dtLightingPso_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&dtLightingRootSig_, &descSet_, &dtMaterialInfo_.textureHandles_);
+				UINT dx = (kScreenWidth + 7) / 8;
+				UINT dy = (kScreenHeight + 7) / 8;
+				d3dCmdList->Dispatch(dx, dy, 1);
+			}
 
 			pCmdList->TransitionBarrier(&accumTex_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		}
@@ -1015,10 +1246,12 @@ public:
 
 			pCmdList->SetMeshRootSignatureAndDescriptorSet(&toLdrRootSig_, &descSet_);
 
+			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			d3dCmdList->DrawInstanced(3, 1, 0, 0);
 		}
 
 		pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		pCmdList->TransitionBarrier(&dtbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 		ImGui::Render();
 
@@ -1076,14 +1309,22 @@ public:
 		accumSRV_.Destroy();
 		accumTex_.Destroy();
 		for (auto&& v : gbuffers_) v.Destroy();
+		dtbuffers_.Destroy();
+		dtMaterialInfo_.Destroy();
 
 		fullscreenVS_.Destroy();
 		toLdrPso_.Destroy();
 		toLdrPS_.Destroy();
 		clusterCullPso_.Destroy();
 		clusterCullCS_.Destroy();
+		dtLightingPso_.Destroy();
+		dtLightingCS_.Destroy();
 		lightingPso_.Destroy();
 		lightingCS_.Destroy();
+		dtprePso_.Destroy();
+		dtpreAS_.Destroy();
+		dtpreMS_.Destroy();
+		dtprePS_.Destroy();
 		gbufferPso_.Destroy();
 		gbufferAS_.Destroy();
 		gbufferMS_.Destroy();
@@ -1095,7 +1336,9 @@ public:
 
 		toLdrRootSig_.Destroy();
 		clusterCullRootSig_.Destroy();
+		dtLightingRootSig_.Destroy();
 		lightingRootSig_.Destroy();
+		dtpreRootSig_.Destroy();
 		gbufferRootSig_.Destroy();
 		zpreRootSig_.Destroy();
 
@@ -2119,6 +2362,180 @@ private:
 		}
 	};	// struct GBuffers
 
+	struct DtBuffers
+	{
+		sl12::Texture				dtbufferTex[5];
+		sl12::TextureView			dtbufferSRV[5];
+		sl12::RenderTargetView		dtbufferRTV[5];
+
+		sl12::Texture				depthTex;
+		sl12::TextureView			depthSRV;
+		sl12::DepthStencilView		depthDSV;
+
+		bool Initialize(sl12::Device* pDev, int width, int height)
+		{
+			{
+				const DXGI_FORMAT kFormats[] = {
+					DXGI_FORMAT_R10G10B10A2_UNORM,
+					DXGI_FORMAT_R16G16_FLOAT,
+					DXGI_FORMAT_R32G32B32A32_FLOAT,
+					DXGI_FORMAT_R16_UINT,
+					DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+				};
+
+				sl12::TextureDesc desc;
+				desc.dimension = sl12::TextureDimension::Texture2D;
+				desc.width = width;
+				desc.height = height;
+				desc.mipLevels = 1;
+				desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
+				desc.sampleCount = 1;
+				desc.clearColor[4] = { 0.0f };
+				desc.clearDepth = 1.0f;
+				desc.clearStencil = 0;
+				desc.isRenderTarget = true;
+				desc.isDepthBuffer = false;
+				desc.isUav = false;
+
+				for (int i = 0; i < ARRAYSIZE(dtbufferTex); i++)
+				{
+					desc.format = kFormats[i];
+
+					if (!dtbufferTex[i].Initialize(pDev, desc))
+					{
+						return false;
+					}
+
+					if (!dtbufferSRV[i].Initialize(pDev, &dtbufferTex[i]))
+					{
+						return false;
+					}
+
+					if (!dtbufferRTV[i].Initialize(pDev, &dtbufferTex[i]))
+					{
+						return false;
+					}
+				}
+			}
+
+			// 深度バッファを生成
+			{
+				sl12::TextureDesc desc;
+				desc.dimension = sl12::TextureDimension::Texture2D;
+				desc.width = width;
+				desc.height = height;
+				desc.mipLevels = 1;
+				desc.format = DXGI_FORMAT_D32_FLOAT;
+				desc.initialState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+				desc.sampleCount = 1;
+				desc.clearColor[4] = { 0.0f };
+				desc.clearDepth = 1.0f;
+				desc.clearStencil = 0;
+				desc.isRenderTarget = false;
+				desc.isDepthBuffer = true;
+				desc.isUav = false;
+				if (!depthTex.Initialize(pDev, desc))
+				{
+					return false;
+				}
+
+				if (!depthSRV.Initialize(pDev, &depthTex))
+				{
+					return false;
+				}
+
+				if (!depthDSV.Initialize(pDev, &depthTex))
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		void Destroy()
+		{
+			for (int i = 0; i < ARRAYSIZE(dtbufferTex); i++)
+			{
+				dtbufferRTV[i].Destroy();
+				dtbufferSRV[i].Destroy();
+				dtbufferTex[i].Destroy();
+			}
+			depthDSV.Destroy();
+			depthSRV.Destroy();
+			depthTex.Destroy();
+		}
+	};	// struct GBuffers
+
+	struct DtMaterialInfo
+	{
+		std::vector<sl12::Buffer*>					materialIds_;
+		std::vector<sl12::ConstantBufferView*>		materialIdCBs_;
+		std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>	textureHandles_;
+		std::vector<MaterialInfo>					materialInfos_;
+		sl12::Buffer								materialInfoB_;
+		sl12::BufferView							materialInfoSRV_;
+
+		bool AddMaterial(sl12::Device* pDev, const sl12::TextureView& bc, const sl12::TextureView& nrm, const sl12::TextureView& orm)
+		{
+			MaterialIdCB idcb;
+			idcb.materialId = (sl12::u32)materialIds_.size();
+
+			sl12::Buffer* cb = new sl12::Buffer();
+			if (!cb->Initialize(pDev, sizeof(idcb), 0, sl12::BufferUsage::ConstantBuffer, true, false))
+			{
+				return false;
+			}
+			memcpy(cb->Map(nullptr), &idcb, sizeof(idcb));
+			cb->Unmap();
+			sl12::ConstantBufferView* cbv = new sl12::ConstantBufferView();
+			if (!cbv->Initialize(pDev, cb))
+			{
+				return false;
+			}
+			materialIds_.push_back(cb);
+			materialIdCBs_.push_back(cbv);
+
+			MaterialInfo info = {};
+			info.baseColorIndex = (sl12::u32)textureHandles_.size(); textureHandles_.push_back(bc.GetDescInfo().cpuHandle);
+			info.normalMapIndex = (sl12::u32)textureHandles_.size(); textureHandles_.push_back(nrm.GetDescInfo().cpuHandle);
+			info.ormMapIndex = (sl12::u32)textureHandles_.size(); textureHandles_.push_back(orm.GetDescInfo().cpuHandle);
+			materialInfos_.push_back(info);
+
+			return true;
+		}
+
+		bool CreateMaterialInfoBuffer(sl12::Device* pDev)
+		{
+			if (!materialInfoB_.Initialize(pDev, sizeof(MaterialInfo) * materialInfos_.size(), sizeof(MaterialInfo), sl12::BufferUsage::ShaderResource, true, false))
+			{
+				return false;
+			}
+			memcpy(materialInfoB_.Map(nullptr), materialInfos_.data(), materialInfoB_.GetResourceDesc().Width);
+			materialInfoB_.Unmap();
+
+			if (!materialInfoSRV_.Initialize(pDev, &materialInfoB_, 0, materialInfos_.size(), sizeof(MaterialInfo)))
+			{
+				return false;
+			}
+
+			return true;
+		}
+
+		void Destroy()
+		{
+			for (auto&& v : materialIdCBs_) delete v;
+			for (auto&& v : materialIds_) delete v;
+			materialInfoSRV_.Destroy();
+			materialInfoB_.Destroy();
+
+			materialIds_.clear();
+			materialIdCBs_.clear();
+			textureHandles_.clear();
+			materialInfos_.clear();
+		}
+	};
+
 	static const int kBufferCount = sl12::Swapchain::kMaxBuffer;
 
 	struct CommandLists
@@ -2211,6 +2628,8 @@ private:
 	sl12::ConstantBufferView		frustumCBVs_[kBufferCount];
 
 	GBuffers					gbuffers_[kBufferCount];
+	DtBuffers					dtbuffers_;
+	DtMaterialInfo				dtMaterialInfo_;
 	sl12::Texture				accumTex_;
 	sl12::TextureView			accumSRV_;
 	sl12::UnorderedAccessView	accumUAV_;
@@ -2225,12 +2644,13 @@ private:
 
 	sl12::Shader				zpreMS_, zprePS_, zpreAS_;
 	sl12::Shader				gbufferMS_, gbufferPS_, gbufferAS_;
-	sl12::Shader				lightingCS_, clusterCullCS_;
+	sl12::Shader				dtpreMS_, dtprePS_, dtpreAS_;
+	sl12::Shader				lightingCS_, dtLightingCS_, clusterCullCS_;
 	sl12::Shader				toLdrPS_;
 	sl12::Shader				fullscreenVS_;
-	sl12::RootSignature			zpreRootSig_, gbufferRootSig_, lightingRootSig_, clusterCullRootSig_, toLdrRootSig_;
-	sl12::GraphicsPipelineState	zprePso_, gbufferPso_, toLdrPso_;
-	sl12::ComputePipelineState	lightingPso_, clusterCullPso_;
+	sl12::RootSignature			zpreRootSig_, gbufferRootSig_, dtpreRootSig_, lightingRootSig_, dtLightingRootSig_, clusterCullRootSig_, toLdrRootSig_;
+	sl12::GraphicsPipelineState	zprePso_, gbufferPso_, dtprePso_, toLdrPso_;
+	sl12::ComputePipelineState	lightingPso_, dtLightingPso_, clusterCullPso_;
 	ID3D12CommandSignature*		commandSig_ = nullptr;
 
 	sl12::DescriptorSet			descSet_;
@@ -2265,6 +2685,7 @@ private:
 	bool					isFrustumCulling_ = true;
 	bool					isFreezeCull_ = false;
 	bool					isMeshletColor_ = false;
+	bool					isDeferredTexture_ = true;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;

@@ -6,7 +6,6 @@ struct PSInput
 	float3	normal		: NORMAL;
 	float4	tangent		: TANGENT;
 	float2	uv			: TEXCOORD0;
-	float3	viewDir		: VIEDIR;
 	float4	color		: COLOR;
 };
 
@@ -41,6 +40,7 @@ PSOutput main(PSInput In)
 	gb.roughness = lerp(cbMaterial.roughnessRange.x, cbMaterial.roughnessRange.y, orm.g) + Epsilon;
 	gb.metallic = lerp(cbMaterial.metallicRange.x, cbMaterial.metallicRange.y, orm.b);
 
+#if 0
 	float3 T, B, N;
 	GetTangentSpace(In.normal, In.tangent, T, B, N);
 	float3 normalInTS = texNormal.Sample(texColor_s, In.uv).xyz * 2 - 1;
@@ -48,6 +48,17 @@ PSOutput main(PSInput In)
 	B = normalize(cross(normalInWS, T));
 	T = cross(B, normalInWS);
 	gb.worldQuat = TangentSpaceToQuat(T, B, normalInWS);
+#else
+	float3 T, B, N;
+	GetTangentSpace(In.normal, In.tangent, T, B, N);
+	float4 worldQuat = TangentSpaceToQuat(T, B * -sign(In.tangent.w), N);
+	float3 normalInTS = texNormal.Sample(texColor_s, In.uv).xyz * 2 - 1;
+	normalInTS *= float3(1, -sign(In.tangent.w), 1);
+	float3 normalInWS = normalize(ConvertVectorTangentToWorld(normalInTS, worldQuat));
+	B = normalize(cross(normalInWS, T));
+	T = cross(B, normalInWS);
+	gb.worldQuat = TangentSpaceToQuat(T, B, normalInWS);
+#endif
 
 	EncodeGBuffer(gb, Out.worldQuat, Out.baseColor, Out.roughMetal);
 

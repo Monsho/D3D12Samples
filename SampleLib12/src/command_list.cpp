@@ -427,7 +427,7 @@ namespace sl12
 	}
 
 	//----
-	void CommandList::SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet)
+	void CommandList::SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>* pBindlessArrays)
 	{
 		auto pCmdList = GetCommandList();
 		auto def_view = pParentDevice_->GetDefaultViewDescInfo().cpuHandle;
@@ -488,11 +488,12 @@ namespace sl12
 		}
 
 		// CBV, SRV, UAVの登録
-		D3D12_CPU_DESCRIPTOR_HANDLE tmp[kSrvMax];
 		auto SetViewDesc = [&](u32 count, const D3D12_CPU_DESCRIPTOR_HANDLE* handles, u8 index)
 		{
 			if (count > 0)
 			{
+				std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> tmp;
+				tmp.resize(count);
 				for (u32 i = 0; i < count; i++)
 				{
 					tmp[i] = (handles[i].ptr > 0) ? handles[i] : def_view;
@@ -503,7 +504,7 @@ namespace sl12
 				pViewDescStack_->Allocate(count, dst_cpu, dst_gpu);
 				pParentDevice_->GetDeviceDep()->CopyDescriptors(
 					1, &dst_cpu, &count,
-					count, tmp, nullptr,
+					count, tmp.data(), nullptr,
 					D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				pCmdList->SetComputeRootDescriptorTable(index, dst_gpu);
 			}
@@ -511,6 +512,17 @@ namespace sl12
 		SetViewDesc(pDSet->GetCsCbv().maxCount, pDSet->GetCsCbv().cpuHandles, input_index.csCbvIndex_);
 		SetViewDesc(pDSet->GetCsSrv().maxCount, pDSet->GetCsSrv().cpuHandles, input_index.csSrvIndex_);
 		SetViewDesc(pDSet->GetCsUav().maxCount, pDSet->GetCsUav().cpuHandles, input_index.csUavIndex_);
+
+		// set bindless srv.
+		auto bindless_infos = pRS->GetBindlessInfos();
+		if (pBindlessArrays && bindless_infos.size() != 0)
+		{
+			auto bindless_array_count = bindless_infos.size();
+			for (size_t ba = 0; ba < bindless_array_count; ba++)
+			{
+				SetViewDesc((u32)pBindlessArrays[ba].size(), pBindlessArrays[ba].data(), bindless_infos[ba].index_);
+			}
+		}
 	}
 
 	//----

@@ -59,9 +59,9 @@ void GetTangentSpace(in float3 normal, in float4 tangent, out float3 o_tangent, 
 {
 	o_normal = normalize(normal);
 	o_tangent = normalize(tangent.xyz);
-	o_binormal = normalize(cross(o_tangent, o_normal));
-	o_tangent = cross(o_normal, o_binormal);
-	o_binormal *= tangent.w;
+	o_binormal = normalize(cross(o_normal, o_tangent));
+	o_tangent = cross(o_binormal, o_normal);
+	o_binormal *= -sign(tangent.w);
 }
 
 float4 TangentSpaceToQuat(in float3 T, in float3 B, in float3 N)

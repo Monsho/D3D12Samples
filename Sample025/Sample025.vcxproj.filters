@@ -62,6 +62,18 @@
     <FxCompile Include="shader\cluster_cull.c.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
+    <FxCompile Include="shader\dt_pre.a.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\dt_pre.m.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\dt_pre.p.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\dt_lighting.c.hlsl">
+      <Filter>shader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
