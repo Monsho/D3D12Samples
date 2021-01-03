@@ -9,6 +9,7 @@
 #include <dxgi1_4.h>
 #include <D3Dcompiler.h>
 #include <DirectXMath.h>
+#include <string>
 
 
 namespace sl12
@@ -84,6 +85,88 @@ namespace sl12
 			hash = CalcFnv1a64(*ptr++, hash);
 		return hash;
 	}
+
+	class HashString
+	{
+	public:
+		HashString()
+		{}
+		HashString(const char* str)
+			: str_(str)
+		{
+			hash_ = CalcFnv1a32(str_.c_str(), str_.size());
+		}
+
+		bool operator==(const HashString& rhs) const
+		{
+			if (hash_ != rhs.hash_) return false;
+			return str_ == rhs.str_;
+		}
+		bool operator<(const HashString& rhs) const
+		{
+			if (hash_ != rhs.hash_) return hash_ < rhs.hash_;
+			return str_ < rhs.str_;
+		}
+		bool operator>(const HashString& rhs) const
+		{
+			if (hash_ != rhs.hash_) return hash_ > rhs.hash_;
+			return str_ > rhs.str_;
+		}
+
+		const std::string& GetString() const
+		{
+			return str_;
+		}
+		u32 GetHash() const
+		{
+			return hash_;
+		}
+
+	private:
+		std::string	str_;
+		u32			hash_ = 0;
+	};	// class HashString
+
+	class HashWString
+	{
+	public:
+		HashWString()
+		{}
+		HashWString(const wchar_t* str)
+			: str_(str)
+		{
+			hash_ = CalcFnv1a32(str_.c_str(), str_.size());
+		}
+
+		bool operator==(const HashWString& rhs) const
+		{
+			if (hash_ != rhs.hash_) return false;
+			return str_ == rhs.str_;
+		}
+		bool operator<(const HashWString& rhs) const
+		{
+			if (hash_ != rhs.hash_) return hash_ < rhs.hash_;
+			return str_ < rhs.str_;
+		}
+		bool operator>(const HashWString& rhs) const
+		{
+			if (hash_ != rhs.hash_) return hash_ > rhs.hash_;
+			return str_ > rhs.str_;
+		}
+
+		const std::wstring& GetString() const
+		{
+			return str_;
+		}
+		u32 GetHash() const
+		{
+			return hash_;
+		}
+
+	private:
+		std::wstring	str_;
+		u32				hash_ = 0;
+	};	// class HashWString
 
 	class CpuTimer
 	{

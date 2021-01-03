@@ -5,7 +5,7 @@
   <PropertyGroup />
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;d3dcompiler.lib;UVAtlas.lib;DirectXMesh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;d3dcompiler.lib;dxcompiler.lib;UVAtlas.lib;DirectXMesh.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)..\External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;$(ProjectDir)..\External\UVAtlas\UVAtlas\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(ProjectDir)..\External\DirectXMesh\DirectXMesh\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>

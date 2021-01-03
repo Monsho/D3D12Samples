@@ -40,6 +40,17 @@ namespace sl12
 		return ret;
 	}
 
+	inline std::string GetFileNameWithoutExtent(const std::string& path)
+	{
+		std::string ret = GetFileName(path);
+		auto pos = ret.rfind('.');
+		if (pos != std::string::npos)
+		{
+			ret = ret.erase(pos);
+		}
+		return ret;
+	}
+
 	inline std::string GetFilePath(const std::string& path)
 	{
 		std::string ret = ConvertYenToSlash(path);

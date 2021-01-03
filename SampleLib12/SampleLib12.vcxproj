@@ -116,6 +116,7 @@
     <ClInclude Include="include\sl12\root_signature_manager.h" />
     <ClInclude Include="include\sl12\sampler.h" />
     <ClInclude Include="include\sl12\shader.h" />
+    <ClInclude Include="include\sl12\shader_manager.h" />
     <ClInclude Include="include\sl12\string_util.h" />
     <ClInclude Include="include\sl12\swapchain.h" />
     <ClInclude Include="include\sl12\texture.h" />
@@ -152,6 +153,7 @@
     <ClCompile Include="src\root_signature_manager.cpp" />
     <ClCompile Include="src\sampler.cpp" />
     <ClCompile Include="src\shader.cpp" />
+    <ClCompile Include="src\shader_manager.cpp" />
     <ClCompile Include="src\swapchain.cpp" />
     <ClCompile Include="src\texture.cpp" />
     <ClCompile Include="src\texture_view.cpp" />

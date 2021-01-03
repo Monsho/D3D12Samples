@@ -25,26 +25,7 @@
 #include "sl12/resource_loader.h"
 #include "sl12/resource_mesh.h"
 #include "sl12/resource_texture.h"
-
-#include "CompiledShaders/zpre.m.hlsl.h"
-#include "CompiledShaders/zpre.p.hlsl.h"
-#include "CompiledShaders/zpre.a.hlsl.h"
-#include "CompiledShaders/gbuffer.m.hlsl.h"
-#include "CompiledShaders/gbuffer.p.hlsl.h"
-#include "CompiledShaders/gbuffer.a.hlsl.h"
-#include "CompiledShaders/dt_pre.m.hlsl.h"
-#include "CompiledShaders/dt_pre.p.hlsl.h"
-#include "CompiledShaders/dt_pre.a.hlsl.h"
-#include "CompiledShaders/lighting.c.hlsl.h"
-#include "CompiledShaders/toldr.p.hlsl.h"
-#include "CompiledShaders/fullscreen.vv.hlsl.h"
-#include "CompiledShaders/frustum_cull.c.hlsl.h"
-#include "CompiledShaders/count_clear.c.hlsl.h"
-#include "CompiledShaders/occlusion.lib.hlsl.h"
-#include "CompiledShaders/material.lib.hlsl.h"
-#include "CompiledShaders/direct_shadow.lib.hlsl.h"
-#include "CompiledShaders/cluster_cull.c.hlsl.h"
-#include "CompiledShaders/dt_lighting.c.hlsl.h"
+#include "sl12/shader_manager.h"
 
 #define USE_IN_CPP
 #include "../shader/constant.h"
@@ -64,6 +45,56 @@ namespace
 
 	static const float	kSponzaScale = 20.0f;
 	static const float	kSuzanneScale = 1.0f;
+
+	static const std::string	kShaderDir("../Sample025/shader/");
+
+	static const char*	kShaderFiles[] =
+	{
+		"zpre.m.hlsl",
+		"zpre.p.hlsl",
+		"zpre.a.hlsl",
+		"gbuffer.m.hlsl",
+		"gbuffer.p.hlsl",
+		"gbuffer.a.hlsl",
+		"dt_pre.m.hlsl",
+		"dt_pre.p.hlsl",
+		"dt_pre.a.hlsl",
+		"lighting.c.hlsl",
+		"toldr.p.hlsl",
+		"fullscreen.vv.hlsl",
+		"frustum_cull.c.hlsl",
+		"count_clear.c.hlsl",
+		"occlusion.lib.hlsl",
+		"material.lib.hlsl",
+		"direct_shadow.lib.hlsl",
+		"cluster_cull.c.hlsl",
+		"dt_lighting.c.hlsl",
+	};
+
+	enum ShaderFileKind
+	{
+		SHADER_ZPRE_M,
+		SHADER_ZPRE_P,
+		SHADER_ZPRE_A,
+		SHADER_GBUFFER_M,
+		SHADER_GBUFFER_P,
+		SHADER_GBUFFER_A,
+		SHADER_DT_PRE_M,
+		SHADER_DT_PRE_P,
+		SHADER_DT_PRE_A,
+		SHADER_LIGHTING_C,
+		SHADER_TOLDR_P,
+		SHADER_FULLSCREEN_VV,
+		SHADER_FRUSTUM_CULL_C,
+		SHADER_COUNT_CLEAR_C,
+		SHADER_OCCLUSION_LIB,
+		SHADER_MATERIAL_LIB,
+		SHADER_DIRECT_SHADOW_LIB,
+		SHADER_CLUSTER_CULL_C,
+		SHADER_DT_LIGHTING_C,
+
+		SHADER_MAX
+	};
 
 	static const int kRTMaterialTableCount = 2;
 	static LPCWSTR kOcclusionCHS = L"OcclusionCHS";
@@ -250,6 +281,24 @@ public:
 		hBlueNoiseRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/blue_noise.tga");
 		hMeshRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 
+		if (!shaderManager_.Initialize(&device_, nullptr))
+		{
+			return false;
+		}
+		{
+			for (int i = 0; i < SHADER_MAX; i++)
+			{
+				hShaders_[i] = shaderManager_.CompileFromFile(
+					kShaderDir + kShaderFiles[i],
+					"main",
+					sl12::GetShaderTypeFromFileName(kShaderFiles[i]), 6, 5, nullptr, nullptr);
+			}
+			while (shaderManager_.IsCompiling())
+			{
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
+		}
+
 		// コマンドリストの初期化
 		auto&& gqueue = device_.GetGraphicsQueue();
 		auto&& cqueue = device_.GetComputeQueue();
@@ -322,15 +371,24 @@ public:
 			anisoSampler_.Initialize(&device_, desc);
 		}
 
-		if (!zpreRootSig_.Initialize(&device_, &zpreAS_, &zpreMS_, &zprePS_))
+		if (!zpreRootSig_.Initialize(&device_,
+			hShaders_[SHADER_ZPRE_A].GetShader(),
+			hShaders_[SHADER_ZPRE_M].GetShader(),
+			hShaders_[SHADER_ZPRE_P].GetShader()))
 		{
 			return false;
 		}
-		if (!gbufferRootSig_.Initialize(&device_, &gbufferAS_, &gbufferMS_, &gbufferPS_))
+		if (!gbufferRootSig_.Initialize(&device_,
+			hShaders_[SHADER_GBUFFER_A].GetShader(),
+			hShaders_[SHADER_GBUFFER_M].GetShader(),
+			hShaders_[SHADER_GBUFFER_P].GetShader()))
 		{
 			return false;
 		}
-		if (!dtpreRootSig_.Initialize(&device_, &dtpreAS_, &dtpreMS_, &dtprePS_))
+		if (!dtpreRootSig_.Initialize(&device_,
+			hShaders_[SHADER_DT_PRE_A].GetShader(),
+			hShaders_[SHADER_DT_PRE_M].GetShader(),
+			hShaders_[SHADER_DT_PRE_P].GetShader()))
 		{
 			return false;
 		}
@@ -338,43 +396,33 @@ public:
 			sl12::RootBindlessInfo bindless[] = {
 				sl12::RootBindlessInfo(1, 1024),
 			};
-			if (!lightingRootSig_.InitializeWithBindless(&device_, &lightingCS_, nullptr, 0))
+			if (!lightingRootSig_.InitializeWithBindless(&device_, hShaders_[SHADER_LIGHTING_C].GetShader(), nullptr, 0))
 			{
 				return false;
 			}
-			if (!dtLightingRootSig_.InitializeWithBindless(&device_, &dtLightingCS_, bindless, ARRAYSIZE(bindless)))
+			if (!dtLightingRootSig_.InitializeWithBindless(&device_, hShaders_[SHADER_DT_LIGHTING_C].GetShader(), bindless, ARRAYSIZE(bindless)))
 			{
 				return false;
 			}
 		}
-		if (!clusterCullRootSig_.Initialize(&device_, &clusterCullCS_))
+		if (!clusterCullRootSig_.Initialize(&device_, hShaders_[SHADER_CLUSTER_CULL_C].GetShader()))
 		{
 			return false;
 		}
-		if (!toLdrRootSig_.Initialize(&device_, &fullscreenVS_, &toLdrPS_, nullptr, nullptr, nullptr))
+		if (!toLdrRootSig_.Initialize(&device_,
+			hShaders_[SHADER_FULLSCREEN_VV].GetShader(),
+			hShaders_[SHADER_TOLDR_P].GetShader(),
+			nullptr, nullptr, nullptr))
 		{
 			return false;
 		}
 
 		{
-			if (!zpreMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pZpreMS, sizeof(g_pZpreMS)))
-			{
-				return false;
-			}
-			if (!zprePS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pZprePS, sizeof(g_pZprePS)))
-			{
-				return false;
-			}
-			if (!zpreAS_.Initialize(&device_, sl12::ShaderType::Amplification, g_pZpreAS, sizeof(g_pZpreAS)))
-			{
-				return false;
-			}
-
 			sl12::GraphicsPipelineStateDesc desc;
 			desc.pRootSignature = &zpreRootSig_;
-			desc.pAS = &zpreAS_;
-			desc.pMS = &zpreMS_;
-			desc.pPS = &zprePS_;
+			desc.pAS = hShaders_[SHADER_ZPRE_A].GetShader();
+			desc.pMS = hShaders_[SHADER_ZPRE_M].GetShader();
+			desc.pPS = hShaders_[SHADER_ZPRE_P].GetShader();
 
 			desc.blend.sampleMask = UINT_MAX;
 			desc.blend.rtDesc[0].isBlendEnable = false;
@@ -400,24 +448,11 @@ public:
 			}
 		}
 		{
-			if (!gbufferMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pGBufferMS, sizeof(g_pGBufferMS)))
-			{
-				return false;
-			}
-			if (!gbufferPS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pGBufferPS, sizeof(g_pGBufferPS)))
-			{
-				return false;
-			}
-			if (!gbufferAS_.Initialize(&device_, sl12::ShaderType::Amplification, g_pGBufferAS, sizeof(g_pGBufferAS)))
-			{
-				return false;
-			}
-
 			sl12::GraphicsPipelineStateDesc desc;
 			desc.pRootSignature = &gbufferRootSig_;
-			desc.pAS = &gbufferAS_;
-			desc.pMS = &gbufferMS_;
-			desc.pPS = &gbufferPS_;
+			desc.pAS = hShaders_[SHADER_GBUFFER_A].GetShader();
+			desc.pMS = hShaders_[SHADER_GBUFFER_M].GetShader();
+			desc.pPS = hShaders_[SHADER_GBUFFER_P].GetShader();
 
 			desc.blend.sampleMask = UINT_MAX;
 			desc.blend.rtDesc[0].isBlendEnable = false;
@@ -447,24 +482,11 @@ public:
 			}
 		}
 		{
-			if (!dtpreMS_.Initialize(&device_, sl12::ShaderType::Mesh, g_pDtPreMS, sizeof(g_pDtPreMS)))
-			{
-				return false;
-			}
-			if (!dtprePS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pDtPrePS, sizeof(g_pDtPrePS)))
-			{
-				return false;
-			}
-			if (!dtpreAS_.Initialize(&device_, sl12::ShaderType::Amplification, g_pDtPreAS, sizeof(g_pDtPreAS)))
-			{
-				return false;
-			}
-
 			sl12::GraphicsPipelineStateDesc desc;
 			desc.pRootSignature = &dtpreRootSig_;
-			desc.pAS = &dtpreAS_;
-			desc.pMS = &dtpreMS_;
-			desc.pPS = &dtprePS_;
+			desc.pAS = hShaders_[SHADER_DT_PRE_A].GetShader();
+			desc.pMS = hShaders_[SHADER_DT_PRE_M].GetShader();
+			desc.pPS = hShaders_[SHADER_DT_PRE_P].GetShader();
 
 			desc.blend.sampleMask = UINT_MAX;
 			desc.blend.rtDesc[0].isBlendEnable = false;
@@ -494,14 +516,9 @@ public:
 			}
 		}
 		{
-			if (!lightingCS_.Initialize(&device_, sl12::ShaderType::Compute, g_pLightingCS, sizeof(g_pLightingCS)))
-			{
-				return false;
-			}
-
 			sl12::ComputePipelineStateDesc desc;
 			desc.pRootSignature = &lightingRootSig_;
-			desc.pCS = &lightingCS_;
+			desc.pCS = hShaders_[SHADER_LIGHTING_C].GetShader();
 
 			if (!lightingPso_.Initialize(&device_, desc))
 			{
@@ -509,14 +526,9 @@ public:
 			}
 		}
 		{
-			if (!dtLightingCS_.Initialize(&device_, sl12::ShaderType::Compute, g_pDtLightingCS, sizeof(g_pDtLightingCS)))
-			{
-				return false;
-			}
-
 			sl12::ComputePipelineStateDesc desc;
 			desc.pRootSignature = &dtLightingRootSig_;
-			desc.pCS = &dtLightingCS_;
+			desc.pCS = hShaders_[SHADER_DT_LIGHTING_C].GetShader();
 
 			if (!dtLightingPso_.Initialize(&device_, desc))
 			{
@@ -524,14 +536,9 @@ public:
 			}
 		}
 		{
-			if (!clusterCullCS_.Initialize(&device_, sl12::ShaderType::Compute, g_pClusterCullCS, sizeof(g_pClusterCullCS)))
-			{
-				return false;
-			}
-
 			sl12::ComputePipelineStateDesc desc;
 			desc.pRootSignature = &clusterCullRootSig_;
-			desc.pCS = &clusterCullCS_;
+			desc.pCS = hShaders_[SHADER_CLUSTER_CULL_C].GetShader();
 
 			if (!clusterCullPso_.Initialize(&device_, desc))
 			{
@@ -539,19 +546,10 @@ public:
 			}
 		}
 		{
-			if (!fullscreenVS_.Initialize(&device_, sl12::ShaderType::Vertex, g_pFullscreenVS, sizeof(g_pFullscreenVS)))
-			{
-				return false;
-			}
-			if (!toLdrPS_.Initialize(&device_, sl12::ShaderType::Pixel, g_pToLdrPS, sizeof(g_pToLdrPS)))
-			{
-				return false;
-			}
-
 			sl12::GraphicsPipelineStateDesc desc;
 			desc.pRootSignature = &toLdrRootSig_;
-			desc.pVS = &fullscreenVS_;
-			desc.pPS = &toLdrPS_;
+			desc.pVS = hShaders_[SHADER_FULLSCREEN_VV].GetShader();
+			desc.pPS = hShaders_[SHADER_TOLDR_P].GetShader();
 
 			desc.blend.sampleMask = UINT_MAX;
 			desc.blend.rtDesc[0].isBlendEnable = false;
@@ -1312,27 +1310,13 @@ public:
 		dtbuffers_.Destroy();
 		dtMaterialInfo_.Destroy();
 
-		fullscreenVS_.Destroy();
 		toLdrPso_.Destroy();
-		toLdrPS_.Destroy();
 		clusterCullPso_.Destroy();
-		clusterCullCS_.Destroy();
 		dtLightingPso_.Destroy();
-		dtLightingCS_.Destroy();
 		lightingPso_.Destroy();
-		lightingCS_.Destroy();
 		dtprePso_.Destroy();
-		dtpreAS_.Destroy();
-		dtpreMS_.Destroy();
-		dtprePS_.Destroy();
 		gbufferPso_.Destroy();
-		gbufferAS_.Destroy();
-		gbufferMS_.Destroy();
-		gbufferPS_.Destroy();
 		zprePso_.Destroy();
-		zpreAS_.Destroy();
-		zpreMS_.Destroy();
-		zprePS_.Destroy();
 
 		toLdrRootSig_.Destroy();
 		clusterCullRootSig_.Destroy();
@@ -1345,6 +1329,8 @@ public:
 		utilCmdList_.Destroy();
 		litCmdLists_.Destroy();
 		zpreCmdLists_.Destroy();
+
+		shaderManager_.Destroy();
 	}
 
 	int Input(UINT message, WPARAM wParam, LPARAM lParam)
@@ -1860,11 +1846,12 @@ private:
 			sl12::DxrPipelineStateDesc dxrDesc;
 
 			// export shader from library.
+			auto occLibShader = hShaders_[SHADER_OCCLUSION_LIB].GetShader();
 			D3D12_EXPORT_DESC libExport[] = {
 				{ kOcclusionCHS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 				{ kOcclusionAHS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 			};
-			dxrDesc.AddDxilLibrary(g_pOcclusionLib, sizeof(g_pOcclusionLib), libExport, ARRAYSIZE(libExport));
+			dxrDesc.AddDxilLibrary(occLibShader->GetData(), occLibShader->GetSize(), libExport, ARRAYSIZE(libExport));
 
 			// hit group.
 			dxrDesc.AddHitGroup(kOcclusionOpacityHG, true, nullptr, kOcclusionCHS, nullptr);
@@ -1896,11 +1883,12 @@ private:
 			sl12::DxrPipelineStateDesc dxrDesc;
 
 			// export shader from library.
+			auto matLibShader = hShaders_[SHADER_MATERIAL_LIB].GetShader();
 			D3D12_EXPORT_DESC libExport[] = {
 				{ kMaterialCHS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 				{ kMaterialAHS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 			};
-			dxrDesc.AddDxilLibrary(g_pMaterialLib, sizeof(g_pMaterialLib), libExport, ARRAYSIZE(libExport));
+			dxrDesc.AddDxilLibrary(matLibShader->GetData(), matLibShader->GetSize(), libExport, ARRAYSIZE(libExport));
 
 			// hit group.
 			dxrDesc.AddHitGroup(kMaterialOpacityHG, true, nullptr, kMaterialCHS, nullptr);
@@ -1938,11 +1926,12 @@ private:
 			sl12::DxrPipelineStateDesc dxrDesc;
 
 			// export shader from library.
+			auto shdLibShader = hShaders_[SHADER_DIRECT_SHADOW_LIB].GetShader();
 			D3D12_EXPORT_DESC libExport[] = {
 				{ kDirectShadowRGS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 				{ kDirectShadowMS,	nullptr, D3D12_EXPORT_FLAG_NONE },
 			};
-			dxrDesc.AddDxilLibrary(g_pDirectShadowLib, sizeof(g_pDirectShadowLib), libExport, ARRAYSIZE(libExport));
+			dxrDesc.AddDxilLibrary(shdLibShader->GetData(), shdLibShader->GetSize(), libExport, ARRAYSIZE(libExport));
 
 			// payload size and intersection attr size.
 			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
@@ -2642,12 +2631,6 @@ private:
 	sl12::BufferView			clusterInfoSRV_;
 	sl12::UnorderedAccessView	clusterInfoUAV_;
 
-	sl12::Shader				zpreMS_, zprePS_, zpreAS_;
-	sl12::Shader				gbufferMS_, gbufferPS_, gbufferAS_;
-	sl12::Shader				dtpreMS_, dtprePS_, dtpreAS_;
-	sl12::Shader				lightingCS_, dtLightingCS_, clusterCullCS_;
-	sl12::Shader				toLdrPS_;
-	sl12::Shader				fullscreenVS_;
 	sl12::RootSignature			zpreRootSig_, gbufferRootSig_, dtpreRootSig_, lightingRootSig_, dtLightingRootSig_, clusterCullRootSig_, toLdrRootSig_;
 	sl12::GraphicsPipelineState	zprePso_, gbufferPso_, dtprePso_, toLdrPso_;
 	sl12::ComputePipelineState	lightingPso_, dtLightingPso_, clusterCullPso_;
@@ -2693,6 +2676,8 @@ private:
 	sl12::ResourceLoader	resLoader_;
 	sl12::ResourceHandle	hMeshRes_;
 	sl12::ResourceHandle	hBlueNoiseRes_;
+	sl12::ShaderManager		shaderManager_;
+	sl12::ShaderHandle		hShaders_[SHADER_MAX];
 	int						sceneState_ = 0;		// 0:loading scene, 1:main scene
 };	// class SampleApplication
 

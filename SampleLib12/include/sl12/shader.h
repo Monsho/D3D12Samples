@@ -19,6 +19,7 @@ namespace sl12
 			Compute,
 			Mesh,
 			Amplification,
+			Library,
 
 			Max
 		};

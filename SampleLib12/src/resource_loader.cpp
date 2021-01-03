@@ -101,12 +101,18 @@ namespace sl12
 	ResourceHandle ResourceLoader::LoadRequest(const std::string& filepath, LoadFunc func)
 	{
 		RequestItem item;
-		item.id = handleID_.fetch_add(1);
 		item.filePath = filepath;
 		item.funcLoad = func;
 
 		{
 			std::lock_guard<std::mutex> lock(listMutex_);
+			auto it = resourceMap_.begin();
+			do
+			{
+				item.id = handleID_.fetch_add(1);
+				it = resourceMap_.find(item.id);
+			} while (it != resourceMap_.end());
+			resourceMap_[item.id].reset();
 			requestList_.push_back(item);
 		}
 
