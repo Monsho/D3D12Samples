@@ -102,7 +102,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool CreateBuffer(
+		virtual bool CreateBuffer(
 			sl12::Device*			pDevice,
 			size_t					size,
 			size_t					scratchSize);
@@ -162,6 +162,11 @@ namespace sl12
 			Destroy();
 		}
 
+		bool CreateBuffer(
+			sl12::Device*			pDevice,
+			size_t					size,
+			size_t					scratchSize) override;
+
 		bool CreateInstanceBuffer(sl12::Device* pDevice, const TopInstanceDesc* pDescs, int descsCount);
 
 		bool Build(sl12::CommandList* pCmdList, const StructureInputDesc& desc, bool barrier = true);
@@ -169,15 +174,18 @@ namespace sl12
 		void Destroy();
 		void DestroyInstanceBuffer();
 
-		sl12::Buffer* TransferInstanceBuffer()
+		Buffer* TransferInstanceBuffer()
 		{
 			auto ret = pInstanceBuffer_;
 			pInstanceBuffer_ = nullptr;
 			return ret;
 		}
 
+		DescriptorInfo& GetDescInfo() { return descInfo_; }
+
 	private:
-		sl12::Buffer*		pInstanceBuffer_ = nullptr;
+		Buffer*			pInstanceBuffer_ = nullptr;
+		DescriptorInfo	descInfo_;
 	};	// class TopAccelerationStructure
 
 }	// namespace sl12

@@ -54,6 +54,13 @@ struct GlobalIlluminationCB
 	uint		totalSampleCount;
 };
 
+struct TranslucentCB
+{
+	float		normalIntensity;
+	float		opacity;
+	float		refract;
+};
+
 struct PointLightPos
 {
 	float4	posAndRadius;		// xyz: Position, w: Radius

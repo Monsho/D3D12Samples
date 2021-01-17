@@ -399,6 +399,35 @@ namespace sl12
 		{
 			return boundingInfo_;
 		}
+		const Buffer& GetPositionVB() const
+		{
+			return positionVB_;
+		}
+		const Buffer& GetNormalVB() const
+		{
+			return normalVB_;
+		}
+		const Buffer& GetTangentVB() const
+		{
+			return tangentVB_;
+		}
+		const Buffer& GetTexcoordVB() const
+		{
+			return texcoordVB_;
+		}
+		const Buffer& GetIndexBuffer() const
+		{
+			return indexBuffer_;
+		}
+		const Buffer& GetMeshletPackedPrimitive() const
+		{
+			return meshletPackedPrimitive_;
+		}
+		const Buffer& GetMeshletVertexIndex() const
+		{
+			return meshletVertexIndex_;
+		}
+
 		Buffer& GetPositionVB()
 		{
 			return positionVB_;

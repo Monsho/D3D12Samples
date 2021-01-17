@@ -177,7 +177,7 @@ namespace sl12
 
 
 	//-------------------------------------------------------------------
-	// Bottom AS用のバッファを生成する
+	// AS用のバッファを生成する
 	// オプションでスクラッチバッファも生成
 	//-------------------------------------------------------------------
 	bool AccelerationStructure::CreateBuffer(
@@ -275,6 +275,35 @@ namespace sl12
 
 
 	//-------------------------------------------------------------------
+	// Top AS用のバッファを生成する
+	//-------------------------------------------------------------------
+	bool TopAccelerationStructure::CreateBuffer(
+		sl12::Device*			pDevice,
+		size_t					size,
+		size_t					scratchSize)
+	{
+		if (!AccelerationStructure::CreateBuffer(pDevice, size, scratchSize))
+		{
+			return false;
+		}
+
+		descInfo_ = pDevice->GetViewDescriptorHeap().Allocate();
+		if (!descInfo_.IsValid())
+		{
+			return false;
+		}
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
+		viewDesc.Format = DXGI_FORMAT_UNKNOWN;
+		viewDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+		viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		viewDesc.RaytracingAccelerationStructure.Location = GetDxrBuffer().GetResourceDep()->GetGPUVirtualAddress();
+		pDevice->GetDeviceDep()->CreateShaderResourceView(nullptr, &viewDesc, descInfo_.cpuHandle);
+
+		return true;
+	}
+
+	//-------------------------------------------------------------------
 	// Top AS用のインスタンスバッファを生成する
 	//-------------------------------------------------------------------
 	bool TopAccelerationStructure::CreateInstanceBuffer(sl12::Device* pDevice, const TopInstanceDesc* pDescs, int descsCount)
@@ -342,6 +371,7 @@ namespace sl12
 	{
 		AccelerationStructure::Destroy();
 		DestroyInstanceBuffer();
+		descInfo_.Free();
 	}
 
 	//-------------------------------------------------------------------

@@ -113,6 +113,8 @@ namespace sl12
 		bool Initialize(Device* pDev, Shader* vs, Shader* ps, Shader* gs, Shader* hs, Shader* ds);
 		bool Initialize(Device* pDev, Shader* as, Shader* ms, Shader* ps);
 		bool Initialize(Device* pDev, Shader* cs);
+		bool InitializeWithBindless(Device* pDev, Shader* vs, Shader* ps, Shader* gs, Shader* hs, Shader* ds, const RootBindlessInfo* bindlessInfos, u32 bindlessCount);
+		bool InitializeWithBindless(Device* pDev, Shader* as, Shader* ms, Shader* ps, const RootBindlessInfo* bindlessInfos, u32 bindlessCount);
 		bool InitializeWithBindless(Device* pDev, Shader* cs, const RootBindlessInfo* bindlessInfos, u32 bindlessCount);
 		void Destroy();
 

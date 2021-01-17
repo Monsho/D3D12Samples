@@ -373,6 +373,244 @@ namespace sl12
 	}
 
 	//----
+	bool RootSignature::InitializeWithBindless(Device* pDev, Shader* vs, Shader* ps, Shader* gs, Shader* hs, Shader* ds, const RootBindlessInfo* bindlessInfos, u32 bindlessCount)
+	{
+		if (!bindlessInfos || !bindlessCount)
+		{
+			return Initialize(pDev, vs, ps, gs, hs, ds);
+		}
+
+		const D3D12_DESCRIPTOR_RANGE kDefaultRange[] = {
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 16, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 48, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 16, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+		};
+		std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
+		std::vector<D3D12_ROOT_PARAMETER> params;
+		ranges.resize(16 + (size_t)bindlessCount);
+		params.resize(16 + (size_t)bindlessCount);
+		int rangeCnt = 0;
+		auto SetParam = [&](D3D12_SHADER_VISIBILITY vis)
+		{
+			params[rangeCnt].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			params[rangeCnt].ShaderVisibility = vis;
+			params[rangeCnt].DescriptorTable.pDescriptorRanges = ranges.data() + rangeCnt;
+			params[rangeCnt].DescriptorTable.NumDescriptorRanges = 1;
+		};
+		D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+
+		if (vs)
+		{
+			inputIndex_.vsCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_VERTEX);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.vsSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_VERTEX);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.vsSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_VERTEX);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS;
+		}
+		if (ps)
+		{
+			inputIndex_.psCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.psSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.psSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			inputIndex_.psUavIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[3];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		}
+		if (gs)
+		{
+			inputIndex_.gsCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_GEOMETRY);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.gsSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_GEOMETRY);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.gsSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_GEOMETRY);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+		}
+		if (hs)
+		{
+			inputIndex_.hsCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_HULL);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.hsSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_HULL);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.hsSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_HULL);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;
+		}
+		if (ds)
+		{
+			inputIndex_.dsCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_DOMAIN);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.dsSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_DOMAIN);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.dsSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_DOMAIN);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;
+		}
+
+		// bindless table.
+		bindlessInfos_.reserve(bindlessCount);
+		for (u32 i = 0; i < bindlessCount; i++)
+		{
+			RootBindlessInfo info = bindlessInfos[i];
+
+			D3D12_DESCRIPTOR_RANGE range;
+			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+			range.NumDescriptors = info.maxResources_;
+			range.BaseShaderRegister = 0;
+			range.RegisterSpace = info.space_;
+			range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+			info.index_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = range;
+
+			bindlessInfos_.push_back(info);
+		}
+
+		D3D12_ROOT_SIGNATURE_DESC desc{};
+		desc.NumParameters = rangeCnt;
+		desc.pParameters = params.data();
+		desc.NumStaticSamplers = 0;
+		desc.pStaticSamplers = nullptr;
+		desc.Flags = flags;
+
+		return Initialize(pDev, desc);
+	}
+
+	//----
+	bool RootSignature::InitializeWithBindless(Device* pDev, Shader* as, Shader* ms, Shader* ps, const RootBindlessInfo* bindlessInfos, u32 bindlessCount)
+	{
+		if (!bindlessInfos || !bindlessCount)
+		{
+			return Initialize(pDev, as, ms, ps);
+		}
+
+		D3D12_DESCRIPTOR_RANGE_FLAGS range_flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE;
+		const D3D12_DESCRIPTOR_RANGE1 kDefaultRange[] = {
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 16, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 48, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+			{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 16, 0, 0, range_flags, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
+		};
+		std::vector<D3D12_DESCRIPTOR_RANGE1> ranges;
+		std::vector<D3D12_ROOT_PARAMETER1> params;
+		ranges.resize(16 + (size_t)bindlessCount);
+		params.resize(16 + (size_t)bindlessCount);
+		int rangeCnt = 0;
+		auto SetParam = [&](D3D12_SHADER_VISIBILITY vis)
+		{
+			params[rangeCnt].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			params[rangeCnt].ShaderVisibility = vis;
+			params[rangeCnt].DescriptorTable.pDescriptorRanges = ranges.data() + rangeCnt;
+			params[rangeCnt].DescriptorTable.NumDescriptorRanges = 1;
+		};
+		D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS
+			| D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+
+		if (as)
+		{
+			inputIndex_.asCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.asSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.asSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS;
+		}
+		if (ms)
+		{
+			inputIndex_.msCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_MESH);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.msSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_MESH);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.msSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_MESH);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
+		}
+		if (ps)
+		{
+			inputIndex_.psCbvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[0];
+			inputIndex_.psSrvIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[1];
+			inputIndex_.psSamplerIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[2];
+			inputIndex_.psUavIndex_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = kDefaultRange[3];
+			flags &= ~D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		}
+
+		// bindless table.
+		bindlessInfos_.reserve(bindlessCount);
+		for (u32 i = 0; i < bindlessCount; i++)
+		{
+			RootBindlessInfo info = bindlessInfos[i];
+
+			D3D12_DESCRIPTOR_RANGE1 range;
+			range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+			range.NumDescriptors = info.maxResources_;
+			range.BaseShaderRegister = 0;
+			range.RegisterSpace = info.space_;
+			range.Flags = range_flags;
+			range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+			info.index_ = rangeCnt;
+			SetParam(D3D12_SHADER_VISIBILITY_PIXEL);
+			ranges[rangeCnt++] = range;
+
+			bindlessInfos_.push_back(info);
+		}
+
+		D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc{};
+		desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+		desc.Desc_1_1.NumParameters = rangeCnt;
+		desc.Desc_1_1.pParameters = params.data();
+		desc.Desc_1_1.NumStaticSamplers = 0;
+		desc.Desc_1_1.pStaticSamplers = nullptr;
+		desc.Desc_1_1.Flags = flags;
+
+		return Initialize(pDev, desc);
+	}
+
+	//----
 	bool RootSignature::InitializeWithBindless(Device* pDev, Shader* cs, const RootBindlessInfo* bindlessInfos, u32 bindlessCount)
 	{
 		if (!bindlessInfos || !bindlessCount)

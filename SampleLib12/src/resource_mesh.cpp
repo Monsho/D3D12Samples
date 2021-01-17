@@ -49,8 +49,13 @@ namespace sl12
 
 		// create buffers.
 		auto pDev = pLoader->GetDevice();
-		auto CreateBuffer = [&](Buffer& buff, const std::vector<u8>& data, size_t stride, BufferUsage::Type usage)
+		auto CreateBuffer = [&](Buffer& buff, const std::vector<u8>& data, size_t stride, BufferUsage::Type usage, bool isEmpyOk = false)
 		{
+			if (data.empty())
+			{
+				return isEmpyOk;
+			}
+
 			if (!buff.Initialize(pDev, data.size(), stride, usage, true, false))
 			{
 				return false;
@@ -80,11 +85,11 @@ namespace sl12
 		{
 			return nullptr;
 		}
-		if (!CreateBuffer(ret->meshletPackedPrimitive_, mesh_bin.GetMeshletPackedPrimitive(), sizeof(u32), BufferUsage::ShaderResource))
+		if (!CreateBuffer(ret->meshletPackedPrimitive_, mesh_bin.GetMeshletPackedPrimitive(), sizeof(u32), BufferUsage::ShaderResource, true))
 		{
 			return nullptr;
 		}
-		if (!CreateBuffer(ret->meshletVertexIndex_, mesh_bin.GetMeshletVertexIndex(), sizeof(u32), BufferUsage::ShaderResource))
+		if (!CreateBuffer(ret->meshletVertexIndex_, mesh_bin.GetMeshletVertexIndex(), sizeof(u32), BufferUsage::ShaderResource, true))
 		{
 			return nullptr;
 		}

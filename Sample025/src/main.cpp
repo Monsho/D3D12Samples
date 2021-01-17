@@ -1204,7 +1204,10 @@ public:
 				descSet_.SetCsUav(0, accumUAV_.GetDescInfo().cpuHandle);
 
 				d3dCmdList->SetPipelineState(dtLightingPso_.GetPSO());
-				pCmdList->SetComputeRootSignatureAndDescriptorSet(&dtLightingRootSig_, &descSet_, &dtMaterialInfo_.textureHandles_);
+				const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>* bindlessArrays[] = {
+					&dtMaterialInfo_.textureHandles_
+				};
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&dtLightingRootSig_, &descSet_, bindlessArrays);
 				UINT dx = (kScreenWidth + 7) / 8;
 				UINT dy = (kScreenHeight + 7) / 8;
 				d3dCmdList->Dispatch(dx, dy, 1);

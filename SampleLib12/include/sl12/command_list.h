@@ -54,9 +54,9 @@ namespace sl12
 			changeHeap_ = true;
 		}
 		// RootSignatureとDescriptorをコマンドリストに積み込む
-		void SetGraphicsRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
-		void SetMeshRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet);
-		void SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>* pBindlessArrays = nullptr);
+		void SetGraphicsRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>** ppBindlessArrays = nullptr);
+		void SetMeshRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>** ppBindlessArrays = nullptr);
+		void SetComputeRootSignatureAndDescriptorSet(RootSignature* pRS, DescriptorSet* pDSet, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>** ppBindlessArrays = nullptr);
 
 		// Raytracing用のGlobal RootSignatureとDescriptorをコマンドに積み込む
 		void SetRaytracingGlobalRootSignatureAndDescriptorSet(
