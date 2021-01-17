@@ -69,8 +69,6 @@ float PointLightAttenuation(float d, float r)
 
 float4 main(PSInput In) : SV_TARGET0
 {
-	RayQuery<RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rq;
-
 	uint2 pixel = uint2(In.position.xy);
 	float2 screen_uv = In.position.xy / cbScene.screenInfo.zw;
 
@@ -81,6 +79,7 @@ float4 main(PSInput In) : SV_TARGET0
 	float3 normalInWS = normalize(lerp(In.normal, ConvertVectorTangetToWorld(normalInTS, T, B, N), cbTrans.normalIntensity));
 
 	// ray query.
+	RayQuery<RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rq;
 	float3 rayDir = normalize(reflect(In.viewDir, normalInWS));
 	float3 rayOrigin = In.posWS + N * 1e-3f;
 	RayDesc ray = { rayOrigin, 0.0, rayDir, TMax };
@@ -88,11 +87,10 @@ float4 main(PSInput In) : SV_TARGET0
 
 	// refraction.
 	float3 normalInVS = normalize(mul((float3x3)cbScene.mtxWorldToView, normalInWS));
-	//float refr_int = cbTrans.refract;
 	float refr_int = (1.0 - abs(dot(normalInWS, -In.viewDir))) * cbTrans.refract;
 	float2 uv_offset = normalInVS.xy * refr_int * float2(1, -1);
 	float2 refr_uv = saturate(screen_uv + uv_offset);
-	float3 refr_color = texScreen.SampleLevel(texScreen_s, refr_uv, 0).rgb;
+	float3 refr_color = texScreen.SampleLevel(texScreen_s, refr_uv, 0).rgb * float3(1.0, 0.5, 0.5);
 
 	// reflection.
 	float3 refl_color = float3(0, 0, 0.5);
