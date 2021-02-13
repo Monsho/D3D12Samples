@@ -32,6 +32,8 @@ namespace sl12
 		HWND			hWnd_ = 0;
 		int				screenWidth_ = 0, screenHeight_ = 0;
 
+		sl12::CpuTimer	deltaTime_;
+
 		sl12::Device	device_;
 
 		sl12::Sampler	pointWrapSampler_;

@@ -89,6 +89,13 @@ struct MaterialInfo
 	uint	pad;
 };
 
+struct VertexMutationCB
+{
+	uint	vertexCount;
+	float	mutateIntensity;
+	float	time;
+};
+
 
 #define PI			3.1415926
 #define Epsilon		1e-5

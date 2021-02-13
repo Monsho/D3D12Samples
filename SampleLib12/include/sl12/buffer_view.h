@@ -96,11 +96,13 @@ namespace sl12
 		void Destroy();
 
 		// getter
+		const D3D12_SHADER_RESOURCE_VIEW_DESC& GetViewDesc() const { return viewDesc_; }
 		DescriptorInfo& GetDescInfo() { return descInfo_; }
 		const DescriptorInfo& GetDescInfo() const { return descInfo_; }
 
 	private:
-		DescriptorInfo	descInfo_;
+		D3D12_SHADER_RESOURCE_VIEW_DESC	viewDesc_;
+		DescriptorInfo					descInfo_;
 	};	// class BufferView
 
 }	// namespace sl12

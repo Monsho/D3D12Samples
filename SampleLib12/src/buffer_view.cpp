@@ -127,6 +127,8 @@ namespace sl12
 
 		pDev->GetDeviceDep()->CreateShaderResourceView(pBuffer->GetResourceDep(), &viewDesc, descInfo_.cpuHandle);
 
+		viewDesc_ = viewDesc;
+
 		return true;
 	}
 

@@ -130,7 +130,7 @@ float4 main(PSInput In) : SV_TARGET0
 		RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> occq;
 		float3 occRayDir = -cbLight.lightDir.xyz;
 		float3 occRayOrigin = rayOrigin + rayDir * rq.CommittedRayT();
-		RayDesc occRay = { occRayOrigin + hitN * 1e-4, 0.0, occRayDir, TMax };
+		RayDesc occRay = { occRayOrigin + hitN * 1e-2, 0.0, occRayDir, TMax };
 		occq.TraceRayInline(TLAS, RAY_FLAG_NONE, ~0, occRay);
 		occq.Proceed();
 

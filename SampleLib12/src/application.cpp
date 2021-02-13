@@ -140,10 +140,14 @@ namespace sl12
 			return -1;
 		}
 
+		deltaTime_ = sl12::CpuTimer();
+
 		// ƒƒCƒ“ƒ‹[ƒv
 		MSG msg = { 0 };
 		while (true)
 		{
+			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
+
 			// Process any messages in the queue.
 			if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 			{
@@ -155,6 +159,8 @@ namespace sl12
 			}
 
 			Execute();
+
+			deltaTime_ = sl12::CpuTimer::CurrentTime() - time;
 		}
 
 		Finalize();
