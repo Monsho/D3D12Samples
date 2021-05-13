@@ -102,8 +102,11 @@ namespace
 				sl12::u32			primitiveOffset;
 				DirectX::XMFLOAT3	aabbMax;
 				sl12::u32			primitiveCount;
+				DirectX::XMFLOAT3	coneApex;
 				sl12::u32			vertexIndexOffset;
+				DirectX::XMFLOAT3	coneAxis;
 				sl12::u32			vertexIndexCount;
+				float				coneCutoff;
 			};
 
 			if (!meshletB_.Initialize(pDev, sizeof(MeshletData) * meshlets.size(), sizeof(MeshletData), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
@@ -151,6 +154,9 @@ namespace
 				{
 					data->aabbMin = m.boundingInfo.box.aabbMin;
 					data->aabbMax = m.boundingInfo.box.aabbMax;
+					data->coneApex = m.boundingInfo.cone.apex;
+					data->coneAxis = m.boundingInfo.cone.axis;
+					data->coneCutoff = m.boundingInfo.cone.cutoff;
 					data->primitiveOffset = m.primitiveOffset;
 					data->primitiveCount = m.primitiveCount;
 					data->vertexIndexOffset = m.vertexIndexOffset;
@@ -1210,8 +1216,11 @@ private:
 		loopCount_ = loopCount_ % MaxSample;
 
 		if (!isFreezeCull_)
+		{
 			DirectX::XMStoreFloat4x4(&mtxFrustumViewProj_, mtxWorldToClip);
-		UpdateFrustumPlane(frameIndex, mtxFrustumViewProj_);
+			frustumCamPos_ = camPos_;
+		}
+		UpdateFrustumPlane(frameIndex, mtxFrustumViewProj_, frustumCamPos_);
 	}
 
 	void ControlCamera()
@@ -1353,7 +1362,7 @@ private:
 		for (auto&& v : frustumCBVs_) v.Destroy();
 	}
 
-	void UpdateFrustumPlane(int frameIndex, const DirectX::XMFLOAT4X4& mtxViewProj)
+	void UpdateFrustumPlane(int frameIndex, const DirectX::XMFLOAT4X4& mtxViewProj, const DirectX::XMFLOAT4& camPos)
 	{
 		DirectX::XMFLOAT4 tmp_planes[6];
 
@@ -1413,6 +1422,7 @@ private:
 
 		auto p = reinterpret_cast<FrustumCB*>(frustumCBs_[frameIndex].Map(nullptr));
 		memcpy(p->frustumPlanes, tmp_planes, sizeof(p->frustumPlanes));
+		p->camPos = camPos;
 		frustumCBs_[frameIndex].Unmap();
 	}
 
@@ -2253,6 +2263,7 @@ private:
 	bool					isMeshletColor_ = false;
 	bool					isEnableAmp_ = true;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
+	DirectX::XMFLOAT4		frustumCamPos_;
 
 	int		frameIndex_ = 0;
 

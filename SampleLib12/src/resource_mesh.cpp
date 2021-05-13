@@ -184,6 +184,13 @@ namespace sl12
 					dst.meshlets[j].boundingInfo.box.aabbMax.x = src_meshlets[j].GetBoundingBox().maxX;
 					dst.meshlets[j].boundingInfo.box.aabbMax.y = src_meshlets[j].GetBoundingBox().maxY;
 					dst.meshlets[j].boundingInfo.box.aabbMax.z = src_meshlets[j].GetBoundingBox().maxZ;
+					dst.meshlets[j].boundingInfo.cone.apex.x = src_meshlets[j].GetCone().apexX;
+					dst.meshlets[j].boundingInfo.cone.apex.y = src_meshlets[j].GetCone().apexY;
+					dst.meshlets[j].boundingInfo.cone.apex.z = src_meshlets[j].GetCone().apexZ;
+					dst.meshlets[j].boundingInfo.cone.axis.x = src_meshlets[j].GetCone().axisX;
+					dst.meshlets[j].boundingInfo.cone.axis.y = src_meshlets[j].GetCone().axisY;
+					dst.meshlets[j].boundingInfo.cone.axis.z = src_meshlets[j].GetCone().axisZ;
+					dst.meshlets[j].boundingInfo.cone.cutoff = src_meshlets[j].GetCone().cutoff;
 				}
 			}
 		}

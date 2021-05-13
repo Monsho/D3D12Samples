@@ -25,7 +25,7 @@ namespace sl12
 		{
 			ar(CEREAL_NVP(centerX), CEREAL_NVP(centerY), CEREAL_NVP(centerZ), CEREAL_NVP(radius));
 		}
-	};	// class ResourceMeshBoundingSphere
+	};	// struct ResourceMeshBoundingSphere
 
 	struct ResourceMeshBoundingBox
 	{
@@ -37,7 +37,20 @@ namespace sl12
 		{
 			ar(CEREAL_NVP(minX), CEREAL_NVP(minY), CEREAL_NVP(minZ), CEREAL_NVP(maxX), CEREAL_NVP(maxY), CEREAL_NVP(maxZ));
 		}
-	};	// class ResourceMeshBoundingBox
+	};	// struct ResourceMeshBoundingBox
+
+	struct ResourceMeshMeshletCone
+	{
+		float	apexX, apexY, apexZ;
+		float	axisX, axisY, axisZ;
+		float	cutoff;
+
+		template <class Archive>
+		void serialize(Archive& ar)
+		{
+			ar(CEREAL_NVP(apexX), CEREAL_NVP(apexY), CEREAL_NVP(apexZ), CEREAL_NVP(axisX), CEREAL_NVP(axisY), CEREAL_NVP(axisZ), CEREAL_NVP(cutoff));
+		}
+	};	// struct ResourceMeshMeshletCone
 
 	class ResourceMeshMaterial
 	{
@@ -117,6 +130,10 @@ namespace sl12
 		{
 			return boundingBox_;
 		}
+		const ResourceMeshMeshletCone& GetCone() const
+		{
+			return cone_;
+		}
 
 	private:
 		u32							indexOffset_;
@@ -127,6 +144,7 @@ namespace sl12
 		u32							vertexIndexCount_;
 		ResourceMeshBoundingSphere	boundingSphere_;
 		ResourceMeshBoundingBox		boundingBox_;
+		ResourceMeshMeshletCone		cone_;
 
 
 		template <class Archive>
@@ -139,7 +157,8 @@ namespace sl12
 				CEREAL_NVP(vertexIndexOffset_),
 				CEREAL_NVP(vertexIndexCount_),
 				CEREAL_NVP(boundingSphere_),
-				CEREAL_NVP(boundingBox_));
+				CEREAL_NVP(boundingBox_),
+				CEREAL_NVP(cone_));
 		}
 	};	// class ResourceMeshMeshlet
 
@@ -338,6 +357,12 @@ namespace sl12
 			{
 				DirectX::XMFLOAT3	aabbMin, aabbMax;
 			} box;
+			struct
+			{
+				DirectX::XMFLOAT3	apex;
+				DirectX::XMFLOAT3	axis;
+				float				cutoff;
+			} cone;
 		};	// struct Bounding
 
 		struct Material

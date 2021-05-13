@@ -37,6 +37,7 @@ struct MaterialCB
 struct FrustumCB
 {
 	float4		frustumPlanes[6];
+	float4		camPos;
 };
 
 struct MeshCB

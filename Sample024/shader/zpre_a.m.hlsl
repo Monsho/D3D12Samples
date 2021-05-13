@@ -21,8 +21,11 @@ struct Meshlet
 	uint		primitiveOffset;
 	float3		aabbMax;
 	uint		primitiveCount;
+	float3		coneApex;
 	uint		vertexIndexOffset;
+	float3		coneAxis;
 	uint		vertexIndexCount;
+	float		coneCutoff;
 };
 
 ConstantBuffer<SceneCB>		cbScene			: register(b0);

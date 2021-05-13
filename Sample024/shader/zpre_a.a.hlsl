@@ -21,8 +21,11 @@ struct Meshlet
 	uint		primitiveOffset;
 	float3		aabbMax;
 	uint		primitiveCount;
+	float3		coneApex;
 	uint		vertexIndexOffset;
+	float3		coneAxis;
 	uint		vertexIndexCount;
+	float		coneCutoff;
 };
 
 ConstantBuffer<SceneCB>		cbScene			: register(b0);
@@ -70,6 +73,12 @@ bool IsFrustumCull(float3 aabbMin, float3 aabbMax)
 	return false;
 }
 
+bool IsBackfaceCull(float3 cone_apex, float3 cone_axis, float cone_cutoff, float3 cam_pos)
+{
+	cone_apex = mul(cbMesh.mtxLocalToWorld, float4(cone_apex, 1)).xyz;
+	return dot(normalize(cone_apex - cam_pos), cone_axis) >= cone_cutoff;
+}
+
 groupshared Payload sPayload;
 
 [NumThreads(LANE_COUNT_IN_WAVE, 1, 1)]
@@ -87,7 +96,9 @@ void main(
 	{
 		Meshlet	ml = inputMeshlets[dtid];
 
-		if (!cbScene.isFrustumCull || !IsFrustumCull(ml.aabbMin, ml.aabbMax))
+		if (!cbScene.isFrustumCull
+			|| (!IsFrustumCull(ml.aabbMin, ml.aabbMax)
+			&& !IsBackfaceCull(ml.coneApex, ml.coneAxis, ml.coneCutoff, cbFrustum.camPos.xyz)))
 		{
 			visible = true;
 		}
