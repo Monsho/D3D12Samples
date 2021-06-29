@@ -85,7 +85,7 @@ namespace
 			{
 				return false;
 			}
-			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, meshlets.size(), sizeof(MeshletData)))
+			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, (sl12::u32)meshlets.size(), sizeof(MeshletData)))
 			{
 				return false;
 			}
@@ -94,7 +94,7 @@ namespace
 			{
 				return false;
 			}
-			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
+			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, (sl12::u32)meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
 			{
 				return false;
 			}
@@ -788,7 +788,7 @@ public:
 					{
 						d3dCmdList->ExecuteIndirect(
 							commandSig_,											// command signature
-							submesh.meshlets.size(),								// コマンドの最大発行回数
+							(UINT)submesh.meshlets.size(),							// コマンドの最大発行回数
 							comps[i]->GetIndirectArgumentB().GetResourceDep(),		// indirectコマンドの変数バッファ
 							0,														// indirectコマンドの変数バッファの先頭オフセット
 							nullptr,												// 実際の発行回数を収めたカウントバッファ

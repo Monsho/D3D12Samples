@@ -113,7 +113,7 @@ namespace
 			{
 				return false;
 			}
-			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, meshlets.size(), sizeof(MeshletData)))
+			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, (sl12::u32)meshlets.size(), sizeof(MeshletData)))
 			{
 				return false;
 			}
@@ -122,7 +122,7 @@ namespace
 			{
 				return false;
 			}
-			if (!meshletForMSBV_.Initialize(pDev, &meshletForMSB_, 0, meshlets.size(), sizeof(MeshShaderMeshlet)))
+			if (!meshletForMSBV_.Initialize(pDev, &meshletForMSB_, 0, (sl12::u32)meshlets.size(), sizeof(MeshShaderMeshlet)))
 			{
 				return false;
 			}
@@ -131,7 +131,7 @@ namespace
 			{
 				return false;
 			}
-			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
+			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, (sl12::u32)meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
 			{
 				return false;
 			}
@@ -595,11 +595,34 @@ public:
 			CreateMeshCB();
 
 			InitializeRaytracingPipeline();
+#if 0
 			utilCmdList_.Reset();
 			CreateAS(&utilCmdList_);
 			utilCmdList_.Close();
 			utilCmdList_.Execute();
 			device_.WaitDrawDone();
+#else
+			std::vector<int> TableOffsets;
+			std::vector<sl12::Buffer*> InfoBuffers;
+
+			utilCmdList_.Reset();
+			CreateCompactionBLAS(&utilCmdList_, TableOffsets);
+			utilCmdList_.Close();
+			utilCmdList_.Execute();
+			device_.WaitDrawDone();
+
+			utilCmdList_.Reset();
+			CompactBLAS(&utilCmdList_, InfoBuffers);
+			CreateTLAS(&utilCmdList_, TableOffsets);
+			utilCmdList_.Close();
+			utilCmdList_.Execute();
+			device_.WaitDrawDone();
+
+			for (auto&& buff : InfoBuffers)
+			{
+				device_.KillObject(buff);
+			}
+#endif
 			InitializeRaytracingResource();
 
 			sceneState_ = 1;
@@ -672,6 +695,9 @@ public:
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
 		device_.LoadRenderCommands(pCmdList);
+
+		// BLAS構築速度調査用
+		//TestCreateBLAS(pCmdList);
 
 		auto&& swapchain = device_.GetSwapchain();
 		pCmdList->TransitionBarrier(swapchain.GetCurrentTexture(kSwapchainBufferOffset), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -945,7 +971,7 @@ public:
 					descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
 					pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-					UINT dispatch_count = submesh.meshlets.size();
+					UINT dispatch_count = (UINT)submesh.meshlets.size();
 					if (isEnableAmp_)
 					{
 						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
@@ -1426,7 +1452,7 @@ private:
 		frustumCBs_[frameIndex].Unmap();
 	}
 
-	bool CreateBottomAS(sl12::CommandList* pCmdList, const sl12::ResourceItemMesh* pMeshItem, sl12::BottomAccelerationStructure* pBottomAS)
+	bool CreateBottomAS(sl12::CommandList* pCmdList, const sl12::ResourceItemMesh* pMeshItem, sl12::BottomAccelerationStructure* pBottomAS, bool isCompaction = false)
 	{
 		// Bottom ASの生成準備
 		sl12::ResourceItemMesh* pLocalMesh = const_cast<sl12::ResourceItemMesh*>(pMeshItem);
@@ -1453,7 +1479,12 @@ private:
 		}
 
 		sl12::StructureInputDesc bottomInput{};
-		if (!bottomInput.InitializeAsBottom(&device_, geoDescs.data(), submeshes.size(), D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
+		auto buildFlag = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+		if (isCompaction)
+		{
+			buildFlag |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+		}
+		if (!bottomInput.InitializeAsBottom(&device_, geoDescs.data(), (UINT)submeshes.size(), buildFlag))
 		{
 			return false;
 		}
@@ -1464,12 +1495,17 @@ private:
 		}
 
 		// コマンド発行
-		if (!pBottomAS->Build(pCmdList, bottomInput))
+		if (!pBottomAS->Build(&device_, pCmdList, bottomInput))
 		{
 			return false;
 		}
 
 		return true;
+	}
+
+	bool CompactBottomAS(sl12::CommandList* pCmdList, sl12::BottomAccelerationStructure* pBottomAS)
+	{
+		return pBottomAS->CompactAS(&device_, pCmdList);
 	}
 
 	bool CreateTopAS(sl12::CommandList* pCmdList, sl12::TopInstanceDesc* pInstances, int instanceCount, sl12::TopAccelerationStructure* pTopAS)
@@ -1507,6 +1543,82 @@ private:
 		return ret;
 	}
 
+	void TestCreateBLAS(sl12::CommandList* pCmdList)
+	{
+		auto mesh_resources = GetBaseMeshes();
+		sl12::BottomAccelerationStructure* bas = new sl12::BottomAccelerationStructure();
+		if (!CreateBottomAS(pCmdList, mesh_resources[0], bas))
+		{
+		}
+		device_.KillObject(bas);
+	}
+
+	bool CreateCompactionBLAS(sl12::CommandList* pCmdList, std::vector<int>& TableOffsets)
+	{
+		// create bottom as.
+		auto mesh_resources = GetBaseMeshes();
+		int total_submesh_count = 0;
+		for (int i = 0; i < mesh_resources.size(); i++)
+		{
+			sl12::BottomAccelerationStructure* bas = new sl12::BottomAccelerationStructure();
+			if (!CreateBottomAS(pCmdList, mesh_resources[i], bas, true))
+			{
+				return false;
+			}
+			sl12::ConsolePrint("BLAS size before compaction : %lld bytes\n", bas->GetDxrBuffer().GetSize());
+
+			rtBottomASs_.push_back(bas);
+			TableOffsets.push_back(total_submesh_count);
+			total_submesh_count += (int)mesh_resources[i]->GetSubmeshes().size();
+		}
+		TableOffsets.push_back(total_submesh_count);
+	}
+
+	bool CompactBLAS(sl12::CommandList* pCmdList, std::vector<sl12::Buffer*>& InfoBuffers)
+	{
+		int count = (int)rtBottomASs_.size();
+		for (int i = 0; i < count; i++)
+		{
+			if (!CompactBottomAS(pCmdList, rtBottomASs_[i]))
+			{
+				return false;
+			}
+			sl12::ConsolePrint("BLAS size after compaction : %lld bytes\n", rtBottomASs_[i]->GetDxrBuffer().GetSize());
+		}
+		return true;
+	}
+
+	bool CreateTLAS(sl12::CommandList* pCmdList, std::vector<int>& TableOffsets)
+	{
+		// create top as.
+		DirectX::XMFLOAT4X4 mtxSponza(
+			kSponzaScale, 0, 0, 0,
+			0, kSponzaScale, 0, 0,
+			0, 0, kSponzaScale, 0,
+			0, 0, 0, 1);
+		sl12::TopInstanceDesc top_descs[1];
+		top_descs[0].Initialize(mtxSponza, 0, 0xff, TableOffsets[0] * kRTMaterialTableCount, 0, rtBottomASs_[0]);
+		if (!CreateTopAS(pCmdList, top_descs, ARRAYSIZE(top_descs), &rtTopAS_))
+		{
+			return false;
+		}
+
+		// initialize descriptor manager.
+		if (!rtDescMan_.Initialize(&device_,
+			2,		// Render Count
+			1,		// AS Count
+			4,		// Global CBV Count
+			8,		// Global SRV Count
+			4,		// Global UAV Count
+			4,		// Global Sampler Count
+			TableOffsets[TableOffsets.size() - 1]))
+		{
+			return false;
+		}
+
+		return true;
+	}
+
 	bool CreateAS(sl12::CommandList* pCmdList)
 	{
 		// create bottom as.
@@ -1523,7 +1635,7 @@ private:
 
 			rtBottomASs_.push_back(bas);
 			table_offsets.push_back(total_submesh_count);
-			total_submesh_count += mesh_resources[i]->GetSubmeshes().size();
+			total_submesh_count += (int)mesh_resources[i]->GetSubmeshes().size();
 		}
 
 		// create top as.
@@ -1840,7 +1952,7 @@ private:
 			sl12::Buffer& buffer,
 			int materialCount)
 		{
-			materialCount = (materialCount < 0) ? material_table.size() : materialCount;
+			materialCount = (materialCount < 0) ? (int)material_table.size() : materialCount;
 			if (!buffer.Initialize(&device_, shaderRecordSize * tableCountPerMaterial * materialCount, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
 			{
 				return false;

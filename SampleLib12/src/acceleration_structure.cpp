@@ -181,20 +181,25 @@ namespace sl12
 	// オプションでスクラッチバッファも生成
 	//-------------------------------------------------------------------
 	bool AccelerationStructure::CreateBuffer(
-		sl12::Device*			pDevice,
-		size_t					size,
-		size_t					scratchSize)
+		Device*			pDevice,
+		size_t			size,
+		size_t			scratchSize)
 	{
-		if (!dxrBuffer_.Initialize(pDevice, size, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, false, true))
+		pDxrBuffer_ = new Buffer();
+		if (!pDxrBuffer_)
+		{
+			return false;
+		}
+		if (!pDxrBuffer_->Initialize(pDevice, size, 0, BufferUsage::AccelerationStructure, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, false, true))
 		{
 			return false;
 		}
 
 		if (scratchSize > 0)
 		{
-			pScratchBuffer_ = new sl12::Buffer();
+			pScratchBuffer_ = new Buffer();
 			scratchCreated_ = true;
-			if (!pScratchBuffer_->Initialize(pDevice, scratchSize, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			if (!pScratchBuffer_->Initialize(pDevice, scratchSize, 0, BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
 			{
 				return false;
 			}
@@ -206,14 +211,14 @@ namespace sl12
 	//-------------------------------------------------------------------
 	// スクラッチバッファを外部から設定する
 	//-------------------------------------------------------------------
-	void AccelerationStructure::SetScratchBuffer(sl12::Buffer* p)
+	void AccelerationStructure::SetScratchBuffer(Buffer* p)
 	{
 		if (!p)
 			return;
 
 		if (scratchCreated_)
 		{
-			sl12::SafeDelete(pScratchBuffer_);
+			SafeDelete(pScratchBuffer_);
 			scratchCreated_ = false;
 		}
 		pScratchBuffer_ = p;
@@ -225,7 +230,7 @@ namespace sl12
 	void AccelerationStructure::Destroy()
 	{
 		DestroyScratchBuffer();
-		dxrBuffer_.Destroy();
+		SafeDelete(pDxrBuffer_);
 	}
 
 	//-------------------------------------------------------------------
@@ -235,7 +240,7 @@ namespace sl12
 	{
 		if (scratchCreated_)
 		{
-			sl12::SafeDelete(pScratchBuffer_);
+			SafeDelete(pScratchBuffer_);
 			scratchCreated_ = false;
 		}
 		pScratchBuffer_ = nullptr;
@@ -245,30 +250,133 @@ namespace sl12
 	//-------------------------------------------------------------------
 	// Bottom ASのビルドコマンドを発行する
 	//-------------------------------------------------------------------
-	bool BottomAccelerationStructure::Build(sl12::CommandList* pCmdList, const StructureInputDesc& desc, bool barrier)
+	bool BottomAccelerationStructure::Build(Device* pDevice, CommandList* pCmdList, const StructureInputDesc& desc, bool barrier)
 	{
 		if (!pCmdList)
 			return false;
-		if (!dxrBuffer_.GetResourceDep())
+		if (!pDxrBuffer_ || !pDxrBuffer_->GetResourceDep())
 			return false;
 		if (!pScratchBuffer_)
 			return false;
 
+		bool isCompaction = desc.inputDesc.Flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc{};
-		buildDesc.DestAccelerationStructureData = dxrBuffer_.GetResourceDep()->GetGPUVirtualAddress();
+		buildDesc.DestAccelerationStructureData = pDxrBuffer_->GetResourceDep()->GetGPUVirtualAddress();
 		buildDesc.Inputs = desc.inputDesc;
 		buildDesc.ScratchAccelerationStructureData = pScratchBuffer_->GetResourceDep()->GetGPUVirtualAddress();
 
+		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC InfoDesc;
+		InfoDesc.InfoType = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_COMPACTED_SIZE;
+
+		// Compactionの情報バッファ生成
+		Buffer* pInfoBuffer = nullptr;
+		if (isCompaction)
+		{
+			pInfoBuffer = new Buffer();
+			if (!pInfoBuffer)
+			{
+				return false;
+			}
+			if (!pInfoBuffer->Initialize(pDevice,
+				sizeof(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_COMPACTED_SIZE_DESC),
+				0,
+				BufferUsage::ShaderResource,
+				D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+				false, true))
+			{
+				SafeDelete(pInfoBuffer);
+				return false;
+			}
+			InfoDesc.DestBuffer = pInfoBuffer->GetResourceDep()->GetGPUVirtualAddress();
+
+			// 情報コピー先バッファを生成する
+			pPostBuildReadBuffer_ = new Buffer();
+			if (!pPostBuildReadBuffer_)
+			{
+				SafeDelete(pInfoBuffer);
+				return false;
+			}
+			if (!pPostBuildReadBuffer_->Initialize(pDevice,
+				sizeof(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_COMPACTED_SIZE_DESC),
+				0,
+				BufferUsage::ReadBack,
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				false, false))
+			{
+				SafeDelete(pInfoBuffer);
+				SafeDelete(pPostBuildReadBuffer_);
+				return false;
+			}
+		}
+
 		// ビルドコマンド
-		pCmdList->GetDxrCommandList()->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+		pCmdList->GetDxrCommandList()->BuildRaytracingAccelerationStructure(
+			&buildDesc,
+			isCompaction ? 1 : 0,
+			isCompaction ? &InfoDesc : nullptr);
 
 		// バリア
-		if (barrier)
+		// Compaction有効な場合は必ずバリアを張ってサイズ取得を確実にする
+		if (barrier || isCompaction)
 		{
 			// TopASビルド前にBottomASのビルド完了を待つ必要があります.
 			// リソースバリアを張ることでBottomASビルドが完了していることを保証します.
-			pCmdList->UAVBarrier(&dxrBuffer_);
+			pCmdList->UAVBarrier(pDxrBuffer_);
+			pCmdList->TransitionBarrier(pInfoBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+			if (isCompaction)
+			{
+				pCmdList->GetDxrCommandList()->CopyResource(pPostBuildReadBuffer_->GetResourceDep(), pInfoBuffer->GetResourceDep());
+				pDevice->KillObject(pInfoBuffer);
+			}
 		}
+
+		return true;
+	}
+
+	//-------------------------------------------------------------------
+	// BLASのCompactionを実行する
+	//-------------------------------------------------------------------
+	bool BottomAccelerationStructure::CompactAS(Device* pDevice, CommandList* pCmdList, bool barrier)
+	{
+		if (!pDevice || !pCmdList || !pPostBuildReadBuffer_ || !pDxrBuffer_)
+		{
+			return false;
+		}
+
+		// サイズ取得
+		auto pDesc = (D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_COMPACTED_SIZE_DESC*)pPostBuildReadBuffer_->Map(nullptr);
+		u64 size = pDesc->CompactedSizeInBytes;
+		pPostBuildReadBuffer_->Unmap();
+
+		// 新しいAS用バッファを生成する
+		Buffer* pNewASBuffer = new Buffer();
+		if (!pNewASBuffer)
+		{
+			return false;
+		}
+		if (!pNewASBuffer->Initialize(pDevice, size, 0, sl12::BufferUsage::AccelerationStructure, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, false, true))
+		{
+			return false;
+		}
+
+		// Compaction Copyを行う
+		pCmdList->GetDxrCommandList()->CopyRaytracingAccelerationStructure(
+			pNewASBuffer->GetResourceDep()->GetGPUVirtualAddress(),
+			pDxrBuffer_->GetResourceDep()->GetGPUVirtualAddress(),
+			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE_COMPACT);
+
+		if (barrier)
+		{
+			pCmdList->UAVBarrier(pNewASBuffer);
+		}
+
+		// バッファスワップ
+		pDevice->KillObject(pDxrBuffer_);
+		pDevice->KillObject(pPostBuildReadBuffer_);
+		pDxrBuffer_ = pNewASBuffer;
+		pPostBuildReadBuffer_ = nullptr;
 
 		return true;
 	}
@@ -339,13 +447,13 @@ namespace sl12
 			return false;
 		if (!pInstanceBuffer_)
 			return false;
-		if (!dxrBuffer_.GetResourceDep())
+		if (!pDxrBuffer_ || !pDxrBuffer_->GetResourceDep())
 			return false;
 		if (!pScratchBuffer_)
 			return false;
 
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc{};
-		buildDesc.DestAccelerationStructureData = dxrBuffer_.GetResourceDep()->GetGPUVirtualAddress();
+		buildDesc.DestAccelerationStructureData = pDxrBuffer_->GetResourceDep()->GetGPUVirtualAddress();
 		buildDesc.Inputs = desc.inputDesc;
 		buildDesc.Inputs.InstanceDescs = pInstanceBuffer_->GetResourceDep()->GetGPUVirtualAddress();
 		buildDesc.ScratchAccelerationStructureData = pScratchBuffer_->GetResourceDep()->GetGPUVirtualAddress();
@@ -358,7 +466,7 @@ namespace sl12
 		{
 			// TopASビルド前にBottomASのビルド完了を待つ必要があります.
 			// リソースバリアを張ることでBottomASビルドが完了していることを保証します.
-			pCmdList->UAVBarrier(&dxrBuffer_);
+			pCmdList->UAVBarrier(pDxrBuffer_);
 		}
 
 		return true;

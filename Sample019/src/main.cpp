@@ -1028,7 +1028,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!pBottomAS->Build(pCmdList, bottomInput))
+		if (!pBottomAS->Build(&device_, pCmdList, bottomInput))
 		{
 			return false;
 		}

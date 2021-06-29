@@ -154,7 +154,7 @@ namespace
 			{
 				return false;
 			}
-			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, meshlets.size(), sizeof(MeshletData)))
+			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, (sl12::u32)meshlets.size(), sizeof(MeshletData)))
 			{
 				return false;
 			}
@@ -163,7 +163,7 @@ namespace
 			{
 				return false;
 			}
-			if (!meshletForMSBV_.Initialize(pDev, &meshletForMSB_, 0, meshlets.size(), sizeof(MeshShaderMeshlet)))
+			if (!meshletForMSBV_.Initialize(pDev, &meshletForMSB_, 0, (sl12::u32)meshlets.size(), sizeof(MeshShaderMeshlet)))
 			{
 				return false;
 			}
@@ -172,7 +172,7 @@ namespace
 			{
 				return false;
 			}
-			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
+			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, (sl12::u32)meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
 			{
 				return false;
 			}
@@ -286,7 +286,7 @@ namespace
 			}
 
 			sl12::StructureInputDesc bottomInput{};
-			if (!bottomInput.InitializeAsBottom(pDevice, geoDescs.data(), submeshes.size(), D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
+			if (!bottomInput.InitializeAsBottom(pDevice, geoDescs.data(), (UINT)submeshes.size(), D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
 			{
 				return false;
 			}
@@ -296,7 +296,7 @@ namespace
 				return false;
 			}
 
-			if (!blas->Build(pCmdList, bottomInput))
+			if (!blas->Build(pDevice, pCmdList, bottomInput))
 			{
 				return false;
 			}
@@ -1346,7 +1346,7 @@ public:
 						descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
 						pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-						UINT dispatch_count = submesh.meshlets.size();
+						UINT dispatch_count = (UINT)submesh.meshlets.size();
 						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
 						d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
 					}
@@ -1450,7 +1450,7 @@ public:
 						descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
 						pCmdList->SetMeshRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-						UINT dispatch_count = submesh.meshlets.size();
+						UINT dispatch_count = (UINT)submesh.meshlets.size();
 						dispatch_count = (dispatch_count + LANE_COUNT_IN_WAVE - 1) / LANE_COUNT_IN_WAVE;
 						d3dCmdList->DispatchMesh(dispatch_count, 1, 1);
 					}
@@ -2203,7 +2203,7 @@ private:
 		int total_submesh_count = 0;
 		for (auto&& inst : meshInstances_)
 		{
-			total_submesh_count += inst.resMeshASRef->GetResMesh()->GetSubmeshes().size();
+			total_submesh_count += (int)inst.resMeshASRef->GetResMesh()->GetSubmeshes().size();
 		}
 
 		// initialize descriptor manager.
@@ -2244,7 +2244,7 @@ private:
 				0,
 				meshInstances_[i].GetBLAS());
 
-			table_offset += meshInstances_[i].resMeshASRef->GetResMesh()->GetSubmeshes().size();
+			table_offset += (int)meshInstances_[i].resMeshASRef->GetResMesh()->GetSubmeshes().size();
 		}
 		pRtTopAS_ = new sl12::TopAccelerationStructure();
 		if (!CreateTopAS(pCmdList, top_descs, ARRAYSIZE(top_descs), pRtTopAS_))
@@ -2498,7 +2498,7 @@ private:
 			sl12::Buffer& buffer,
 			int materialCount)
 		{
-			materialCount = (materialCount < 0) ? material_table.size() : materialCount;
+			materialCount = (materialCount < 0) ? (int)material_table.size() : materialCount;
 			if (!buffer.Initialize(&device_, shaderRecordSize * tableCountPerMaterial * materialCount, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
 			{
 				return false;
@@ -2661,14 +2661,14 @@ private:
 			pMeshInst->dynamicVB = new sl12::Buffer();
 			pMeshInst->dynamicUAV = new sl12::UnorderedAccessView();
 			pMeshInst->dynamicVB->Initialize(pDevice, size, stride, sl12::BufferUsage::VertexBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, false, true);
-			pMeshInst->dynamicUAV->Initialize(pDevice, pMeshInst->dynamicVB, 0, size / stride, stride, 0);
+			pMeshInst->dynamicUAV->Initialize(pDevice, pMeshInst->dynamicVB, 0, (sl12::u32)(size / stride), (sl12::u32)stride, 0);
 
 			auto&& submeshes = resMesh->GetSubmeshes();
 			for (auto&& submesh : submeshes)
 			{
 				auto srv = new sl12::BufferView();
 				auto&& desc = submesh.positionView.GetViewDesc();
-				srv->Initialize(pDevice, pMeshInst->dynamicVB, desc.Buffer.FirstElement, desc.Buffer.NumElements, desc.Buffer.StructureByteStride);
+				srv->Initialize(pDevice, pMeshInst->dynamicVB, (sl12::u32)desc.Buffer.FirstElement, desc.Buffer.NumElements, desc.Buffer.StructureByteStride);
 				pMeshInst->dynamicSRVs.push_back(srv);
 
 				auto vbv = new sl12::VertexBufferView();
@@ -2682,7 +2682,7 @@ private:
 
 		auto vcount = pMeshInst->dynamicVB->GetSize() / pMeshInst->dynamicVB->GetStride();
 		VertexMutationCB cb;
-		cb.vertexCount = vcount;
+		cb.vertexCount = (UINT)vcount;
 		cb.mutateIntensity = 0.3f;
 		cb.time = sTotalTime;
 
@@ -2699,7 +2699,7 @@ private:
 
 		pCmdList->GetLatestCommandList()->SetPipelineState(vertexMutationPso_.GetPSO());
 		pCmdList->SetComputeRootSignatureAndDescriptorSet(&vertexMutationRootSig_, &descSet_);
-		pCmdList->GetLatestCommandList()->Dispatch((vcount + 64 - 1) / 64, 1, 1);
+		pCmdList->GetLatestCommandList()->Dispatch((UINT)((vcount + 64 - 1) / 64), 1, 1);
 
 		pCmdList->TransitionBarrier(pMeshInst->dynamicVB, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 	}
@@ -2750,7 +2750,7 @@ private:
 				buildFlags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
 			}
 		}
-		if (!bottomInput.InitializeAsBottom(pDevice, geoDescs.data(), submeshes.size(), buildFlags))
+		if (!bottomInput.InitializeAsBottom(pDevice, geoDescs.data(), (UINT)submeshes.size(), buildFlags))
 		{
 			return false;
 		}
@@ -2765,7 +2765,7 @@ private:
 			}
 		}
 
-		if (!pMeshInst->dynamicBLAS->Build(pCmdList, bottomInput))
+		if (!pMeshInst->dynamicBLAS->Build(pDevice, pCmdList, bottomInput))
 		{
 			return false;
 		}
@@ -3068,7 +3068,7 @@ private:
 			memcpy(materialInfoB_.Map(nullptr), materialInfos_.data(), materialInfoB_.GetResourceDesc().Width);
 			materialInfoB_.Unmap();
 
-			if (!materialInfoSRV_.Initialize(pDev, &materialInfoB_, 0, materialInfos_.size(), sizeof(MaterialInfo)))
+			if (!materialInfoSRV_.Initialize(pDev, &materialInfoB_, 0, (sl12::u32)materialInfos_.size(), sizeof(MaterialInfo)))
 			{
 				return false;
 			}

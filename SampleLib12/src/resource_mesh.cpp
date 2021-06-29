@@ -1,12 +1,35 @@
 ﻿#include "sl12/resource_mesh.h"
 #include "sl12/string_util.h"
 #include "sl12/resource_texture.h"
+#include "sl12/device.h"
+#include "sl12/command_list.h"
 
 #include <fstream>
 
 
 namespace sl12
 {
+	namespace
+	{
+		struct BufferInitRenderCommand
+			: public IRenderCommand
+		{
+			Device* pDevice;
+			Buffer* pSrcBuffer;
+			Buffer* pDstBuffer;
+
+			~BufferInitRenderCommand()
+			{
+			}
+
+			void LoadCommand(CommandList* pCmdlist) override
+			{
+				auto d3dCmdList = pCmdlist->GetLatestCommandList();
+				d3dCmdList->CopyResource(pDstBuffer->GetResourceDep(), pSrcBuffer->GetResourceDep());
+				pDevice->KillObject(pSrcBuffer);
+			}
+		};	// struct BufferInitRenderCommand
+	}
 
 	//---------------
 	ResourceItemMesh::~ResourceItemMesh()
@@ -56,13 +79,27 @@ namespace sl12
 				return isEmpyOk;
 			}
 
-			if (!buff.Initialize(pDev, data.size(), stride, usage, true, false))
+
+			Buffer* staging = new Buffer();
+			if (!staging->Initialize(pDev, data.size(), stride, usage, true, false))
 			{
 				return false;
 			}
-			auto p = buff.Map(nullptr);
+			auto p = staging->Map(nullptr);
 			memcpy(p, data.data(), data.size());
-			buff.Unmap();
+			staging->Unmap();
+
+			if (!buff.Initialize(pDev, data.size(), stride, usage, false, false))
+			{
+				return false;
+			}
+
+			BufferInitRenderCommand* command = new BufferInitRenderCommand();
+			command->pDevice = pDev;
+			command->pSrcBuffer = staging;
+			command->pDstBuffer = &buff;
+
+			pDev->AddRenderCommand(std::unique_ptr<IRenderCommand>(command));
 			return true;
 		};
 		if (!CreateBuffer(ret->positionVB_, mesh_bin.GetVBPosition(), sizeof(DirectX::XMFLOAT3), BufferUsage::VertexBuffer))

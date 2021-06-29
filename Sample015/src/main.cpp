@@ -660,7 +660,7 @@ public:
 			topInstances[0].Initialize(mtx0, 0, 0xff, 0, 0, &glbBottomAS_);
 			topInstances[1].Initialize(mtx_mesh, 1, 0xff, glbMesh_.GetSubmeshCount(), 0, &moveBottomAS_);
 
-			if (!UpdateTopAS(&asCmdList, topInstances.data(), topInstances.size(), &topAS_))
+			if (!UpdateTopAS(&asCmdList, topInstances.data(), (int)topInstances.size(), &topAS_))
 			{
 				return false;
 			}
@@ -1234,10 +1234,10 @@ private:
 				&submesh->GetPositionB(),
 				&submesh->GetIndexB(),
 				nullptr,
-				submesh->GetPositionB().GetStride(),
+				(UINT64)submesh->GetPositionB().GetStride(),
 				static_cast<UINT>(submesh->GetPositionB().GetSize() / submesh->GetPositionB().GetStride()),
 				DXGI_FORMAT_R32G32B32_FLOAT,
-				static_cast<UINT>(submesh->GetIndexB().GetSize()) / submesh->GetIndexB().GetStride(),
+				static_cast<UINT>(submesh->GetIndexB().GetSize() / submesh->GetIndexB().GetStride()),
 				DXGI_FORMAT_R32_UINT);
 		}
 
@@ -1253,7 +1253,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!pBottomAS->Build(pCmdList, bottomInput))
+		if (!pBottomAS->Build(&device_, pCmdList, bottomInput))
 		{
 			return false;
 		}
@@ -1341,7 +1341,7 @@ private:
 		topInstances[0].Initialize(mtx0, 0, 0xff, 0, 0, &glbBottomAS_);
 		topInstances[1].Initialize(mtx1, 1, 0xff, glbMesh_.GetSubmeshCount(), 0, &moveBottomAS_);
 
-		if (!CreateTopAS(&cmdList, topInstances.data(), topInstances.size(), &topAS_))
+		if (!CreateTopAS(&cmdList, topInstances.data(), (int)topInstances.size(), &topAS_))
 		{
 			return false;
 		}

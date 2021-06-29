@@ -16,6 +16,8 @@ namespace sl12
 			VertexBuffer,
 			IndexBuffer,
 			ShaderResource,
+			AccelerationStructure,
+			ReadBack,
 
 			Max
 		};

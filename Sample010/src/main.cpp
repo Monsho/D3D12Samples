@@ -655,7 +655,7 @@ private:
 		sl12::GeometryStructureDesc geoDesc{};
 		geoDesc.InitializeAsAABB(
 			D3D12_RAYTRACING_GEOMETRY_FLAG_NONE,
-			&spheresAABB_, sizeof(D3D12_RAYTRACING_AABB), spheres_.size());
+			&spheresAABB_, sizeof(D3D12_RAYTRACING_AABB), (UINT)spheres_.size());
 
 		sl12::StructureInputDesc bottomInput{};
 		if (!bottomInput.InitializeAsBottom(&device_, &geoDesc, 1, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
@@ -669,7 +669,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!bottomAS_.Build(&cmdList, bottomInput))
+		if (!bottomAS_.Build(&device_, &cmdList, bottomInput))
 		{
 			return false;
 		}

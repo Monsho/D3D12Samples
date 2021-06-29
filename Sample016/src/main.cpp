@@ -747,7 +747,7 @@ public:
 			cullDescSet_.Reset();
 			cullDescSet_.SetCsUav(0, indirectCounterUAVs_[0]->GetDescInfo().cpuHandle);
 			pCmdList->SetComputeRootSignatureAndDescriptorSet(&countClearRootSig_, &cullDescSet_);
-			d3dCmdList->Dispatch(meshletCounts_.size(), 1, 1);
+			d3dCmdList->Dispatch((UINT)meshletCounts_.size(), 1, 1);
 
 			// PSO設定
 			d3dCmdList->SetPipelineState(cullPso_.GetPSO());
@@ -1357,10 +1357,10 @@ private:
 				&submesh->GetPositionB(),
 				&submesh->GetIndexB(),
 				nullptr,
-				submesh->GetPositionB().GetStride(),
+				(UINT64)submesh->GetPositionB().GetStride(),
 				static_cast<UINT>(submesh->GetPositionB().GetSize() / submesh->GetPositionB().GetStride()),
 				DXGI_FORMAT_R32G32B32_FLOAT,
-				static_cast<UINT>(submesh->GetIndexB().GetSize()) / submesh->GetIndexB().GetStride(),
+				static_cast<UINT>(submesh->GetIndexB().GetSize() / submesh->GetIndexB().GetStride()),
 				DXGI_FORMAT_R32_UINT);
 		}
 
@@ -1376,7 +1376,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!pBottomAS->Build(pCmdList, bottomInput))
+		if (!pBottomAS->Build(&device_, pCmdList, bottomInput))
 		{
 			return false;
 		}
@@ -1459,7 +1459,7 @@ private:
 		DirectX::XMStoreFloat4x4(&mtx1, scale1);
 		topInstances[0].Initialize(mtx0, 0, 0xff, 0, 0, &glbBottomAS_);
 
-		if (!CreateTopAS(&cmdList, topInstances.data(), topInstances.size(), &topAS_))
+		if (!CreateTopAS(&cmdList, topInstances.data(), (int)topInstances.size(), &topAS_))
 		{
 			return false;
 		}

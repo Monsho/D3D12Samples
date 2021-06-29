@@ -10,15 +10,18 @@ namespace sl12
 	//----
 	bool Buffer::Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic, bool isUAV)
 	{
-		D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_UPLOAD;
+		auto initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
 		if (!isDynamic)
 		{
 			if (type != BufferUsage::ConstantBuffer)
 			{
-				heapType = D3D12_HEAP_TYPE_DEFAULT;
+				initialState = D3D12_RESOURCE_STATE_COPY_DEST;
 			}
 		}
-		auto initialState = (heapType == D3D12_HEAP_TYPE_UPLOAD) ? D3D12_RESOURCE_STATE_GENERIC_READ : D3D12_RESOURCE_STATE_COPY_DEST;
+		if (type == BufferUsage::ReadBack)
+		{
+			initialState = D3D12_RESOURCE_STATE_COPY_DEST;
+		}
 		return Initialize(pDev, size, stride, type, initialState, isDynamic, isUAV);
 	}
 
@@ -32,6 +35,10 @@ namespace sl12
 			{
 				heapType = D3D12_HEAP_TYPE_DEFAULT;
 			}
+		}
+		if (type == BufferUsage::ReadBack)
+		{
+			heapType = D3D12_HEAP_TYPE_READBACK;
 		}
 
 		size_t allocSize = size;

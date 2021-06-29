@@ -530,7 +530,7 @@ public:
 			cullDescSet_.Reset();
 			cullDescSet_.SetCsUav(0, indirectCounterUAVs_[0]->GetDescInfo().cpuHandle);
 			pCmdList->SetComputeRootSignatureAndDescriptorSet(&countClearRootSig_, &cullDescSet_);
-			d3dCmdList->Dispatch(meshletCounts_.size(), 1, 1);
+			d3dCmdList->Dispatch((UINT)meshletCounts_.size(), 1, 1);
 
 			// PSOÝ’è
 			d3dCmdList->SetPipelineState(cullPso_.GetPSO());

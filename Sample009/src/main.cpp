@@ -256,7 +256,7 @@ public:
 					src.PlacedFootprint.Offset = offset;
 					dst.pResource = pTiledTexture_;
 					dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-					dst.SubresourceIndex = m;
+					dst.SubresourceIndex = (UINT)m;
 					cmdLists_[0].GetCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 
 					offset += tiledFootprints_[m].Footprint.RowPitch * tiledNumRows_[m];
@@ -636,10 +636,10 @@ private:
 			&submesh->GetPositionB(),
 			&submesh->GetIndexB(),
 			nullptr,
-			submesh->GetPositionB().GetStride(),
+			(UINT64)submesh->GetPositionB().GetStride(),
 			static_cast<UINT>(submesh->GetPositionB().GetSize() / submesh->GetPositionB().GetStride()),
 			DXGI_FORMAT_R32G32B32_FLOAT,
-			static_cast<UINT>(submesh->GetIndexB().GetSize()) / submesh->GetIndexB().GetStride(),
+			static_cast<UINT>(submesh->GetIndexB().GetSize() / submesh->GetIndexB().GetStride()),
 			DXGI_FORMAT_R32_UINT);
 		//geoDesc.InitializeAsTriangle(
 		//	&geometryVB_,
@@ -663,7 +663,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!bottomAS_.Build(&cmdList, bottomInput))
+		if (!bottomAS_.Build(&device_, &cmdList, bottomInput))
 		{
 			return false;
 		}

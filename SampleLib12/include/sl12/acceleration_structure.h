@@ -103,32 +103,32 @@ namespace sl12
 		}
 
 		virtual bool CreateBuffer(
-			sl12::Device*			pDevice,
-			size_t					size,
-			size_t					scratchSize);
+			Device*		pDevice,
+			size_t		size,
+			size_t		scratchSize);
 
-		void SetScratchBuffer(sl12::Buffer* p);
+		void SetScratchBuffer(Buffer* p);
 
 		virtual void Destroy();
 		void DestroyScratchBuffer();
 
-		sl12::Buffer& GetDxrBuffer()
+		Buffer& GetDxrBuffer()
 		{
-			return dxrBuffer_;
+			return *pDxrBuffer_;
 		}
-		const sl12::Buffer& GetDxrBuffer() const
+		const Buffer& GetDxrBuffer() const
 		{
-			return dxrBuffer_;
+			return *pDxrBuffer_;
 		}
-		sl12::Buffer* GetScratchBufferPtr()
+		Buffer* GetScratchBufferPtr()
 		{
 			return pScratchBuffer_;
 		}
 
 	protected:
-		sl12::Buffer		dxrBuffer_;
-		sl12::Buffer*		pScratchBuffer_ = nullptr;
-		bool				scratchCreated_ = false;
+		Buffer*		pDxrBuffer_ = nullptr;
+		Buffer*		pScratchBuffer_ = nullptr;
+		bool		scratchCreated_ = false;
 	};	// class AccelerationStructure
 
 	/***************************************//**
@@ -145,7 +145,12 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Build(sl12::CommandList* pCmdList, const StructureInputDesc& desc, bool barrier = true);
+		bool Build(Device* pDevice, CommandList* pCmdList, const StructureInputDesc& desc, bool barrier = true);
+
+		bool CompactAS(Device* pDevice, CommandList* pCmdList, bool barrier = true);
+
+	private:
+		Buffer*		pPostBuildReadBuffer_ = nullptr;
 	};	// class BottomAccelerationStructure
 
 	/***************************************//**

@@ -1041,10 +1041,10 @@ private:
 				&submesh->GetPositionB(),
 				&submesh->GetIndexB(),
 				nullptr,
-				submesh->GetPositionB().GetStride(),
+				(UINT64)submesh->GetPositionB().GetStride(),
 				static_cast<UINT>(submesh->GetPositionB().GetSize() / submesh->GetPositionB().GetStride()),
 				DXGI_FORMAT_R32G32B32_FLOAT,
-				static_cast<UINT>(submesh->GetIndexB().GetSize()) / submesh->GetIndexB().GetStride(),
+				static_cast<UINT>(submesh->GetIndexB().GetSize() / submesh->GetIndexB().GetStride()),
 				DXGI_FORMAT_R32_UINT);
 		}
 
@@ -1060,7 +1060,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!bottomAS_.Build(&cmdList, bottomInput))
+		if (!bottomAS_.Build(&device_, &cmdList, bottomInput))
 		{
 			return false;
 		}

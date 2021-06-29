@@ -96,7 +96,7 @@ namespace
 			{
 				return false;
 			}
-			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, meshlets.size(), sizeof(MeshletData)))
+			if (!meshletBV_.Initialize(pDev, &meshletB_, 0, (sl12::u32)meshlets.size(), sizeof(MeshletData)))
 			{
 				return false;
 			}
@@ -105,7 +105,7 @@ namespace
 			{
 				return false;
 			}
-			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
+			if (!indirectArgumentUAV_.Initialize(pDev, &indirectArgumentB_, 0, (sl12::u32)meshlets.size(), sizeof(D3D12_DRAW_INDEXED_ARGUMENTS), 0))
 			{
 				return false;
 			}
@@ -720,7 +720,7 @@ public:
 					{
 						d3dCmdList->ExecuteIndirect(
 							commandSig_,											// command signature
-							submesh.meshlets.size(),								// コマンドの最大発行回数
+							(UINT)submesh.meshlets.size(),							// コマンドの最大発行回数
 							comps[i]->GetIndirectArgumentB().GetResourceDep(),		// indirectコマンドの変数バッファ
 							0,														// indirectコマンドの変数バッファの先頭オフセット
 							nullptr,												// 実際の発行回数を収めたカウントバッファ
@@ -903,7 +903,7 @@ public:
 					{
 						d3dCmdList->ExecuteIndirect(
 							commandSig_,											// command signature
-							submesh.meshlets.size(),								// コマンドの最大発行回数
+							(UINT)submesh.meshlets.size(),							// コマンドの最大発行回数
 							comps[i]->GetIndirectArgumentB().GetResourceDep(),		// indirectコマンドの変数バッファ
 							0,														// indirectコマンドの変数バッファの先頭オフセット
 							nullptr,												// 実際の発行回数を収めたカウントバッファ
@@ -1402,7 +1402,7 @@ private:
 		}
 
 		sl12::StructureInputDesc bottomInput{};
-		if (!bottomInput.InitializeAsBottom(&device_, geoDescs.data(), submeshes.size(), D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
+		if (!bottomInput.InitializeAsBottom(&device_, geoDescs.data(), (UINT)submeshes.size(), D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
 		{
 			return false;
 		}
@@ -1413,7 +1413,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!pBottomAS->Build(pCmdList, bottomInput))
+		if (!pBottomAS->Build(&device_, pCmdList, bottomInput))
 		{
 			return false;
 		}
@@ -1472,7 +1472,7 @@ private:
 
 			rtBottomASs_.push_back(bas);
 			table_offsets.push_back(total_submesh_count);
-			total_submesh_count += mesh_resources[i]->GetSubmeshes().size();
+			total_submesh_count += (int)mesh_resources[i]->GetSubmeshes().size();
 		}
 
 		// create top as.
@@ -1789,7 +1789,7 @@ private:
 			sl12::Buffer& buffer,
 			int materialCount)
 		{
-			materialCount = (materialCount < 0) ? material_table.size() : materialCount;
+			materialCount = (materialCount < 0) ? (int)material_table.size() : materialCount;
 			if (!buffer.Initialize(&device_, shaderRecordSize * tableCountPerMaterial * materialCount, 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
 			{
 				return false;
