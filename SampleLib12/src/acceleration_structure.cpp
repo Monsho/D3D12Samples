@@ -323,10 +323,10 @@ namespace sl12
 			// TopASビルド前にBottomASのビルド完了を待つ必要があります.
 			// リソースバリアを張ることでBottomASビルドが完了していることを保証します.
 			pCmdList->UAVBarrier(pDxrBuffer_);
-			pCmdList->TransitionBarrier(pInfoBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
 			if (isCompaction)
 			{
+				pCmdList->TransitionBarrier(pInfoBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
 				pCmdList->GetDxrCommandList()->CopyResource(pPostBuildReadBuffer_->GetResourceDep(), pInfoBuffer->GetResourceDep());
 				pDevice->KillObject(pInfoBuffer);
 			}
