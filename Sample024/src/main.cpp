@@ -691,13 +691,32 @@ public:
 			ImGui::Text("All GPU: %f (ms)", all_ms);
 		}
 
+		// TEST: Creation Time Count.
+		for (int i = 0; i < 3; i++)
+		{
+			if (pCreationTimes_[i] && CreationTimesWait_[i] > 0)
+			{
+				CreationTimesWait_[i]--;
+				if (CreationTimesWait_[i] == 0)
+				{
+					uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
+					uint64_t timestamp[2];
+
+					pCreationTimes_[i]->GetTimestamp(0, 2, timestamp);
+					uint64_t all_time = timestamp[1] - timestamp[0];
+					float all_us = (float)all_time / ((float)freq / 1000.0f);
+					sl12::ConsolePrint("Creation Time No.%d : %f (ms)\n", i, all_us);
+				}
+			}
+		}
+
 		gpuTimestamp_[frameIndex].Reset();
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
 		device_.LoadRenderCommands(pCmdList);
 
 		// BLAS構築速度調査用
-		//TestCreateBLAS(pCmdList);
+		TestCreateBLAS(pCmdList);
 
 		auto&& swapchain = device_.GetSwapchain();
 		pCmdList->TransitionBarrier(swapchain.GetCurrentTexture(kSwapchainBufferOffset), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -997,7 +1016,7 @@ public:
 		device_.WaitDrawDone();
 
 		// 次のフレームへ
-		device_.Present(1);
+		device_.Present(0);
 
 		// コマンド実行
 		zpreCmdLists_.Execute();
@@ -1452,7 +1471,7 @@ private:
 		frustumCBs_[frameIndex].Unmap();
 	}
 
-	bool CreateBottomAS(sl12::CommandList* pCmdList, const sl12::ResourceItemMesh* pMeshItem, sl12::BottomAccelerationStructure* pBottomAS, bool isCompaction = false)
+	bool CreateBottomAS(sl12::CommandList* pCmdList, const sl12::ResourceItemMesh* pMeshItem, sl12::BottomAccelerationStructure* pBottomAS, bool isCompaction = false, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS f = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE)
 	{
 		// Bottom ASの生成準備
 		sl12::ResourceItemMesh* pLocalMesh = const_cast<sl12::ResourceItemMesh*>(pMeshItem);
@@ -1479,7 +1498,7 @@ private:
 		}
 
 		sl12::StructureInputDesc bottomInput{};
-		auto buildFlag = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+		auto buildFlag = f;// D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 		if (isCompaction)
 		{
 			buildFlag |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
@@ -1545,16 +1564,46 @@ private:
 
 	void TestCreateBLAS(sl12::CommandList* pCmdList)
 	{
+		static int sTime = 10;
+		sTime--;
+		bool bTimeCount = false;
+		if (!pCreationTimes_[0] && sTime <= 0)
+		{
+			pCreationTimes_[0] = new sl12::Timestamp();
+			pCreationTimes_[0]->Initialize(&device_, 2);
+			pCreationTimes_[0]->Reset();
+			pCreationTimes_[0]->Query(pCmdList);
+			bTimeCount = true;
+		}
+
 		auto mesh_resources = GetBaseMeshes();
 		sl12::BottomAccelerationStructure* bas = new sl12::BottomAccelerationStructure();
-		if (!CreateBottomAS(pCmdList, mesh_resources[0], bas))
+		if (!CreateBottomAS(pCmdList, mesh_resources[0], bas, false, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE))
 		{
 		}
+
+		if (bTimeCount)
+		{
+			pCreationTimes_[0]->Query(pCmdList);
+			pCreationTimes_[0]->Resolve(pCmdList);
+			CreationTimesWait_[0] = 3;
+		}
+		sl12::ConsolePrint("BLAS size always created : %lld bytes\n", bas->GetDxrBuffer().GetSize());
 		device_.KillObject(bas);
 	}
 
 	bool CreateCompactionBLAS(sl12::CommandList* pCmdList, std::vector<int>& TableOffsets)
 	{
+		bool bTimeCount = false;
+		if (!pCreationTimes_[1])
+		{
+			pCreationTimes_[1] = new sl12::Timestamp();
+			pCreationTimes_[1]->Initialize(&device_, 2);
+			pCreationTimes_[1]->Reset();
+			pCreationTimes_[1]->Query(pCmdList);
+			bTimeCount = true;
+		}
+
 		// create bottom as.
 		auto mesh_resources = GetBaseMeshes();
 		int total_submesh_count = 0;
@@ -1572,10 +1621,27 @@ private:
 			total_submesh_count += (int)mesh_resources[i]->GetSubmeshes().size();
 		}
 		TableOffsets.push_back(total_submesh_count);
+
+		if (bTimeCount)
+		{
+			pCreationTimes_[1]->Query(pCmdList);
+			pCreationTimes_[1]->Resolve(pCmdList);
+			CreationTimesWait_[1] = 3;
+		}
 	}
 
 	bool CompactBLAS(sl12::CommandList* pCmdList, std::vector<sl12::Buffer*>& InfoBuffers)
 	{
+		bool bTimeCount = false;
+		if (!pCreationTimes_[2])
+		{
+			pCreationTimes_[2] = new sl12::Timestamp();
+			pCreationTimes_[2]->Initialize(&device_, 2);
+			pCreationTimes_[2]->Reset();
+			pCreationTimes_[2]->Query(pCmdList);
+			bTimeCount = true;
+		}
+
 		int count = (int)rtBottomASs_.size();
 		for (int i = 0; i < count; i++)
 		{
@@ -1585,6 +1651,14 @@ private:
 			}
 			sl12::ConsolePrint("BLAS size after compaction : %lld bytes\n", rtBottomASs_[i]->GetDxrBuffer().GetSize());
 		}
+
+		if (bTimeCount)
+		{
+			pCreationTimes_[2]->Query(pCmdList);
+			pCreationTimes_[2]->Resolve(pCmdList);
+			CreationTimesWait_[2] = 3;
+		}
+
 		return true;
 	}
 
@@ -1683,6 +1757,8 @@ private:
 		}
 
 		// create collection.
+		sl12::CpuTimer CompileTime;
+		sl12::CpuTimer LinkTime;
 		{
 			sl12::DxrPipelineStateDesc dxrDesc;
 
@@ -1714,10 +1790,12 @@ private:
 			//dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
 
 			// PSO生成
+			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
 			if (!rtOcclusionCollection_.Initialize(&device_, dxrDesc, D3D12_STATE_OBJECT_TYPE_COLLECTION))
 			{
 				return false;
 			}
+			CompileTime += (sl12::CpuTimer::CurrentTime() - time);
 		}
 		{
 			sl12::DxrPipelineStateDesc dxrDesc;
@@ -1755,9 +1833,7 @@ private:
 			{
 				return false;
 			}
-			time = sl12::CpuTimer::CurrentTime() - time;
-			std::string str = std::string("Create Mat Collection : ") + std::to_string(time.ToMicroSecond()) + std::string("(us)\n");
-			OutputDebugStringA(str.c_str());
+			CompileTime += (sl12::CpuTimer::CurrentTime() - time);
 		}
 
 		// create pipeline state.
@@ -1810,9 +1886,34 @@ private:
 			// TraceRay recursive count.
 			dxrDesc.AddRaytracinConfig(1);
 
+			// local root signature.
+			// if use only one root signature, do not need export association.
+			dxrDesc.AddLocalRootSignatureAndExportAssociation(rtLocalRootSig_, nullptr, 0);
+
+			// PSO生成
+			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
+			if (!rtGICollection_.Initialize(&device_, dxrDesc, D3D12_STATE_OBJECT_TYPE_COLLECTION))
+			{
+				return false;
+			}
+			CompileTime += (sl12::CpuTimer::CurrentTime() - time);
+		}
+		{
+			sl12::DxrPipelineStateDesc dxrDesc;
+
+			// payload size and intersection attr size.
+			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+
+			// global root signature.
+			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
+
+			// TraceRay recursive count.
+			dxrDesc.AddRaytracinConfig(1);
+
 			// hit group collection.
 			dxrDesc.AddExistingCollection(rtMaterialCollection_.GetPSO(), nullptr, 0);
 			dxrDesc.AddExistingCollection(rtOcclusionCollection_.GetPSO(), nullptr, 0);
+			dxrDesc.AddExistingCollection(rtGICollection_.GetPSO(), nullptr, 0);
 
 			// PSO生成
 			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
@@ -1820,10 +1921,11 @@ private:
 			{
 				return false;
 			}
-			time = sl12::CpuTimer::CurrentTime() - time;
+			LinkTime += (sl12::CpuTimer::CurrentTime() - time);
 			std::string str = std::string("Create GI PSO : ") + std::to_string(time.ToMicroSecond()) + std::string("(us)\n");
 			OutputDebugStringA(str.c_str());
 		}
+		sl12::ConsolePrint("RTPSO creation time : Compile (%f ms) Link (%f ms)\n", CompileTime.ToMilliSecond(), LinkTime.ToMilliSecond());
 
 		return true;
 	}
@@ -2292,6 +2394,7 @@ private:
 	sl12::DxrPipelineState				rtOcclusionCollection_;
 	sl12::DxrPipelineState				rtMaterialCollection_;
 	sl12::DxrPipelineState				rtDirectShadowPSO_;
+	sl12::DxrPipelineState				rtGICollection_;
 	sl12::DxrPipelineState				rtGlobalIlluminationPSO_;
 
 	std::vector<sl12::BottomAccelerationStructure*>	rtBottomASs_;
@@ -2383,6 +2486,9 @@ private:
 	sl12::ResourceHandle	hMeshRes_;
 	sl12::ResourceHandle	hBlueNoiseRes_;
 	int						sceneState_ = 0;		// 0:loading scene, 1:main scene
+
+	sl12::Timestamp*		pCreationTimes_[3] = {};
+	int						CreationTimesWait_[3] = {};
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

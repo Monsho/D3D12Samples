@@ -234,7 +234,7 @@ namespace sl12
 
 	private:
 		static LARGE_INTEGER	frequency_;
-		LARGE_INTEGER			time_;
+		LARGE_INTEGER			time_ = {0};
 	};	// class CpuTimer
 
 	class Random

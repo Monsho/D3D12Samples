@@ -186,8 +186,8 @@ namespace sl12
 
 	private:
 		ID3D12DescriptorHeap*		pHeap_ = nullptr;
-		D3D12_CPU_DESCRIPTOR_HANDLE cpuHandleStart_;
-		D3D12_GPU_DESCRIPTOR_HANDLE gpuHandleStart_;
+		D3D12_CPU_DESCRIPTOR_HANDLE cpuHandleStart_ = {};
+		D3D12_GPU_DESCRIPTOR_HANDLE gpuHandleStart_ = {};
 		u32							descSize_ = 0;
 		u32							allocCount_ = 0;
 	};	// class SamplerDescriptorHeap
@@ -287,10 +287,10 @@ namespace sl12
 	private:
 		ID3D12DescriptorHeap*		pViewHeap_ = nullptr;
 		ID3D12DescriptorHeap*		pSamplerHeap_ = nullptr;
-		D3D12_CPU_DESCRIPTOR_HANDLE	viewCpuHandleStart_;
-		D3D12_GPU_DESCRIPTOR_HANDLE	viewGpuHandleStart_;
-		D3D12_CPU_DESCRIPTOR_HANDLE	samplerCpuHandleStart_;
-		D3D12_GPU_DESCRIPTOR_HANDLE	samplerGpuHandleStart_;
+		D3D12_CPU_DESCRIPTOR_HANDLE	viewCpuHandleStart_ = {};
+		D3D12_GPU_DESCRIPTOR_HANDLE	viewGpuHandleStart_ = {};
+		D3D12_CPU_DESCRIPTOR_HANDLE	samplerCpuHandleStart_ = {};
+		D3D12_GPU_DESCRIPTOR_HANDLE	samplerGpuHandleStart_ = {};
 		u32							viewDescMax_ = 0;
 		u32							samplerDescMax_ = 0;
 		u32							viewDescSize_ = 0;

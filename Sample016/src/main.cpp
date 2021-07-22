@@ -127,14 +127,6 @@ public:
 
 	bool Initialize() override
 	{
-		resourceLoader_.Initialize(&device_);
-		auto res_mesh_handle = resourceLoader_.LoadRequest<sl12::ResourceItemMesh>("D:\\Projects\\VS2017\\Samples\\SampleTools\\glTFtoMesh\\sample\\test.rmesh");
-		while (resourceLoader_.IsLoading())
-		{
-			Sleep(1);
-		}
-		resourceLoader_.Destroy();
-
 		// コマンドリストの初期化
 		auto&& gqueue = device_.GetGraphicsQueue();
 		auto&& cqueue = device_.GetComputeQueue();
@@ -2387,8 +2379,6 @@ private:
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;
-
-	sl12::ResourceLoader	resourceLoader_;
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)

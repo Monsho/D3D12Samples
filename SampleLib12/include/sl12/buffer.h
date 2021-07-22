@@ -53,14 +53,14 @@ namespace sl12
 		bool IsUAV() const { return isUAV_; }
 
 	private:
-		ID3D12Resource*			pResource_{ nullptr };
-		D3D12_HEAP_PROPERTIES	heapProp_{};
-		D3D12_RESOURCE_DESC		resourceDesc_{};
-		size_t					size_{ 0 };
-		size_t					stride_{ 0 };
-		BufferUsage::Type		bufferUsage_{ BufferUsage::Max };
-		bool					isUAV_{ false };
-		D3D12_RESOURCE_STATES	currentState_{ D3D12_RESOURCE_STATE_COMMON };
+		ID3D12Resource*			pResource_ = nullptr;
+		D3D12_HEAP_PROPERTIES	heapProp_ = {};
+		D3D12_RESOURCE_DESC		resourceDesc_ = {};
+		size_t					size_ = 0;
+		size_t					stride_ = 0;
+		BufferUsage::Type		bufferUsage_ = BufferUsage::Max;
+		bool					isUAV_ = false;
+		D3D12_RESOURCE_STATES	currentState_ = D3D12_RESOURCE_STATE_COMMON;
 	};	// class Buffer
 
 }	// namespace sl12
