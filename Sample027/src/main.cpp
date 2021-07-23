@@ -394,6 +394,25 @@ public:
 			}
 		}
 
+		// create draw count buffer.
+		{
+			if (!DrawCountBuffer_.Initialize(&device_, sizeof(sl12::u32), 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			{
+				return false;
+			}
+			if (!DrawCountUAV_.Initialize(&device_, &DrawCountBuffer_, 0, 0, 0, 0))
+			{
+				return false;
+			}
+			for (int i = 0; i < kBufferCount; ++i)
+			{
+				if (!DrawCountReadbacks_[i].Initialize(&device_, sizeof(sl12::u32), 0, sl12::BufferUsage::ReadBack, D3D12_RESOURCE_STATE_COPY_DEST, false, false))
+				{
+					return false;
+				}
+			}
+		}
+
 		// サンプラー作成
 		{
 			D3D12_SAMPLER_DESC samDesc{};
@@ -891,8 +910,17 @@ public:
 			{
 				isOcclusionReset_ = true;
 			}
-			ImGui::Checkbox("Freeze Cull", &isFreezeCull_);
+			if (ImGui::Checkbox("Freeze Cull", &isFreezeCull_))
+			{
+				isOcclusionReset_ = true;
+			}
 
+			// draw count.
+			auto draw_count = (sl12::u32*)DrawCountReadbacks_[frameIndex].Map(nullptr);
+			ImGui::Text("Draw Count: %d", *draw_count);
+			DrawCountReadbacks_[frameIndex].Unmap();
+
+			// time stamp.
 			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
 			uint64_t timestamp[6];
 
@@ -943,6 +971,7 @@ public:
 		}
 
 		// 1st phase culling.
+		if (!isFreezeCull_)
 		{
 			descSet_.Reset();
 			descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
@@ -961,6 +990,7 @@ public:
 				// reset count buffer.
 				descSet_.SetCsUav(0, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
 				descSet_.SetCsUav(1, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(2, DrawCountUAV_.GetDescInfo().cpuHandle);
 				d3dCmdList->SetPipelineState(ResetCullDataPSO_.GetPSO());
 				pCmdList->SetComputeRootSignatureAndDescriptorSet(&ResetCullDataRS_, &descSet_);
 				d3dCmdList->Dispatch((submeshCount + 31) / 32, 1, 1);
@@ -971,6 +1001,7 @@ public:
 				descSet_.SetCsUav(1, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
 				descSet_.SetCsUav(2, mesh->GetFalseNegativeUAV()->GetDescInfo().cpuHandle);
 				descSet_.SetCsUav(3, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(4, DrawCountUAV_.GetDescInfo().cpuHandle);
 
 				for (sl12::u32 i = 0; i < submeshCount; ++i)
 				{
@@ -1118,7 +1149,7 @@ public:
 		};
 
 		// if occlusion culling enabled, execute 2nd phase culling.
-		if (isOcclusionCulling_ && !isOcclusionReset_)
+		if (isOcclusionCulling_ && !isOcclusionReset_ && !isFreezeCull_)
 		{
 			// render HiZ
 			pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -1147,6 +1178,7 @@ public:
 					descSet_.SetCsUav(1, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
 					descSet_.SetCsUav(2, mesh->GetFalseNegativeUAV()->GetDescInfo().cpuHandle);
 					descSet_.SetCsUav(3, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(4, DrawCountUAV_.GetDescInfo().cpuHandle);
 
 					for (sl12::u32 i = 0; i < submeshCount; ++i)
 					{
@@ -1243,6 +1275,13 @@ public:
 				d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 				RenderMesh(hMeshRes_.GetItem<sl12::ResourceItemMesh>(), &glbMeshCBV_, sponzaMesh_.get());
 			}
+		}
+
+		// copy draw count.
+		{
+			pCmdList->TransitionBarrier(&DrawCountBuffer_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			d3dCmdList->CopyResource(DrawCountReadbacks_[frameIndex].GetResourceDep(), DrawCountBuffer_.GetResourceDep());
+			pCmdList->TransitionBarrier(&DrawCountBuffer_, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		}
 
 		// set render target.
@@ -2735,6 +2774,10 @@ private:
 	sl12::TextureView			HiZSrv_;
 	sl12::TextureView			HiZSubSrvs_[HIZ_MIP_LEVEL];
 	sl12::RenderTargetView		HiZSubRtvs_[HIZ_MIP_LEVEL];
+
+	sl12::Buffer				DrawCountBuffer_;
+	sl12::UnorderedAccessView	DrawCountUAV_;
+	sl12::Buffer				DrawCountReadbacks_[kBufferCount];
 
 	// multi draw indirect関連
 	std::vector< MeshletRenderComponent*>	meshletComponents_;

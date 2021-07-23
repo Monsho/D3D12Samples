@@ -23,6 +23,7 @@ RWStructuredBuffer<DrawArg>	rwDrawArgs			: register(u0);
 RWByteAddressBuffer			rwCounter			: register(u1);
 RWStructuredBuffer<uint>	rwFalseNegative		: register(u2);
 RWByteAddressBuffer			rwFNCounter			: register(u3);
+RWByteAddressBuffer			rwDrawCounter		: register(u4);
 
 [numthreads(32, 1, 1)]
 void main(uint3 dispatchID : SV_DispatchThreadID)
@@ -69,5 +70,8 @@ void main(uint3 dispatchID : SV_DispatchThreadID)
 		uint arg_index;
 		rwCounter.InterlockedAdd(cbMeshlet.indirectCount1stByteOffset, 1, arg_index);
 		rwDrawArgs[cbMeshlet.indirectArg1stIndexOffset + arg_index] = arg;
+
+		uint p;
+		rwDrawCounter.InterlockedAdd(0, 1, p);
 	}
 }
