@@ -276,6 +276,38 @@ namespace sl12
 		u32		w_ = 88675123;
 	};	// class Random
 
+	struct BoundingSphere
+	{
+		DirectX::XMFLOAT3	center;
+		float				radius;
+
+		BoundingSphere()
+			: center(0.0f, 0.0f, 0.0f), radius(0.0f)
+		{}
+		BoundingSphere(float x, float y, float z, float r)
+			: center(x, y, z), radius(r)
+		{}
+		BoundingSphere(const DirectX::XMFLOAT3& c, float r)
+			: center(c), radius(r)
+		{}
+	};	// struct BoundingSphere
+
+	struct BoundingBox
+	{
+		DirectX::XMFLOAT3	boxMin;
+		DirectX::XMFLOAT3	boxMax;
+
+		BoundingBox()
+			: boxMin(0.0f, 0.0f, 0.0f), boxMax(0.0f, 0.0f, 0.0f)
+		{}
+		BoundingBox(float x0, float y0, float z0, float x1, float y1, float z1)
+			: boxMin(x0, y0, z0), boxMax(x1, y1, z1)
+		{}
+		BoundingBox(const DirectX::XMFLOAT3& pmin, const DirectX::XMFLOAT3& pmax)
+			: boxMin(pmin), boxMax(pmax)
+		{}
+	};	// struct BoundingBox
+
 	extern Random GlobalRandom;
 }	// namespace sl12
 

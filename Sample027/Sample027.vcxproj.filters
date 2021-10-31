@@ -15,6 +15,15 @@
     <ClCompile Include="src\scene_mesh.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\render_command.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\scene_root.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bvh_manager.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -27,6 +36,15 @@
       <Filter>shader</Filter>
     </ClInclude>
     <ClInclude Include="src\scene_mesh.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render_command.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\scene_root.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bvh_manager.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

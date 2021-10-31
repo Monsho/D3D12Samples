@@ -4,131 +4,151 @@
 #include "sl12/buffer_view.h"
 #include "sl12/texture_view.h"
 #include "sl12/resource_mesh.h"
+#include "render_command.h"
+#include "scene_root.h"
 
 
-class SceneSubmesh
+namespace sl12
 {
-	friend class SceneMesh;
+	class SceneSubmesh
+	{
+		friend class SceneMesh;
 
-	struct MeshletCB
-	{
-		sl12::u32	meshletCount;
-		sl12::u32	indirectArg1stIndexOffset;
-		sl12::u32	indirectArg2ndIndexOffset;
-		sl12::u32	indirectCount1stByteOffset;
-		sl12::u32	indirectCount2ndByteOffset;
-		sl12::u32	falseNegativeIndexOffset;
-		sl12::u32	falseNegativeCountByteOffset;
-	};	// struct MeshletCB
+		struct MeshletCB
+		{
+			u32	meshletCount;
+			u32	indirectArg1stIndexOffset;
+			u32	indirectArg2ndIndexOffset;
+			u32	indirectCount1stByteOffset;
+			u32	indirectCount2ndByteOffset;
+			u32	falseNegativeIndexOffset;
+			u32	falseNegativeCountByteOffset;
+		};	// struct MeshletCB
 
-public:
-	SceneSubmesh(sl12::Device* pDevice, const sl12::ResourceItemMesh::Submesh& submesh);
-	~SceneSubmesh();
+	public:
+		SceneSubmesh(Device* pDevice, const ResourceItemMesh::Submesh& submesh);
+		~SceneSubmesh();
 
-	const MeshletCB& GetMeshletData() const
-	{
-		return cbData_;
-	}
+		const MeshletCB& GetMeshletData() const
+		{
+			return cbData_;
+		}
 
-	sl12::BufferView* GetMeshletBoundsBV()
-	{
-		return pMeshletBoundsBV_;
-	}
-	sl12::BufferView* GetMeshletDrawInfoBV()
-	{
-		return pMeshletDrawInfoBV_;
-	}
-	sl12::ConstantBufferView* GetMeshletCBV()
-	{
-		return pMeshletCBV_;
-	}
+		BufferView* GetMeshletBoundsBV()
+		{
+			return pMeshletBoundsBV_;
+		}
+		BufferView* GetMeshletDrawInfoBV()
+		{
+			return pMeshletDrawInfoBV_;
+		}
+		ConstantBufferView* GetMeshletCBV()
+		{
+			return pMeshletCBV_;
+		}
 
-private:
-	sl12::Device*				pParentDevice_ = nullptr;
+	private:
+		Device*		pParentDevice_ = nullptr;
 
-	sl12::Buffer*				pMeshletBoundsB_ = nullptr;
-	sl12::Buffer*				pMeshletDrawInfoB_ = nullptr;
-	sl12::BufferView*			pMeshletBoundsBV_ = nullptr;
-	sl12::BufferView*			pMeshletDrawInfoBV_ = nullptr;
+		Buffer*		pMeshletBoundsB_ = nullptr;
+		Buffer*		pMeshletDrawInfoB_ = nullptr;
+		BufferView* pMeshletBoundsBV_ = nullptr;
+		BufferView* pMeshletDrawInfoBV_ = nullptr;
 
-	MeshletCB					cbData_;
-	sl12::Buffer*				pMeshletCB_ = nullptr;
-	sl12::ConstantBufferView*	pMeshletCBV_ = nullptr;
-};	// class SceneSubmesh
+		MeshletCB	cbData_;
+		Buffer*		pMeshletCB_ = nullptr;
+		ConstantBufferView* pMeshletCBV_ = nullptr;
+	};	// class SceneSubmesh
 
-class SceneMesh
-{
-public:
-	SceneMesh(sl12::Device* pDevice, const sl12::ResourceItemMesh* pSrcMesh);
-	~SceneMesh();
+	class SceneMesh
+		: public SceneNode
+	{
+	public:
+		SceneMesh(Device* pDevice, const ResourceItemMesh* pSrcMesh);
+		~SceneMesh();
 
-	sl12::u32 GetSubmeshCount() const
-	{
-		return (sl12::u32)sceneSubmeshes_.size();
-	}
-	SceneSubmesh* GetSubmesh(sl12::u32 index)
-	{
-		return sceneSubmeshes_[index].get();
-	}
+		void CreateRenderCommand(ConstantBufferCache* pCBCache, RenderCommandsList& outRenderCmds) override;
 
-	sl12::Buffer* GetIndirectArgBuffer()
-	{
-		return pIndirectArgBuffer_;
-	}
-	sl12::Buffer* GetIndirectCountBuffer()
-	{
-		return pIndirectCountBuffer_;
-	}
-	sl12::Buffer* GetFalseNegativeBuffer()
-	{
-		return pFalseNegativeBuffer_;
-	}
-	sl12::Buffer* GetFalseNegativeCountBuffer()
-	{
-		return pFalseNegativeCountBuffer_;
-	}
-	sl12::UnorderedAccessView* GetIndirectArgUAV()
-	{
-		return pIndirectArgUAV_;
-	}
-	sl12::UnorderedAccessView* GetIndirectCountUAV()
-	{
-		return pIndirectCountUAV_;
-	}
-	sl12::UnorderedAccessView* GetFalseNegativeUAV()
-	{
-		return pFalseNegativeUAV_;
-	}
-	sl12::UnorderedAccessView* GetFalseNegativeCountUAV()
-	{
-		return pFalseNegativeCountUAV_;
-	}
+		const ResourceItemMesh* GetParentResource() const
+		{
+			return pParentResource_;
+		}
 
-	const DirectX::XMFLOAT4X4& GetMtxLocalToWorld() const
-	{
-		return mtxLocalToWorld_;
-	}
-	void SetMtxLocalToWorld(const DirectX::XMFLOAT4X4& m)
-	{
-		mtxLocalToWorld_ = m;
-	}
+		u32 GetSubmeshCount() const
+		{
+			return (u32)sceneSubmeshes_.size();
+		}
+		SceneSubmesh* GetSubmesh(u32 index)
+		{
+			return sceneSubmeshes_[index].get();
+		}
 
-private:
-	sl12::Device*				pParentDevice_ = nullptr;
+		Buffer* GetIndirectArgBuffer()
+		{
+			return pIndirectArgBuffer_;
+		}
+		Buffer* GetIndirectCountBuffer()
+		{
+			return pIndirectCountBuffer_;
+		}
+		Buffer* GetFalseNegativeBuffer()
+		{
+			return pFalseNegativeBuffer_;
+		}
+		Buffer* GetFalseNegativeCountBuffer()
+		{
+			return pFalseNegativeCountBuffer_;
+		}
+		UnorderedAccessView* GetIndirectArgUAV()
+		{
+			return pIndirectArgUAV_;
+		}
+		UnorderedAccessView* GetIndirectCountUAV()
+		{
+			return pIndirectCountUAV_;
+		}
+		UnorderedAccessView* GetFalseNegativeUAV()
+		{
+			return pFalseNegativeUAV_;
+		}
+		UnorderedAccessView* GetFalseNegativeCountUAV()
+		{
+			return pFalseNegativeCountUAV_;
+		}
 
-	std::vector<std::unique_ptr<SceneSubmesh>>	sceneSubmeshes_;
+		const DirectX::XMFLOAT4X4& GetMtxLocalToWorld() const
+		{
+			return mtxLocalToWorld_;
+		}
+		void SetMtxLocalToWorld(const DirectX::XMFLOAT4X4& m)
+		{
+			mtxLocalToWorld_ = m;
+		}
+		const DirectX::XMFLOAT4X4& GetMtxPrevLocalToWorld() const
+		{
+			return mtxPrevLocalToWorld_;
+		}
 
-	sl12::Buffer*				pIndirectArgBuffer_ = nullptr;
-	sl12::Buffer*				pIndirectCountBuffer_ = nullptr;
-	sl12::Buffer*				pFalseNegativeBuffer_ = nullptr;
-	sl12::Buffer*				pFalseNegativeCountBuffer_ = nullptr;
-	sl12::UnorderedAccessView*	pIndirectArgUAV_ = nullptr;
-	sl12::UnorderedAccessView*	pIndirectCountUAV_ = nullptr;
-	sl12::UnorderedAccessView*	pFalseNegativeUAV_ = nullptr;
-	sl12::UnorderedAccessView*	pFalseNegativeCountUAV_ = nullptr;
+	private:
+		Device*	pParentDevice_ = nullptr;
+		const ResourceItemMesh*	pParentResource_ = nullptr;
 
-	DirectX::XMFLOAT4X4	mtxLocalToWorld_;
-};	// class SceneMesh
+		std::vector<std::unique_ptr<SceneSubmesh>>	sceneSubmeshes_;
+
+		Buffer*	pIndirectArgBuffer_ = nullptr;
+		Buffer*	pIndirectCountBuffer_ = nullptr;
+		Buffer*	pFalseNegativeBuffer_ = nullptr;
+		Buffer*	pFalseNegativeCountBuffer_ = nullptr;
+		UnorderedAccessView*	pIndirectArgUAV_ = nullptr;
+		UnorderedAccessView*	pIndirectCountUAV_ = nullptr;
+		UnorderedAccessView*	pFalseNegativeUAV_ = nullptr;
+		UnorderedAccessView*	pFalseNegativeCountUAV_ = nullptr;
+
+		DirectX::XMFLOAT4X4	mtxLocalToWorld_;
+		DirectX::XMFLOAT4X4	mtxPrevLocalToWorld_;
+	};	// class SceneMesh
+
+}	// namespace sl12
 
 
 //	EOF

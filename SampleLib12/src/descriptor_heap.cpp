@@ -115,7 +115,14 @@ namespace sl12
 		memset(pUseFlags_, 0, sizeof(u8) * desc.NumDescriptors);
 
 		cpuHandleStart_ = pHeap_->GetCPUDescriptorHandleForHeapStart();
-		gpuHandleStart_ = pHeap_->GetGPUDescriptorHandleForHeapStart();
+		if (desc.Flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
+		{
+			gpuHandleStart_ = pHeap_->GetGPUDescriptorHandleForHeapStart();
+		}
+		else
+		{
+			gpuHandleStart_.ptr = 0L;
+		}
 
 		heapDesc_ = desc;
 		descSize_ = pDev->GetDeviceDep()->GetDescriptorHandleIncrementSize(desc.Type);

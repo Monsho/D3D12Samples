@@ -70,8 +70,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\bvh_manager.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\render_command.cpp" />
     <ClCompile Include="src\scene_mesh.cpp" />
+    <ClCompile Include="src\scene_root.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -79,7 +82,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="shader\constant.h" />
+    <ClInclude Include="src\bvh_manager.h" />
+    <ClInclude Include="src\render_command.h" />
     <ClInclude Include="src\scene_mesh.h" />
+    <ClInclude Include="src\scene_root.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
