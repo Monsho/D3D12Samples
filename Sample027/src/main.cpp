@@ -1039,6 +1039,9 @@ public:
 				{
 				}
 			}
+			if (ImGui::Checkbox("LOD Bias", &enableLodBias_))
+			{
+			}
 			if (ImGui::Checkbox("Use TAA", &useTAA_))
 			{
 				taaFirstRender_ = true;
@@ -1066,7 +1069,7 @@ public:
 		device_.LoadRenderCommands(pCmdList);
 
 		// determine rendering sampler.
-		auto&& anisoSampler = (currUpscaler_ == 0)
+		auto&& anisoSampler = (currUpscaler_ == 0) || !enableLodBias_
 			? anisoSamplers_[0]
 			: anisoSamplers_[currRenderRes_];
 
@@ -3286,6 +3289,7 @@ private:
 	float					upscalerSharpness_ = 0.5f;
 	bool					useTAA_ = true;
 	bool					taaFirstRender_ = true;
+	bool					enableLodBias_ = true;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 	DirectX::XMFLOAT4		frustumCamPos_;
 
