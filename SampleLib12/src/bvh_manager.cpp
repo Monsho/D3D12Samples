@@ -1,7 +1,7 @@
-﻿#include "bvh_manager.h"
+﻿#include "sl12/bvh_manager.h"
 
 #include "sl12/command_list.h"
-#include "scene_mesh.h"
+#include "sl12/scene_mesh.h"
 
 
 namespace sl12

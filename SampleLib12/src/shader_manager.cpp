@@ -494,7 +494,7 @@ namespace sl12
 		if (!bSuccess)
 		{
 			std::wostringstream stream;
-			stream << L"Shader Compilation failed!\n" << (const char*)pError->GetBufferPointer() << L"\n";
+			stream << L"Shader Compilation failed!\n" << item->fileName << L"\n" << (const char*)pError->GetBufferPointer() << L"\n";
 			OutputDebugStringW(stream.str().c_str());
 			return nullptr;
 		}

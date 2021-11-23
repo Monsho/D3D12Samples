@@ -6,6 +6,8 @@ struct PSInput
 	float3	normal		: NORMAL;
 	float4	tangent		: TANGENT;
 	float2	uv			: TEXCOORD0;
+	float4	currPos		: CURR_POS;
+	float4	prevPos		: PREV_POS;
 };
 
 struct PSOutput
@@ -13,6 +15,7 @@ struct PSOutput
 	float4	worldQuat	: SV_TARGET0;
 	float4	baseColor	: SV_TARGET1;
 	float4	roughMetal	: SV_TARGET2;
+	float2	velocity	: SV_TARGET3;
 };
 
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
@@ -54,6 +57,9 @@ PSOutput main(PSInput In)
 #endif
 
 	EncodeGBuffer(gb, Out.worldQuat, Out.baseColor, Out.roughMetal);
+
+	// output screen velocity.
+	Out.velocity = In.currPos.xy / In.currPos.w - In.prevPos.xy / In.prevPos.w;
 
 	return Out;
 }

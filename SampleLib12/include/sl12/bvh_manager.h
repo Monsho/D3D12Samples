@@ -7,8 +7,8 @@
 #include "sl12/device.h"
 #include "sl12/resource_mesh.h"
 #include "sl12/buffer.h"
-#include "render_command.h"
-#include "scene_root.h"
+#include "sl12/render_command.h"
+#include "sl12/scene_root.h"
 
 
 namespace sl12
