@@ -176,3 +176,17 @@ https://sites.google.com/site/monshonosuana/directxno-hanashi-1/directx-173
 バインドレステクスチャを用いたDeferred Textureの実装サンプルです。
 
 This sample is implementation of deferred texture rendering using bindless textures.
+
+
+## Sample026
+https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3%81%AE%E8%A9%B1-%E7%AC%AC177%E5%9B%9E
+
+コンピュートシェーダを用いた2フェーズ遮蔽カリングの実装サンプルです。
+
+This sample is implementation of 2-phase occlusion culling using compute shader.
+
+## Sample027
+
+Fidelity-FX Super ResolutionとNVIDIA Image Scalingの実装サンプルです。
+
+This sample is implementation of Fidelity-FX Super Resolution (FSR) and NVIDIA Image Scaling (NIS).
