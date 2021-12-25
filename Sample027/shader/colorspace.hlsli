@@ -36,7 +36,7 @@ float3 LinearToST2084(float3 lin)
 	const float c1 = 3424.0 / 4096.0;
 	const float c2 = 2413.0 / 4096.0 * 32;
 	const float c3 = 2392.0 / 4096.0 * 32;
-	const float standardNits = 100.0;
+	const float standardNits = 80.0;
 	const float maxNits = 10000.0;
 	float3 L = lin * standardNits / maxNits;
 	float3 cp = pow(abs(L), m1);
@@ -50,7 +50,7 @@ float3 ST2084ToLinear(float3 pq)
 	const float c1 = 3424.0 / 4096.0;
 	const float c2 = 2413.0 / 4096.0 * 32;
 	const float c3 = 2392.0 / 4096.0 * 32;
-	const float standardNits = 100.0;
+	const float standardNits = 80.0;
 	const float maxNits = 10000.0;
 	float3 cp = pow(abs(pq), 1.0 / m2);
 	return pow(max(cp - c1, 0.0) / (c2 - c3 * cp), 1.0 / m1) * maxNits / standardNits;

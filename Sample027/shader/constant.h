@@ -109,7 +109,7 @@ struct UIDrawCB
 	float	alpha;
 	float	intensity;
 	uint	blendType;			// 0: translucent, 1: additive
-	uint	colorSpace;			// 0: Rec709, 1: Rec2020
+	uint	colorSpace;			// 0: Rec709, 1: Rec709+OETF, 2: Rec2020, 3: Rec2020+OETF
 };
 
 

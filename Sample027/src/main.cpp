@@ -2198,7 +2198,7 @@ public:
 				DrawUIFunc(
 					(colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 1.0f : uiIntensity_,
 					uiAlpha_,
-					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 2) ? 0 : 1,
+					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 2) ? 0 : 2,
 					false);
 			}
 			else
@@ -2208,7 +2208,7 @@ public:
 				UIDrawCB cb;
 				cb.alpha = uiAlpha_;
 				cb.intensity = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? 1.0f : uiIntensity_;
-				cb.colorSpace = (colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 2) ? 0 : 1;
+				cb.colorSpace = (colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 2) ? 0 : 2;
 				auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
 
 				// PSOê›íË
@@ -2317,7 +2317,7 @@ public:
 				DrawUIFunc(
 					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 0) ? 1.0f : uiIntensity_,
 					uiAlpha_,
-					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 0) ? 0 : 2,
+					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 0) ? 1 : 3,
 					false);
 			}
 			else
@@ -2327,7 +2327,7 @@ public:
 				UIDrawCB cb;
 				cb.alpha = uiAlpha_;
 				cb.intensity = (colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 1.0f : uiIntensity_;
-				cb.colorSpace = (colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 0 : 2;
+				cb.colorSpace = (colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 1 : 3;
 				auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
 
 				// PSOê›íË
@@ -3829,7 +3829,7 @@ private:
 	bool					taaFirstRender_ = true;
 	bool					enableLodBias_ = true;
 	int						tonemapType_ = 2;
-	float					baseLuminance_ = 100.0f;
+	float					baseLuminance_ = 80.0f;
 	bool					enableTestGradient_ = false;
 	bool					uiDrawEnable_ = true;
 	int						uiDrawType_ = 5;

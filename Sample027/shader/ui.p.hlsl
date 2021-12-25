@@ -17,10 +17,14 @@ float4 main(VSOutput In) : SV_Target0
 	float4 color = texUI.SampleLevel(samLinear, In.uv, 0.0);
 
 	color.rgb *= cbUI.intensity;
-	if (cbUI.colorSpace > 0)
+	if (cbUI.colorSpace == 1)
+	{
+		//color.rgb = LinearToSRGB(color.rgb);
+	}
+	else if (cbUI.colorSpace >= 2)
 	{
 		color.rgb = Rec709ToRec2020(color.rgb);
-		if (cbUI.colorSpace == 2)
+		if (cbUI.colorSpace == 3)
 			color.rgb = LinearToST2084(color.rgb);
 	}
 
@@ -36,9 +40,15 @@ float4 mainIndirect(VSOutput In) : SV_Target0
 	float4 color = texUI.SampleLevel(samLinear, In.uv, 0.0);
 
 	color.rgb *= cbUI.intensity;
-	if (cbUI.colorSpace > 0)
+	if (cbUI.colorSpace == 1)
+	{
+		//color.rgb = LinearToSRGB(color.rgb);
+	}
+	else if (cbUI.colorSpace >= 2)
 	{
 		color.rgb = Rec709ToRec2020(color.rgb);
+		if (cbUI.colorSpace == 3)
+			color.rgb = LinearToST2084(color.rgb);
 	}
 
 	color.rgb *= cbUI.alpha;
