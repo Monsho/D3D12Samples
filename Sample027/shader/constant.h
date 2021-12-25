@@ -96,6 +96,22 @@ struct VertexMutationCB
 	float	time;
 };
 
+struct TonemapCB
+{
+	uint	type;
+	float	baseLuminance;
+	float	maxLuminance;
+};
+
+struct UIDrawCB
+{
+	float4	rect;
+	float	alpha;
+	float	intensity;
+	uint	blendType;			// 0: translucent, 1: additive
+	uint	colorSpace;			// 0: Rec709, 1: Rec2020
+};
+
 
 #define PI			3.1415926
 #define Epsilon		1e-5

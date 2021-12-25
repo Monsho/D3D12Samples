@@ -131,10 +131,11 @@ namespace sl12
 		pFalseNegativeUAV_ = new sl12::UnorderedAccessView();
 		pFalseNegativeCountUAV_ = new sl12::UnorderedAccessView();
 
+		sl12::u32 argSize = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
 		pIndirectArgBuffer_->Initialize(
 			pDevice,
-			sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) * total_meshlets_count * 2,
-			sizeof(D3D12_DRAW_INDEXED_ARGUMENTS),
+			argSize * total_meshlets_count * 2,
+			argSize,
 			sl12::BufferUsage::ShaderResource,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			false, true);

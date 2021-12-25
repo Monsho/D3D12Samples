@@ -6,7 +6,7 @@
 #include "types.h"
 #include <Windows.h>
 #include <d3d12.h>
-#include <dxgi1_4.h>
+#include <dxgi1_6.h>
 #include <D3Dcompiler.h>
 #include <DirectXMath.h>
 #include <string>
@@ -14,6 +14,12 @@
 
 namespace sl12
 {
+	enum class ColorSpaceType
+	{
+		Rec709,
+		Rec2020,
+	};	// enum class ColorSpaceType
+
 	template <typename T>
 	void SafeRelease(T& p)
 	{
@@ -84,6 +90,11 @@ namespace sl12
 		while (numBytes--)
 			hash = CalcFnv1a64(*ptr++, hash);
 		return hash;
+	}
+
+	constexpr u32 GetAlignedSize(const u32 size, const u32 align)
+	{
+		return ((size + align - 1) / align) * align;
 	}
 
 	class HashString

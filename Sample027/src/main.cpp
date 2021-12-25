@@ -60,6 +60,8 @@ namespace
 
 	static const std::string	kShaderDir("../Sample027/shader/");
 
+	static const sl12::u32	kDrawArgSize = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+
 	static const char* kShaderFiles[] =
 	{
 		"prepass.vv.hlsl",
@@ -67,7 +69,12 @@ namespace
 		"gbuffer.vv.hlsl",
 		"gbuffer.p.hlsl",
 		"lighting.c.hlsl",
-		"toldr.p.hlsl",
+		"tonemap.p.hlsl",
+		"tonemap.p.hlsl",
+		"tonemap.p.hlsl",
+		"tonemap.p.hlsl",
+		"tonemap.p.hlsl",
+		"tonemap.p.hlsl",
 		"reduce_depth_1st.p.hlsl",
 		"reduce_depth_2nd.p.hlsl",
 		"fullscreen.vv.hlsl",
@@ -84,6 +91,10 @@ namespace
 		"AMD/fsr_easu.c.hlsl",
 		"AMD/fsr_rcas.c.hlsl",
 		"NVIDIA/nis_scaler.c.hlsl",
+		"NVIDIA/nis_scaler_hdr.c.hlsl",
+		"ui.vv.hlsl",
+		"ui.p.hlsl",
+		"ui.p.hlsl",
 	};
 
 	static const char* kShaderEntryPoints[] = 
@@ -93,7 +104,12 @@ namespace
 		"main",
 		"main",
 		"main",
-		"main",
+		"TonemapRec709",
+		"TonemapRec2020",
+		"OetfSRGB",
+		"OetfST2084",
+		"EotfSRGB",
+		"EotfST2084",
 		"main",
 		"main",
 		"main",
@@ -110,6 +126,10 @@ namespace
 		"main",
 		"main",
 		"main",
+		"main",
+		"main",
+		"main",
+		"mainIndirect",
 	};
 
 	enum ShaderFileKind
@@ -119,7 +139,12 @@ namespace
 		SHADER_GBUFFER_VV,
 		SHADER_GBUFFER_P,
 		SHADER_LIGHTING_C,
-		SHADER_TOLDR_P,
+		SHADER_TONEMAP_709_P,
+		SHADER_TONEMAP_2020_P,
+		SHADER_OETF_SRGB_P,
+		SHADER_OETF_ST2084_P,
+		SHADER_EOTF_SRGB_P,
+		SHADER_EOTF_ST2084_P,
 		SHADER_REDUCE_DEPTH_1ST_P,
 		SHADER_REDUCE_DEPTH_2ND_P,
 		SHADER_FULLSCREEN_VV,
@@ -136,8 +161,36 @@ namespace
 		SHADER_FSR_EASU_C,
 		SHADER_FSR_RCAS_C,
 		SHADER_NIS_SCALER_C,
+		SHADER_NIS_SCALER_HDR_C,
+		SHADER_UI_VV,
+		SHADER_UI_P,
+		SHADER_UI_INDIRECT_P,
 
 		SHADER_MAX
+	};
+
+	static const char* kUITextureNames[] =
+	{
+		"data/ui_test/ui_test_gauge.bc.tga",
+		"data/ui_test/ui_test_energy.bc.tga",
+		"data/ui_test/ui_test_danger.bc.tga",
+		"data/ui_test/ui_test_glow.bc.tga",
+		"data/ui_test/ui_test_map.bc.tga",
+		"data/ui_test/ui_test_map_edge.bc.tga",
+		"data/ui_test/ui_test_target.bc.tga",
+	};
+
+	enum UITextureKind
+	{
+		UI_GAUGE,
+		UI_ENERGY,
+		UI_DANGER,
+		UI_GLOW,
+		UI_MAP,
+		UI_MAP_EDGE,
+		UI_TARGET,
+
+		UI_MAX
 	};
 
 	static const int kRTMaterialTableCount = 2;
@@ -187,12 +240,15 @@ class SampleApplication
 	};
 
 public:
-	SampleApplication(HINSTANCE hInstance, int nCmdShow, int screenWidth, int screenHeight)
-		: Application(hInstance, nCmdShow, screenWidth, screenHeight)
+	SampleApplication(HINSTANCE hInstance, int nCmdShow, int screenWidth, int screenHeight, sl12::ColorSpaceType csType)
+		: Application(hInstance, nCmdShow, screenWidth, screenHeight, csType)
+		, colorSpaceType_(csType)
 	{}
 
 	bool Initialize() override
 	{
+		const auto kSwapchainFormat = device_.GetSwapchain().GetTexture(0)->GetTextureDesc().format;
+
 		// リソースロード開始
 		if (!resLoader_.Initialize(&device_))
 		{
@@ -201,6 +257,10 @@ public:
 		hBlueNoiseRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/blue_noise.tga");
 		hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 		hSuzanneRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/suzanne/suzanne.rmesh");
+		for (int i = 0; i < UI_MAX; i++)
+		{
+			hUITextureRes_[i] = resLoader_.LoadRequest<sl12::ResourceItemTexture>(kUITextureNames[i]);
+		}
 
 		// initialize const buffer cache.
 		cbvCache_.Initialize(&device_);
@@ -265,17 +325,27 @@ public:
 		}
 
 		// create LDR target.
-		if (!ldrTarget_.Initialize(&device_, kScreenWidth, kScreenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, true))
+		if (!ldrTarget_.Initialize(&device_, kScreenWidth, kScreenHeight, kSwapchainFormat, true))
 		{
 			return false;
 		}
 
 		// create FSR work buffer.
-		if (!fsrTargets_[0].Initialize(&device_, kScreenWidth, kScreenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, true))
+		if (!fsrTargets_[0].Initialize(&device_, kScreenWidth, kScreenHeight, kSwapchainFormat, true))
 		{
 			return false;
 		}
-		if (!fsrTargets_[1].Initialize(&device_, kScreenWidth, kScreenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, true))
+		if (!fsrTargets_[1].Initialize(&device_, kScreenWidth, kScreenHeight, kSwapchainFormat, true))
+		{
+			return false;
+		}
+
+		// create UI work buffer.
+		if (!eotfTarget_.Initialize(&device_, kScreenWidth, kScreenHeight, DXGI_FORMAT_R11G11B10_FLOAT, false))
+		{
+			return false;
+		}
+		if (!uiTarget_.Initialize(&device_, kScreenWidth, kScreenHeight, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, false, DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f)))
 		{
 			return false;
 		}
@@ -337,6 +407,10 @@ public:
 			clampLinearSampler_.Initialize(&device_, desc);
 		}
 
+		const auto kTonemapShader = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? SHADER_TONEMAP_709_P : SHADER_TONEMAP_2020_P;
+		const auto kOetfShader = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? SHADER_OETF_SRGB_P : SHADER_OETF_ST2084_P;
+		const auto kEotfShader = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? SHADER_EOTF_SRGB_P : SHADER_EOTF_ST2084_P;
+
 		// create root signature.
 		if (!PrePassRS_.Initialize(&device_,
 			hShaders_[SHADER_PREPASS_VV].GetShader(),
@@ -352,9 +426,23 @@ public:
 		{
 			return false;
 		}
-		if (!ToLdrRS_.Initialize(&device_,
+		if (!TonemapRS_.Initialize(&device_,
 			hShaders_[SHADER_FULLSCREEN_VV].GetShader(),
-			hShaders_[SHADER_TOLDR_P].GetShader(),
+			hShaders_[kTonemapShader].GetShader(),
+			nullptr, nullptr, nullptr))
+		{
+			return false;
+		}
+		if (!OetfRS_.Initialize(&device_,
+			hShaders_[SHADER_FULLSCREEN_VV].GetShader(),
+			hShaders_[kOetfShader].GetShader(),
+			nullptr, nullptr, nullptr))
+		{
+			return false;
+		}
+		if (!EotfRS_.Initialize(&device_,
+			hShaders_[SHADER_FULLSCREEN_VV].GetShader(),
+			hShaders_[kEotfShader].GetShader(),
 			nullptr, nullptr, nullptr))
 		{
 			return false;
@@ -376,6 +464,20 @@ public:
 		if (!TargetCopyRS_.Initialize(&device_,
 			hShaders_[SHADER_FULLSCREEN_VV].GetShader(),
 			hShaders_[SHADER_TARGET_COPY_P].GetShader(),
+			nullptr, nullptr, nullptr))
+		{
+			return false;
+		}
+		if (!UIDrawRS_.Initialize(&device_,
+			hShaders_[SHADER_UI_VV].GetShader(),
+			hShaders_[SHADER_UI_P].GetShader(),
+			nullptr, nullptr, nullptr))
+		{
+			return false;
+		}
+		if (!UIIndirectRS_.Initialize(&device_,
+			hShaders_[SHADER_FULLSCREEN_VV].GetShader(),
+			hShaders_[SHADER_UI_INDIRECT_P].GetShader(),
 			nullptr, nullptr, nullptr))
 		{
 			return false;
@@ -427,6 +529,11 @@ public:
 		}
 		if (!NisScalerRS_.Initialize(&device_,
 			hShaders_[SHADER_NIS_SCALER_C].GetShader()))
+		{
+			return false;
+		}
+		if (!NisScalerHDRRS_.Initialize(&device_,
+			hShaders_[SHADER_NIS_SCALER_HDR_C].GetShader()))
 		{
 			return false;
 		}
@@ -512,9 +619,9 @@ public:
 		}
 		{
 			sl12::GraphicsPipelineStateDesc desc;
-			desc.pRootSignature = &ToLdrRS_;
+			desc.pRootSignature = &TonemapRS_;
 			desc.pVS = hShaders_[SHADER_FULLSCREEN_VV].GetShader();
-			desc.pPS = hShaders_[SHADER_TOLDR_P].GetShader();
+			desc.pPS = hShaders_[kTonemapShader].GetShader();
 
 			desc.blend.sampleMask = UINT_MAX;
 			desc.blend.rtDesc[0].isBlendEnable = false;
@@ -531,11 +638,30 @@ public:
 
 			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 			desc.numRTVs = 0;
-			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.rtvFormats[desc.numRTVs++] = kSwapchainFormat;
 			desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
 			desc.multisampleCount = 1;
 
-			if (!ToLdrPSO_.Initialize(&device_, desc))
+			if (!TonemapPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pRootSignature = &OetfRS_;
+			desc.pVS = hShaders_[SHADER_FULLSCREEN_VV].GetShader();
+			desc.pPS = hShaders_[kOetfShader].GetShader();
+
+			if (!OetfPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pRootSignature = &EotfRS_;
+			desc.pVS = hShaders_[SHADER_FULLSCREEN_VV].GetShader();
+			desc.pPS = hShaders_[kEotfShader].GetShader();
+			desc.rtvFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
+
+			if (!EotfPSO_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -599,11 +725,91 @@ public:
 
 			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 			desc.numRTVs = 0;
-			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.rtvFormats[desc.numRTVs++] = kSwapchainFormat;
 			desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
 			desc.multisampleCount = 1;
 
 			if (!TargetCopyPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::GraphicsPipelineStateDesc desc;
+			desc.pRootSignature = &UIDrawRS_;
+			desc.pVS = hShaders_[SHADER_UI_VV].GetShader();
+			desc.pPS = hShaders_[SHADER_UI_P].GetShader();
+
+			desc.blend.sampleMask = UINT_MAX;
+			desc.blend.rtDesc[0].isBlendEnable = true;
+			desc.blend.rtDesc[0].isLogicBlendEnable = false;
+			desc.blend.rtDesc[0].blendOpColor = D3D12_BLEND_OP_ADD;
+			desc.blend.rtDesc[0].srcBlendColor = D3D12_BLEND_ONE;
+			desc.blend.rtDesc[0].dstBlendColor = D3D12_BLEND_SRC_ALPHA;
+			desc.blend.rtDesc[0].blendOpAlpha = D3D12_BLEND_OP_ADD;
+			desc.blend.rtDesc[0].srcBlendAlpha = D3D12_BLEND_ZERO;
+			desc.blend.rtDesc[0].dstBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+			desc.blend.rtDesc[0].writeMask = 0xf;
+
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+			desc.rasterizer.isDepthClipEnable = true;
+			desc.rasterizer.isFrontCCW = false;
+
+			desc.depthStencil.isDepthEnable = false;
+			desc.depthStencil.isDepthWriteEnable = false;
+			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+			desc.numRTVs = 0;
+			desc.rtvFormats[desc.numRTVs++] = kSwapchainFormat;
+			desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
+			desc.multisampleCount = 1;
+
+			if (!UIDrawPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.rtvFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+			if (!UIDrawOffPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::GraphicsPipelineStateDesc desc;
+			desc.pRootSignature = &UIIndirectRS_;
+			desc.pVS = hShaders_[SHADER_FULLSCREEN_VV].GetShader();
+			desc.pPS = hShaders_[SHADER_UI_INDIRECT_P].GetShader();
+
+			desc.blend.sampleMask = UINT_MAX;
+			desc.blend.rtDesc[0].isBlendEnable = true;
+			desc.blend.rtDesc[0].isLogicBlendEnable = false;
+			desc.blend.rtDesc[0].blendOpColor = D3D12_BLEND_OP_ADD;
+			desc.blend.rtDesc[0].srcBlendColor = D3D12_BLEND_ONE;
+			desc.blend.rtDesc[0].dstBlendColor = D3D12_BLEND_SRC_ALPHA;
+			desc.blend.rtDesc[0].blendOpAlpha = D3D12_BLEND_OP_ADD;
+			desc.blend.rtDesc[0].srcBlendAlpha = D3D12_BLEND_ZERO;
+			desc.blend.rtDesc[0].dstBlendAlpha = D3D12_BLEND_ONE;
+			desc.blend.rtDesc[0].writeMask = 0xf;
+
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+			desc.rasterizer.isDepthClipEnable = true;
+			desc.rasterizer.isFrontCCW = false;
+
+			desc.depthStencil.isDepthEnable = false;
+			desc.depthStencil.isDepthWriteEnable = false;
+			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+			desc.numRTVs = 0;
+			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R11G11B10_FLOAT;
+			desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
+			desc.multisampleCount = 1;
+
+			if (!UIIndirectPSO_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -708,9 +914,19 @@ public:
 				return false;
 			}
 		}
+		{
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &NisScalerHDRRS_;
+			desc.pCS = hShaders_[SHADER_NIS_SCALER_HDR_C].GetShader();
+
+			if (!NisScalerHDRPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
 
 		// ポイントライト
-		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 3.0f, 10.0f, 1.0f, 10.0f))
+		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 3.0f, 20.0f, 10.0f, 20.0f))
 		{
 			return false;
 		}
@@ -727,7 +943,7 @@ public:
 		utilCmdList_.Reset();
 
 		// GUIの初期化
-		if (!gui_.Initialize(&device_, DXGI_FORMAT_R8G8B8A8_UNORM))
+		if (!gui_.Initialize(&device_, kSwapchainFormat))
 		{
 			return false;
 		}
@@ -889,6 +1105,7 @@ public:
 
 	void ExecuteMainScene()
 	{
+		const auto kSwapchainFormat = device_.GetSwapchain().GetTexture(0)->GetTextureDesc().format;
 		const int kSwapchainBufferOffset = 1;
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
 		auto prevFrameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 2) % sl12::Swapchain::kMaxBuffer;
@@ -922,6 +1139,8 @@ public:
 			isCameraMove_ = false;
 		}
 
+		cbvCache_.BeginNewFrame();
+
 		// gather mesh render commands.
 		sl12::RenderCommandsList meshRenderCmds;
 		sceneRoot_->GatherRenderCommands(&cbvCache_, meshRenderCmds);
@@ -941,7 +1160,7 @@ public:
 			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
 			{
 			}
-			if (ImGui::SliderFloat("Light Intensity", &lightPower_, 0.0f, 10.0f))
+			if (ImGui::SliderFloat("Light Intensity", &lightPower_, 0.0f, 100.0f))
 			{
 			}
 			if (ImGui::ColorEdit3("Light Color", lightColor_))
@@ -1001,7 +1220,7 @@ public:
 				{
 					assert(!"Error: Recreate HiZ");
 				}
-				if (!ldrTarget_.Initialize(&device_, renderWidth_, renderHeight_, DXGI_FORMAT_R8G8B8A8_UNORM, true))
+				if (!ldrTarget_.Initialize(&device_, renderWidth_, renderHeight_, kSwapchainFormat, true))
 				{
 					assert(!"Error: Recreate LDR target");
 				}
@@ -1045,6 +1264,40 @@ public:
 			if (ImGui::Checkbox("Use TAA", &useTAA_))
 			{
 				taaFirstRender_ = true;
+			}
+			const char* kTonemapTypes[] = {
+				"None",
+				"Reinhard",
+				"GT",
+			};
+			if (ImGui::Combo("Tonemap", &tonemapType_, kTonemapTypes, ARRAYSIZE(kTonemapTypes)))
+			{
+			}
+			if (ImGui::SliderFloat("Base Luminance", &baseLuminance_, 80.0f, 300.0f))
+			{
+			}
+			if (ImGui::Checkbox("Test Gradient", &enableTestGradient_))
+			{
+			}
+			if (ImGui::Checkbox("UI Enable", &uiDrawEnable_))
+			{
+			}
+			const char* kUIDrawTypes[] = {
+				"AfterOETF Direct SRGB",
+				"AfterOETF Direct Rec2020",
+				"BeforeOETF Direct SRGB",
+				"BeforeOETF Direct Rec2020",
+				"AfterOETF Indirect",
+				"BeforeOETF InDirect",
+			};
+			if (ImGui::Combo("UI Draw Timing", &uiDrawType_, kUIDrawTypes, ARRAYSIZE(kUIDrawTypes)))
+			{
+			}
+			if (ImGui::SliderFloat("UI Intensity", &uiIntensity_, 1.0f, 10.0f))
+			{
+			}
+			if (ImGui::SliderFloat("UI Alpha", &uiAlpha_, 0.0f, 1.0f))
+			{
 			}
 
 			// draw count.
@@ -1149,6 +1402,9 @@ public:
 				d3dCmdList->SetPipelineState(ResetCullDataPSO_.GetPSO());
 				pCmdList->SetComputeRootSignatureAndDescriptorSet(&ResetCullDataRS_, &descSet_);
 				d3dCmdList->Dispatch((submeshCount + 31) / 32, 1, 1);
+				pCmdList->UAVBarrier(mesh->GetIndirectCountBuffer());
+				pCmdList->UAVBarrier(mesh->GetFalseNegativeCountBuffer());
+				pCmdList->UAVBarrier(&DrawCountBuffer_);
 
 				// cull frustum, backface and prev depth occlusion.
 				descSet_.SetCsCbv(2, mcmd->GetCBView()->GetDescInfo().cpuHandle);
@@ -1259,7 +1515,7 @@ public:
 							commandSig_,																	// command signature
 							meshletData.meshletCount,														// Meshlet最大数
 							pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
-							sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) * meshletData.indirectArg1stIndexOffset,	// indirectコマンドの変数バッファの先頭オフセット
+							kDrawArgSize * meshletData.indirectArg1stIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
 							pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
 							meshletData.indirectCount1stByteOffset);										// カウントバッファの先頭オフセット
 					}
@@ -1269,7 +1525,7 @@ public:
 							commandSig_,																	// command signature
 							meshletData.meshletCount,														// Meshlet最大数
 							pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
-							sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) * meshletData.indirectArg2ndIndexOffset,	// indirectコマンドの変数バッファの先頭オフセット
+							kDrawArgSize * meshletData.indirectArg2ndIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
 							pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
 							meshletData.indirectCount2ndByteOffset);										// カウントバッファの先頭オフセット
 					}
@@ -1508,7 +1764,7 @@ public:
 						commandSig_,																	// command signature
 						meshletData.meshletCount,														// Meshlet最大数
 						pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
-						sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) * meshletData.indirectArg1stIndexOffset,	// indirectコマンドの変数バッファの先頭オフセット
+						kDrawArgSize * meshletData.indirectArg1stIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
 						pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
 						meshletData.indirectCount1stByteOffset);										// カウントバッファの先頭オフセット
 				}
@@ -1650,20 +1906,31 @@ public:
 			d3dCmdList->RSSetScissorRects(1, &rect);
 		}
 
-		// to LDR
+		// Tonemap
 		{
+			TonemapCB cb;
+			cb.type = (uint)tonemapType_;
+			if (enableTestGradient_)
+			{
+				cb.type = 3;
+			}
+			cb.baseLuminance = baseLuminance_;
+			cb.maxLuminance = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? 100.0f : device_.GetMaxLuminance();
+			auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
+
 			pCmdList->TransitionBarrier(currAccum.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 			pCmdList->TransitionBarrier(ldrTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 			// PSO設定
-			d3dCmdList->SetPipelineState(ToLdrPSO_.GetPSO());
+			d3dCmdList->SetPipelineState(TonemapPSO_.GetPSO());
 
 			// 基本Descriptor設定
 			descSet_.Reset();
+			descSet_.SetPsCbv(0, hCB.GetCBV()->GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(0, currAccum.srv->GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
 
-			pCmdList->SetMeshRootSignatureAndDescriptorSet(&ToLdrRS_, &descSet_);
+			pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&TonemapRS_, &descSet_);
 
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			d3dCmdList->DrawInstanced(3, 1, 0, 0);
@@ -1732,6 +1999,9 @@ public:
 		// NIS
 		else if (upscalerType == 2)
 		{
+			auto RS = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? &NisScalerRS_ : &NisScalerHDRRS_;
+			auto PSO = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? &NisScalerPSO_ : &NisScalerHDRPSO_;
+
 			// create constant buffer.
 			NISConfig nisConfig;
 			NVScalerUpdateConfig(nisConfig, upscalerSharpness_,
@@ -1756,8 +2026,8 @@ public:
 			descSet_.SetCsUav(0, fsrTargets_[1].uav->GetDescInfo().cpuHandle);
 			descSet_.SetCsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
 
-			d3dCmdList->SetPipelineState(NisScalerPSO_.GetPSO());
-			pCmdList->SetComputeRootSignatureAndDescriptorSet(&NisScalerRS_, &descSet_);
+			d3dCmdList->SetPipelineState(PSO->GetPSO());
+			pCmdList->SetComputeRootSignatureAndDescriptorSet(RS, &descSet_);
 
 			NISOptimizer optimizer(true, NISGPUArchitecture::NVIDIA_Generic);
 			UINT dx = (kScreenWidth + optimizer.GetOptimalBlockWidth() - 1) / optimizer.GetOptimalBlockWidth();
@@ -1769,6 +2039,232 @@ public:
 		else
 		{
 			pCmdList->TransitionBarrier(ldrTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		}
+
+		// select after OETF target.
+		auto FinalTarget = &ldrTarget_;
+		if (upscalerType != 0)
+		{
+			FinalTarget = &fsrTargets_[1];
+		}
+
+		// UI drawing function.
+		auto DrawUIFunc = [&](float intensity, float alpha, sl12::u32 colorSpace, bool bOffscreen)
+		{
+			static const int kRenderOrder[] =
+			{
+				UI_GAUGE,
+				UI_ENERGY,
+				UI_DANGER,
+				UI_GLOW,
+
+				UI_MAP,
+				UI_MAP_EDGE,
+				UI_TARGET,
+			};
+			static const DirectX::XMFLOAT4 kRenderRect[] =
+			{
+				DirectX::XMFLOAT4(kScreenWidth / 2 - 512.0f, -400.0f, kScreenWidth / 2 + 512.0f, -400.0f + 1024.0f),
+				DirectX::XMFLOAT4(kScreenWidth / 2 - 512.0f, -400.0f, kScreenWidth / 2 + 512.0f, -400.0f + 1024.0f),
+				DirectX::XMFLOAT4(kScreenWidth / 2 - 512.0f, -400.0f, kScreenWidth / 2 + 512.0f, -400.0f + 1024.0f),
+				DirectX::XMFLOAT4(kScreenWidth / 2 - 512.0f, -400.0f, kScreenWidth / 2 + 512.0f, -400.0f + 1024.0f),
+
+				DirectX::XMFLOAT4(64.0f, kScreenHeight - 64.0f - 512.0f, 64.0f + 512.0f, kScreenHeight - 64.0f),
+				DirectX::XMFLOAT4(64.0f, kScreenHeight - 64.0f - 512.0f, 64.0f + 512.0f, kScreenHeight - 64.0f),
+				DirectX::XMFLOAT4(64.0f, kScreenHeight - 64.0f - 512.0f, 64.0f + 512.0f, kScreenHeight - 64.0f),
+			};
+			static const sl12::u32 kBlendType[] = { 0, 0, 0, 1, 0, 0, 0, };
+
+			// PSO設定
+			if (!bOffscreen)
+			{
+				d3dCmdList->SetPipelineState(UIDrawPSO_.GetPSO());
+			}
+			else
+			{
+				d3dCmdList->SetPipelineState(UIDrawOffPSO_.GetPSO());
+			}
+
+			for (int i = 0; i < UI_MAX; i++)
+			{
+				float CX = (float)(kScreenWidth / 2);
+				float CY = (float)(kScreenHeight / 2);
+				float Left = (kRenderRect[i].x - CX) / CX;
+				float Top = -(kRenderRect[i].y - CY) / CY;
+				float Right = (kRenderRect[i].z - CX) / CX;
+				float Bottom = -(kRenderRect[i].w - CY) / CY;
+
+				UIDrawCB cb;
+				cb.rect = DirectX::XMFLOAT4(Left, Top, Right, Bottom);
+				cb.alpha = alpha;
+				cb.intensity = intensity;
+				cb.blendType = kBlendType[i];
+				cb.colorSpace = colorSpace;
+				auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
+
+				auto hTex = hUITextureRes_[i].GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle;
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetVsCbv(1, hCB.GetCBV()->GetDescInfo().cpuHandle);
+				descSet_.SetPsCbv(0, hCB.GetCBV()->GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(0, hTex);
+				descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+
+				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&UIDrawRS_, &descSet_);
+
+				d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+				d3dCmdList->DrawInstanced(4, 1, 0, 0);
+			}
+		};
+
+		bool isUIDrawIndirect = uiDrawType_ == 4 || uiDrawType_ == 5;
+		bool isUIDrawBeforeOETF = uiDrawType_ == 2 || uiDrawType_ == 3 || uiDrawType_ == 5;
+
+		// UI indirect draw.
+		if (uiDrawEnable_ && isUIDrawIndirect)
+		{
+			pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+			float color[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+			d3dCmdList->ClearRenderTargetView(uiTarget_.rtv->GetDescInfo().cpuHandle, color, 0, nullptr);
+
+			// UI.
+			{
+				auto&& rtv = uiTarget_.rtv->GetDescInfo().cpuHandle;
+				d3dCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+				D3D12_VIEWPORT vp;
+				vp.TopLeftX = vp.TopLeftY = 0.0f;
+				vp.Width = kScreenWidth;
+				vp.Height = kScreenHeight;
+				vp.MinDepth = 0.0f;
+				vp.MaxDepth = 1.0f;
+				d3dCmdList->RSSetViewports(1, &vp);
+
+				D3D12_RECT rect;
+				rect.left = rect.top = 0;
+				rect.right = kScreenWidth;
+				rect.bottom = kScreenHeight;
+				d3dCmdList->RSSetScissorRects(1, &rect);
+			}
+
+			DrawUIFunc(1.0f, 1.0f, 0, true);
+		}
+
+		// UI draw before OETF.
+		if (uiDrawEnable_ && isUIDrawBeforeOETF)
+		{
+			pCmdList->TransitionBarrier(eotfTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+			// EOTF.
+			{
+				auto&& rtv = eotfTarget_.rtv->GetDescInfo().cpuHandle;
+				d3dCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+				D3D12_VIEWPORT vp;
+				vp.TopLeftX = vp.TopLeftY = 0.0f;
+				vp.Width = kScreenWidth;
+				vp.Height = kScreenHeight;
+				vp.MinDepth = 0.0f;
+				vp.MaxDepth = 1.0f;
+				d3dCmdList->RSSetViewports(1, &vp);
+
+				D3D12_RECT rect;
+				rect.left = rect.top = 0;
+				rect.right = kScreenWidth;
+				rect.bottom = kScreenHeight;
+				d3dCmdList->RSSetScissorRects(1, &rect);
+			}
+			{
+				// PSO設定
+				d3dCmdList->SetPipelineState(EotfPSO_.GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetPsSrv(0, FinalTarget->srv->GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+
+				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&EotfRS_, &descSet_);
+
+				d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				d3dCmdList->DrawInstanced(3, 1, 0, 0);
+			}
+
+			// UI
+			if (!isUIDrawIndirect)
+			{
+				DrawUIFunc(
+					(colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 1.0f : uiIntensity_,
+					uiAlpha_,
+					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 2) ? 0 : 1,
+					false);
+			}
+			else
+			{
+				pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+				UIDrawCB cb;
+				cb.alpha = uiAlpha_;
+				cb.intensity = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? 1.0f : uiIntensity_;
+				cb.colorSpace = (colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 2) ? 0 : 1;
+				auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
+
+				// PSO設定
+				d3dCmdList->SetPipelineState(UIIndirectPSO_.GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetPsCbv(0, hCB.GetCBV()->GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(0, uiTarget_.srv->GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+
+				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&UIIndirectRS_, &descSet_);
+
+				d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				d3dCmdList->DrawInstanced(3, 1, 0, 0);
+			}
+
+			pCmdList->TransitionBarrier(FinalTarget->tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			pCmdList->TransitionBarrier(eotfTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+			// OETF.
+			{
+				auto&& rtv = FinalTarget->rtv->GetDescInfo().cpuHandle;
+				d3dCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+				D3D12_VIEWPORT vp;
+				vp.TopLeftX = vp.TopLeftY = 0.0f;
+				vp.Width = kScreenWidth;
+				vp.Height = kScreenHeight;
+				vp.MinDepth = 0.0f;
+				vp.MaxDepth = 1.0f;
+				d3dCmdList->RSSetViewports(1, &vp);
+
+				D3D12_RECT rect;
+				rect.left = rect.top = 0;
+				rect.right = kScreenWidth;
+				rect.bottom = kScreenHeight;
+				d3dCmdList->RSSetScissorRects(1, &rect);
+			}
+			{
+				// PSO設定
+				d3dCmdList->SetPipelineState(OetfPSO_.GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetPsSrv(0, eotfTarget_.srv->GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+
+				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&OetfRS_, &descSet_);
+
+				d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				d3dCmdList->DrawInstanced(3, 1, 0, 0);
+
+			}
+
+			pCmdList->TransitionBarrier(FinalTarget->tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 		}
 
 		// set render target.
@@ -1807,10 +2303,47 @@ public:
 			descSet_.SetPsSrv(0, target->srv->GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
 
-			pCmdList->SetMeshRootSignatureAndDescriptorSet(&TargetCopyRS_, &descSet_);
+			pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&TargetCopyRS_, &descSet_);
 
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			d3dCmdList->DrawInstanced(3, 1, 0, 0);
+		}
+
+		// UI.
+		if (uiDrawEnable_ && !isUIDrawBeforeOETF)
+		{
+			if (!isUIDrawIndirect)
+			{
+				DrawUIFunc(
+					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 0) ? 1.0f : uiIntensity_,
+					uiAlpha_,
+					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 0) ? 0 : 2,
+					false);
+			}
+			else
+			{
+				pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+				UIDrawCB cb;
+				cb.alpha = uiAlpha_;
+				cb.intensity = (colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 1.0f : uiIntensity_;
+				cb.colorSpace = (colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 0 : 2;
+				auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
+
+				// PSO設定
+				d3dCmdList->SetPipelineState(UIIndirectPSO_.GetPSO());
+
+				// 基本Descriptor設定
+				descSet_.Reset();
+				descSet_.SetPsCbv(0, hCB.GetCBV()->GetDescInfo().cpuHandle);
+				descSet_.SetPsSrv(0, uiTarget_.srv->GetDescInfo().cpuHandle);
+				descSet_.SetPsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+
+				pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&UIIndirectRS_, &descSet_);
+
+				d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+				d3dCmdList->DrawInstanced(3, 1, 0, 0);
+			}
 		}
 
 		ImGui::Render();
@@ -2157,7 +2690,7 @@ private:
 			D3D12_INDIRECT_ARGUMENT_DESC args[1]{};
 			args[0].Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
 			D3D12_COMMAND_SIGNATURE_DESC desc{};
-			desc.ByteStride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+			desc.ByteStride = kDrawArgSize;
 			desc.NumArgumentDescs = ARRAYSIZE(args);
 			desc.pArgumentDescs = args;
 			desc.NodeMask = 1;
@@ -2775,7 +3308,7 @@ private:
 		desc.width = kFilterSize / 4;
 		desc.height = kPhaseCount;
 		desc.mipLevels = 1;
-		desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
+		desc.initialState = D3D12_RESOURCE_STATE_COPY_DEST;
 		desc.sampleCount = 1;
 		desc.clearColor[4] = { 0.0f };
 		desc.clearDepth = 1.0f;
@@ -2819,6 +3352,9 @@ private:
 		{
 			return false;
 		}
+
+		pCmdList->TransitionBarrier(&nisCoeffScaler_, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&nisCoeffUsm_, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		return true;
 	}
@@ -2895,7 +3431,7 @@ private:
 			Destroy();
 		}
 
-		bool Initialize(sl12::Device* pDev, int width, int height, DXGI_FORMAT format, bool enableUAV)
+		bool Initialize(sl12::Device* pDev, int width, int height, DXGI_FORMAT format, bool enableUAV, const DirectX::XMFLOAT4& clearColor = DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f))
 		{
 			dev = pDev;
 
@@ -2906,7 +3442,7 @@ private:
 			desc.mipLevels = 1;
 			desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
 			desc.sampleCount = 1;
-			desc.clearColor[4] = { 0.0f };
+			memcpy(desc.clearColor, &clearColor, sizeof(clearColor));
 			desc.clearDepth = 1.0f;
 			desc.clearStencil = 0;
 			desc.isRenderTarget = true;
@@ -3232,6 +3768,8 @@ private:
 	HiZBuffers					HiZ_;
 	RenderTargetSet				ldrTarget_;
 	RenderTargetSet				fsrTargets_[2];
+	RenderTargetSet				eotfTarget_;
+	RenderTargetSet				uiTarget_;
 
 	sl12::Texture				nisCoeffScaler_, nisCoeffUsm_;
 	sl12::TextureView			nisCoeffScalerSRV_, nisCoeffUsmSRV_;
@@ -3246,10 +3784,10 @@ private:
 
 	ID3D12CommandSignature*		commandSig_ = nullptr;
 
-	sl12::RootSignature			PrePassRS_, GBufferRS_, ToLdrRS_, ReduceDepth1stRS_, ReduceDepth2ndRS_, TargetCopyRS_;
-	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_;
-	sl12::GraphicsPipelineState	PrePassPSO_, GBufferPSO_, ToLdrPSO_, ReduceDepth1stPSO_, ReduceDepth2ndPSO_, TargetCopyPSO_;
-	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_;
+	sl12::RootSignature			PrePassRS_, GBufferRS_, TonemapRS_, OetfRS_, EotfRS_, ReduceDepth1stRS_, ReduceDepth2ndRS_, TargetCopyRS_, UIDrawRS_, UIIndirectRS_;
+	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_;
+	sl12::GraphicsPipelineState	PrePassPSO_, GBufferPSO_, TonemapPSO_, OetfPSO_, EotfPSO_, ReduceDepth1stPSO_, ReduceDepth2ndPSO_, TargetCopyPSO_, UIDrawPSO_, UIDrawOffPSO_, UIIndirectPSO_;
+	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_;
 
 	sl12::DescriptorSet			descSet_;
 
@@ -3263,7 +3801,7 @@ private:
 	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
 	float					skyPower_ = 0.1f;
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
-	float					lightPower_ = 1.0f;
+	float					lightPower_ = 10.0f;
 	DirectX::XMFLOAT2		roughnessRange_ = { 0.0f, 1.0f };
 	DirectX::XMFLOAT2		metallicRange_ = { 0.0f, 1.0f };
 	uint32_t				loopCount_ = 0;
@@ -3290,6 +3828,13 @@ private:
 	bool					useTAA_ = true;
 	bool					taaFirstRender_ = true;
 	bool					enableLodBias_ = true;
+	int						tonemapType_ = 2;
+	float					baseLuminance_ = 100.0f;
+	bool					enableTestGradient_ = false;
+	bool					uiDrawEnable_ = true;
+	int						uiDrawType_ = 5;
+	float					uiIntensity_ = 1.0f;
+	float					uiAlpha_ = 1.0f;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 	DirectX::XMFLOAT4		frustumCamPos_;
 
@@ -3299,6 +3844,7 @@ private:
 	sl12::ResourceHandle	hSponzaRes_;
 	sl12::ResourceHandle	hSuzanneRes_;
 	sl12::ResourceHandle	hBlueNoiseRes_;
+	sl12::ResourceHandle	hUITextureRes_[UI_MAX];
 
 	sl12::ConstantBufferCache	cbvCache_;
 	sl12::ShaderManager			shaderManager_;
@@ -3314,12 +3860,31 @@ private:
 	std::unique_ptr<sl12::Buffer>						bvhDirectShadowMSTable_;
 	std::unique_ptr<sl12::Buffer>						bvhDirectShadowHGTable_;
 
+	sl12::ColorSpaceType	colorSpaceType_;
+
 	int						sceneState_ = 0;		// 0:loading scene, 1:main scene
 };	// class SampleApplication
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
-	SampleApplication app(hInstance, nCmdShow, kScreenWidth, kScreenHeight);
+	auto ColorSpace = sl12::ColorSpaceType::Rec709;
+
+	LPWSTR *szArglist;
+	int nArgs;
+
+	szArglist = CommandLineToArgvW(GetCommandLineW(), &nArgs);
+	if (szArglist)
+	{
+		for (int i = 0; i < nArgs; i++)
+		{
+			if (!lstrcmpW(szArglist[i], L"-hdr"))
+			{
+				ColorSpace = sl12::ColorSpaceType::Rec2020;
+			}
+		}
+	}
+
+	SampleApplication app(hInstance, nCmdShow, kScreenWidth, kScreenHeight, ColorSpace);
 
 	return app.Run();
 }

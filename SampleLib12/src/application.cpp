@@ -60,8 +60,6 @@ namespace sl12
 				hInstance,
 				NULL);		// We aren't using multiple windows, NULL.
 
-			ShowWindow(hWnd, nCmdShow);
-
 			return hWnd;
 		}
 
@@ -70,7 +68,7 @@ namespace sl12
 	//--------------------------------------------------
 	// コンストラクタ
 	//--------------------------------------------------
-	Application::Application(HINSTANCE hInstance, int nCmdShow, int screenWidth, int screenHeight)
+	Application::Application(HINSTANCE hInstance, int nCmdShow, int screenWidth, int screenHeight, ColorSpaceType csType)
 	{
 		hInstance_ = hInstance;
 		screenWidth_ = screenWidth;
@@ -84,8 +82,23 @@ namespace sl12
 		// D3D12デバイスの初期化
 		std::array<uint32_t, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> kDescNums
 		{ 65535, 128, 256, 64 };
-		auto isInitDevice = device_.Initialize(hWnd_, screenWidth, screenHeight, kDescNums);
+		auto isInitDevice = device_.Initialize(hWnd_, screenWidth, screenHeight, kDescNums, csType);
 		assert(isInitDevice);
+
+		// replace window at center of desktop.
+		RECT DeskCoord = device_.GetDesktopCoordinates();
+		RECT WinRect;
+		GetWindowRect(hWnd_, &WinRect);
+		auto WinWidth = WinRect.right - WinRect.left;
+		auto WinHeight = WinRect.bottom - WinRect.top;
+		auto DeskWidth = DeskCoord.right - DeskCoord.left;
+		auto DeskHeight = DeskCoord.bottom - DeskCoord.top;
+		auto WinX = DeskWidth <= WinWidth ? DeskCoord.left : DeskCoord.left + (DeskWidth - WinWidth) / 2;
+		auto WinY = DeskHeight <= WinHeight ? DeskCoord.top : DeskCoord.top + (DeskHeight - WinHeight) / 2;
+		MoveWindow(hWnd_, WinX, WinY, WinWidth, WinHeight, TRUE);
+
+		// show window.
+		ShowWindow(hWnd_, nCmdShow);
 
 		// よく使うサンプラーだけ作っておく
 		{

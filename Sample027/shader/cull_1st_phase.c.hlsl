@@ -19,11 +19,23 @@ StructuredBuffer<MeshletBound>		MeshletBounds		: register(t0);
 StructuredBuffer<MeshletDrawInfo>	MeshletDrawInfos	: register(t1);
 Texture2D<float2>					HiZ					: register(t2);
 
-RWStructuredBuffer<DrawArg>	rwDrawArgs			: register(u0);
+//RWStructuredBuffer<DrawArg>	rwDrawArgs			: register(u0);
+RWByteAddressBuffer			rwDrawArgs			: register(u0);
 RWByteAddressBuffer			rwCounter			: register(u1);
-RWStructuredBuffer<uint>	rwFalseNegative		: register(u2);
+RWByteAddressBuffer			rwFalseNegative		: register(u2);
+//RWStructuredBuffer<uint>	rwFalseNegative		: register(u2);
 RWByteAddressBuffer			rwFNCounter			: register(u3);
 RWByteAddressBuffer			rwDrawCounter		: register(u4);
+
+void StoreDrawArg(uint index, DrawArg arg)
+{
+	uint address = 20 * index;
+	rwDrawArgs.Store(address + 0, arg.IndexCountPerInstance);
+	rwDrawArgs.Store(address + 4, arg.InstanceCount);
+	rwDrawArgs.Store(address + 8, arg.StartIndexLocation);
+	rwDrawArgs.Store(address + 12, arg.BaseVertexLocation);
+	rwDrawArgs.Store(address + 16, arg.StartInstanceLocation);
+}
 
 [numthreads(32, 1, 1)]
 void main(uint3 dispatchID : SV_DispatchThreadID)
@@ -51,7 +63,8 @@ void main(uint3 dispatchID : SV_DispatchThreadID)
 				{
 					uint fn_index;
 					rwFNCounter.InterlockedAdd(cbMeshlet.falseNegativeCountByteOffset, 1, fn_index);
-					rwFalseNegative[cbMeshlet.falseNegativeIndexOffset + fn_index] = meshlet_index;
+					rwFalseNegative.Store(4 * (cbMeshlet.falseNegativeIndexOffset + fn_index), meshlet_index);
+					//rwFalseNegative[cbMeshlet.falseNegativeIndexOffset + fn_index] = meshlet_index;
 					return;
 				}
 			}
@@ -59,7 +72,7 @@ void main(uint3 dispatchID : SV_DispatchThreadID)
 
 		// create draw arg.
 		MeshletDrawInfo info = MeshletDrawInfos[meshlet_index];
-		DrawArg arg;
+		DrawArg arg = (DrawArg)0;
 		arg.IndexCountPerInstance = info.indexCount;
 		arg.InstanceCount = 1;
 		arg.StartIndexLocation = info.indexOffset;
@@ -69,7 +82,8 @@ void main(uint3 dispatchID : SV_DispatchThreadID)
 		// count up.
 		uint arg_index;
 		rwCounter.InterlockedAdd(cbMeshlet.indirectCount1stByteOffset, 1, arg_index);
-		rwDrawArgs[cbMeshlet.indirectArg1stIndexOffset + arg_index] = arg;
+		StoreDrawArg(cbMeshlet.indirectArg1stIndexOffset + arg_index, arg);
+		//rwDrawArgs[cbMeshlet.indirectArg1stIndexOffset + arg_index] = arg;
 
 		uint p;
 		rwDrawCounter.InterlockedAdd(0, 1, p);

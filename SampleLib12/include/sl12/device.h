@@ -37,7 +37,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs);
+		bool Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs, ColorSpaceType csType = ColorSpaceType::Rec709);
 		void Destroy();
 
 		void Present(int syncInterval = 1);
@@ -102,6 +102,26 @@ namespace sl12
 		{
 			return isDxrSupported_;
 		}
+		ColorSpaceType	GetColorSpaceType() const
+		{
+			return colorSpaceType_;
+		}
+		RECT			GetDesktopCoordinates() const
+		{
+			return desktopCoordinates_;
+		}
+		float			GetMinLuminance() const
+		{
+			return minLuminance_;
+		}
+		float			GetMaxLuminance() const
+		{
+			return maxLuminance_;
+		}
+		float			GetMaxFullFrameLuminance() const
+		{
+			return maxFullFrameLuminance_;
+		}
 		CommandQueue&	GetGraphicsQueue()
 		{
 			return *pGraphicsQueue_;
@@ -148,15 +168,21 @@ namespace sl12
 		}
 
 	private:
-		IDXGIFactory4*	pFactory_{ nullptr };
-		IDXGIAdapter3*	pAdapter_{ nullptr };
-		IDXGIOutput4*	pOutput_{ nullptr };
+		IDXGIFactory7*	pFactory_{ nullptr };
+		IDXGIAdapter4*	pAdapter_{ nullptr };
+		IDXGIOutput6*	pOutput_{ nullptr };
 
 		LatestDevice*	pLatestDevice_{ nullptr };
 		ID3D12Device*	pDevice_{ nullptr };
 
 		ID3D12Device5*	pDxrDevice_{ nullptr };
 		bool			isDxrSupported_ = false;
+
+		ColorSpaceType	colorSpaceType_ = ColorSpaceType::Rec709;
+		RECT			desktopCoordinates_;
+		float			minLuminance_ = 0.0f;
+		float			maxLuminance_ = 0.0f;
+		float			maxFullFrameLuminance_ = 0.0f;
 
 		CommandQueue*	pGraphicsQueue_{ nullptr };
 		CommandQueue*	pComputeQueue_{ nullptr };

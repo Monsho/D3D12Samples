@@ -1,5 +1,6 @@
 #define NIS_SCALER 1
 #define NIS_DXC 0
+#define NIS_VIEWPORT_SUPPORT 1
 
 cbuffer cb : register(b0)
 {

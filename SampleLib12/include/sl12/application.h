@@ -14,7 +14,7 @@ namespace sl12
 	class Application
 	{
 	public:
-		Application(HINSTANCE hInstance, int nCmdShow, int screenWidth, int screenHeight);
+		Application(HINSTANCE hInstance, int nCmdShow, int screenWidth, int screenHeight, ColorSpaceType csType = ColorSpaceType::Rec709);
 		virtual ~Application();
 
 		int Run();

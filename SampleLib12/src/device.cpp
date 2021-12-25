@@ -11,7 +11,7 @@ namespace sl12
 	LARGE_INTEGER CpuTimer::frequency_;
 
 	//----
-	bool Device::Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs)
+	bool Device::Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs, ColorSpaceType csType)
 	{
 		uint32_t factoryFlags = 0;
 #ifdef _DEBUG
@@ -101,15 +101,68 @@ namespace sl12
 		pDxrDevice_ = pDxrDevice;
 		pLatestDevice_ = pLatestDevice;
 
-		// ディスプレイを取得する
+		// ディスプレイを列挙する
 		IDXGIOutput* pOutput{ nullptr };
-		hr = pAdapter_->EnumOutputs(0, &pOutput);
-		if (SUCCEEDED(hr))
+		int OutputIndex = 0;
+		bool enableHDR = csType != ColorSpaceType::Rec709;
+		while (pAdapter_->EnumOutputs(OutputIndex, &pOutput) != DXGI_ERROR_NOT_FOUND)
 		{
 			hr = pOutput->QueryInterface(IID_PPV_ARGS(&pOutput_));
 			SafeRelease(pOutput);
 			if (FAILED(hr))
+			{
 				SafeRelease(pOutput_);
+				continue;
+			}
+
+			// get desc1.
+			DXGI_OUTPUT_DESC1 OutDesc;
+			pOutput_->GetDesc1(&OutDesc);
+
+			if (!enableHDR)
+			{
+				// if HDR mode disabled, choose first output.
+				desktopCoordinates_ = OutDesc.DesktopCoordinates;
+				minLuminance_ = OutDesc.MinLuminance;
+				maxLuminance_ = OutDesc.MaxLuminance;
+				maxFullFrameLuminance_ = OutDesc.MaxFullFrameLuminance;
+				colorSpaceType_ = ColorSpaceType::Rec709;
+				break;
+			}
+
+			if (OutDesc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)
+			{
+				desktopCoordinates_ = OutDesc.DesktopCoordinates;
+				minLuminance_ = OutDesc.MinLuminance;
+				maxLuminance_ = OutDesc.MaxLuminance;
+				maxFullFrameLuminance_ = OutDesc.MaxFullFrameLuminance;
+				colorSpaceType_ = ColorSpaceType::Rec2020;
+				break;
+			}
+
+			SafeRelease(pOutput_);
+			OutputIndex++;
+		}
+		// if HDR display not found, choose first output.
+		if (!pOutput_)
+		{
+			pAdapter_->EnumOutputs(0, &pOutput);
+			hr = pOutput->QueryInterface(IID_PPV_ARGS(&pOutput_));
+			SafeRelease(pOutput);
+			if (FAILED(hr))
+			{
+				SafeRelease(pOutput_);
+				return false;
+			}
+
+			DXGI_OUTPUT_DESC1 OutDesc;
+			pOutput_->GetDesc1(&OutDesc);
+
+			desktopCoordinates_ = OutDesc.DesktopCoordinates;
+			minLuminance_ = OutDesc.MinLuminance;
+			maxLuminance_ = OutDesc.MaxLuminance;
+			maxFullFrameLuminance_ = OutDesc.MaxFullFrameLuminance;
+			colorSpaceType_ = ColorSpaceType::Rec709;
 		}
 
 #ifdef _DEBUG
@@ -213,7 +266,7 @@ namespace sl12
 		{
 			return false;
 		}
-		if (!pSwapchain_->Initialize(this, pGraphicsQueue_, hWnd, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM))
+		if (!pSwapchain_->Initialize(this, pGraphicsQueue_, hWnd, screenWidth, screenHeight))
 		{
 			return false;
 		}

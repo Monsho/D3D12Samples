@@ -25,7 +25,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, CommandQueue* pQueue, HWND hWnd, uint32_t width, uint32_t height, DXGI_FORMAT format);
+		bool Initialize(Device* pDev, CommandQueue* pQueue, HWND hWnd, uint32_t width, uint32_t height);
 		void Destroy();
 
 		void Present(int syncInterval);
@@ -33,7 +33,7 @@ namespace sl12
 		void WaitPresent();
 
 		// getter
-		IDXGISwapChain3* GetSwapchain() { return pSwapchain_; }
+		IDXGISwapChain4* GetSwapchain() { return pSwapchain_; }
 		Texture* GetTexture(int index) { return &textures_[index]; }
 		Texture* GetCurrentTexture(int offset = 0) { return &textures_[(frameIndex_ + offset) % kMaxBuffer]; }
 		RenderTargetView* GetRenderTargetView(int index) { return &views_[index]; }
@@ -43,7 +43,7 @@ namespace sl12
 		int32_t GetFrameIndex() const { return frameIndex_; }
 
 	private:
-		IDXGISwapChain3*		pSwapchain_{ nullptr };
+		IDXGISwapChain4*		pSwapchain_{ nullptr };
 		Texture					textures_[kMaxBuffer];
 		RenderTargetView		views_[kMaxBuffer];
 		int32_t					frameIndex_{ 0 };
