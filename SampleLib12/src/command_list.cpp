@@ -8,6 +8,10 @@
 #include <sl12/descriptor_set.h>
 #include <sl12/root_signature.h>
 
+#define USE_PIX 1
+#include <WinPixEventRuntime/pix3.h>
+
+
 namespace sl12
 {
 	//----
@@ -654,6 +658,23 @@ namespace sl12
 
 		// このコマンドリストが持っているDescriptorHeapをDirtyにしておく
 		SetDescriptorHeapDirty();
+	}
+
+	//----
+	void CommandList::PushMarker(u8 colorIndex, char const* format, ...)
+	{
+		assert(pLatestCmdList_ != nullptr);
+
+		va_list args;
+		va_start(args, format);
+		PIXBeginEvent(pLatestCmdList_, PIX_COLOR_INDEX(colorIndex), format, args);
+		va_end(args);
+	}
+
+	//----
+	void CommandList::PopMarker()
+	{
+		PIXEndEvent(pLatestCmdList_);
 	}
 
 }	// namespace sl12

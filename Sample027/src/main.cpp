@@ -1316,6 +1316,8 @@ public:
 			ImGui::Text("All GPU: %f (ms)", all_ms);
 		}
 
+		pCmdList->PushMarker(0, "Frame");
+
 		gpuTimestamp_[frameIndex].Reset();
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
@@ -1362,6 +1364,8 @@ public:
 
 		// cluster culling.
 		{
+			GPU_MARKER(pCmdList, 1, "ClusterCulling");
+
 			pCmdList->TransitionBarrier(&clusterInfoBuffer_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
 			descSet_.Reset();
@@ -1377,6 +1381,8 @@ public:
 		// 1st phase culling.
 		if (!isFreezeCull_)
 		{
+			GPU_MARKER(pCmdList, 1, "1stPhaseCulling");
+
 			descSet_.Reset();
 			descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetCsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
@@ -1534,7 +1540,10 @@ public:
 		};
 
 		// 1st phase depth pre pass.
-		RenderDepthPrePass(1);
+		{
+			GPU_MARKER(pCmdList, 1, "1stPhasePrePass");
+			RenderDepthPrePass(1);
+		}
 
 		// render HiZ lambda.
 		auto RenderHiZ = [&]()
@@ -1588,13 +1597,20 @@ public:
 		// if occlusion culling enabled, execute 2nd phase culling.
 		if (isOcclusionCulling_ && !isOcclusionReset_ && !isFreezeCull_)
 		{
+			GPU_MARKER(pCmdList, 1, "OcclusionCulling");
+
 			// render HiZ
-			pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
-			RenderHiZ();
-			pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+			{
+				GPU_MARKER(pCmdList, 2, "RenderHiZ");
+				pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
+				RenderHiZ();
+				pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+			}
 
 			// 2nd phase culling.
 			{
+				GPU_MARKER(pCmdList, 2, "2ndPhaseCulling");
+
 				descSet_.Reset();
 				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 				descSet_.SetCsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
@@ -1661,7 +1677,10 @@ public:
 			}
 
 			// 2nd phase depth pre pass.
-			RenderDepthPrePass(2);
+			{
+				GPU_MARKER(pCmdList, 2, "2ndPhasePrePass");
+				RenderDepthPrePass(2);
+			}
 		}
 
 		// copy draw count.
@@ -1699,6 +1718,8 @@ public:
 
 		// gbuffer pass.
 		{
+			GPU_MARKER(pCmdList, 1, "RenderGBuffer");
+
 			auto myPso = &GBufferPSO_;
 			auto myRS = &GBufferRS_;
 
@@ -1779,10 +1800,15 @@ public:
 		pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		// render HiZ
-		RenderHiZ();
+		{
+			GPU_MARKER(pCmdList, 1, "RenderHiZ");
+			RenderHiZ();
+		}
 
 		// raytrace shadow.
 		{
+			GPU_MARKER(pCmdList, 1, "RaytradedShadow");
+
 			pCmdList->TransitionBarrier(rtShadowResult_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
 			// デスクリプタを設定
@@ -1826,6 +1852,8 @@ public:
 
 		// lighting.
 		{
+			GPU_MARKER(pCmdList, 1, "Lighting");
+
 			auto&& target = useTAA_ ? accumTemp_ : currAccum;
 
 			pCmdList->TransitionBarrier(&clusterInfoBuffer_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -1854,6 +1882,8 @@ public:
 		// TAA
 		if (useTAA_)
 		{
+			GPU_MARKER(pCmdList, 1, "TAA");
+
 			pCmdList->TransitionBarrier(accumTemp_.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 			pCmdList->TransitionBarrier(currAccum.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
@@ -1908,6 +1938,8 @@ public:
 
 		// Tonemap
 		{
+			GPU_MARKER(pCmdList, 1, "Tonemap");
+
 			TonemapCB cb;
 			cb.type = (uint)tonemapType_;
 			if (enableTestGradient_)
@@ -1941,6 +1973,8 @@ public:
 		// FSR
 		if (upscalerType == 1)
 		{
+			GPU_MARKER(pCmdList, 1, "FSR");
+
 			// create constant buffer.
 			struct
 			{
@@ -1962,43 +1996,54 @@ public:
 			auto hCB0 = cbvCache_.GetUnusedConstBuffer(sizeof(fsrConst), &fsrConst);
 			auto hCB1 = cbvCache_.GetUnusedConstBuffer(sizeof(rcasConst), &rcasConst);
 
-			// EASU
-			pCmdList->TransitionBarrier(ldrTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
-			pCmdList->TransitionBarrier(fsrTargets_[0].tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-
-			descSet_.Reset();
-			descSet_.SetCsCbv(0, hCB0.GetCBV()->GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(0, ldrTarget_.srv->GetDescInfo().cpuHandle);
-			descSet_.SetCsUav(0, fsrTargets_[0].uav->GetDescInfo().cpuHandle);
-			descSet_.SetCsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
-
-			d3dCmdList->SetPipelineState(FsrEasuPSO_.GetPSO());
-			pCmdList->SetComputeRootSignatureAndDescriptorSet(&FsrEasuRS_, &descSet_);
-
 			UINT dx = (kScreenWidth + 15) / 16;
 			UINT dy = (kScreenHeight + 15) / 16;
-			d3dCmdList->Dispatch(dx, dy, 1);
+
+			// EASU
+			{
+				GPU_MARKER(pCmdList, 2, "FSR EASU");
+
+				pCmdList->TransitionBarrier(ldrTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+				pCmdList->TransitionBarrier(fsrTargets_[0].tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, hCB0.GetCBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, ldrTarget_.srv->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(0, fsrTargets_[0].uav->GetDescInfo().cpuHandle);
+				descSet_.SetCsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+
+				d3dCmdList->SetPipelineState(FsrEasuPSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&FsrEasuRS_, &descSet_);
+
+				d3dCmdList->Dispatch(dx, dy, 1);
+			}
 
 			// RCAS
-			pCmdList->TransitionBarrier(fsrTargets_[0].tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
-			pCmdList->TransitionBarrier(fsrTargets_[1].tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+			{
+				GPU_MARKER(pCmdList, 2, "FSR RCAS");
 
-			descSet_.Reset();
-			descSet_.SetCsCbv(0, hCB1.GetCBV()->GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(0, fsrTargets_[0].srv->GetDescInfo().cpuHandle);
-			descSet_.SetCsUav(0, fsrTargets_[1].uav->GetDescInfo().cpuHandle);
-			descSet_.SetCsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
+				pCmdList->TransitionBarrier(fsrTargets_[0].tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+				pCmdList->TransitionBarrier(fsrTargets_[1].tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-			d3dCmdList->SetPipelineState(FsrRcasPSO_.GetPSO());
-			pCmdList->SetComputeRootSignatureAndDescriptorSet(&FsrRcasRS_, &descSet_);
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, hCB1.GetCBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, fsrTargets_[0].srv->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(0, fsrTargets_[1].uav->GetDescInfo().cpuHandle);
+				descSet_.SetCsSampler(0, clampLinearSampler_.GetDescInfo().cpuHandle);
 
-			d3dCmdList->Dispatch(dx, dy, 1);
+				d3dCmdList->SetPipelineState(FsrRcasPSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&FsrRcasRS_, &descSet_);
+
+				d3dCmdList->Dispatch(dx, dy, 1);
+			}
 
 			pCmdList->TransitionBarrier(fsrTargets_[1].tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 		}
 		// NIS
 		else if (upscalerType == 2)
 		{
+			GPU_MARKER(pCmdList, 1, "NIS");
+
 			auto RS = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? &NisScalerRS_ : &NisScalerHDRRS_;
 			auto PSO = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? &NisScalerPSO_ : &NisScalerHDRPSO_;
 
@@ -2125,6 +2170,8 @@ public:
 		// UI indirect draw.
 		if (uiDrawEnable_ && isUIDrawIndirect)
 		{
+			GPU_MARKER(pCmdList, 1, "IndirectUI");
+
 			pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 			float color[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -2156,6 +2203,8 @@ public:
 		// UI draw before OETF.
 		if (uiDrawEnable_ && isUIDrawBeforeOETF)
 		{
+			GPU_MARKER(pCmdList, 1, "BeforeOETF UI");
+
 			pCmdList->TransitionBarrier(eotfTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 			// EOTF.
@@ -2178,6 +2227,8 @@ public:
 				d3dCmdList->RSSetScissorRects(1, &rect);
 			}
 			{
+				GPU_MARKER(pCmdList, 2, "EOTF");
+
 				// PSO設定
 				d3dCmdList->SetPipelineState(EotfPSO_.GetPSO());
 
@@ -2195,6 +2246,8 @@ public:
 			// UI
 			if (!isUIDrawIndirect)
 			{
+				GPU_MARKER(pCmdList, 2, "DirectUI");
+
 				DrawUIFunc(
 					(colorSpaceType_ == sl12::ColorSpaceType::Rec709) ? 1.0f : uiIntensity_,
 					uiAlpha_,
@@ -2203,6 +2256,8 @@ public:
 			}
 			else
 			{
+				GPU_MARKER(pCmdList, 2, "CompositeUI");
+
 				pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 				UIDrawCB cb;
@@ -2249,6 +2304,8 @@ public:
 				d3dCmdList->RSSetScissorRects(1, &rect);
 			}
 			{
+				GPU_MARKER(pCmdList, 2, "OETF");
+
 				// PSO設定
 				d3dCmdList->SetPipelineState(OetfPSO_.GetPSO());
 
@@ -2312,8 +2369,12 @@ public:
 		// UI.
 		if (uiDrawEnable_ && !isUIDrawBeforeOETF)
 		{
+			GPU_MARKER(pCmdList, 1, "AfterOETF UI");
+
 			if (!isUIDrawIndirect)
 			{
+				GPU_MARKER(pCmdList, 2, "DirectUI");
+
 				DrawUIFunc(
 					(colorSpaceType_ == sl12::ColorSpaceType::Rec709 || uiDrawType_ == 0) ? 1.0f : uiIntensity_,
 					uiAlpha_,
@@ -2322,6 +2383,8 @@ public:
 			}
 			else
 			{
+				GPU_MARKER(pCmdList, 2, "CompositeUI");
+
 				pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 				UIDrawCB cb;
@@ -2352,6 +2415,8 @@ public:
 
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 		gpuTimestamp_[frameIndex].Resolve(pCmdList);
+
+		pCmdList->PopMarker();
 
 		// コマンド終了と描画待ち
 		zpreCmdLists_.Close();

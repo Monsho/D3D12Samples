@@ -21,6 +21,38 @@ namespace sl12
 	class CommandList
 	{
 	public:
+		class GpuMarker
+		{
+		public:
+			GpuMarker(CommandList* pCmdList, u8 colorIndex, char const* format, ...)
+				: pCmdList_(pCmdList)
+			{
+				assert(pCmdList_ != nullptr);
+				va_list args;
+				va_start(args, format);
+				pCmdList_->PushMarker(colorIndex, format, args);
+				va_end(args);
+			}
+			GpuMarker(const GpuMarker&) = delete;
+			~GpuMarker()
+			{
+				Terminate();
+			}
+
+			void Terminate()
+			{
+				if (pCmdList_)
+				{
+					pCmdList_->PopMarker();
+					pCmdList_ = nullptr;
+				}
+			}
+
+		private:
+			CommandList*	pCmdList_ = nullptr;
+		};	// class GpuMarker
+
+	public:
 		CommandList()
 		{}
 		~CommandList()
@@ -67,6 +99,10 @@ namespace sl12
 			D3D12_GPU_VIRTUAL_ADDRESS* asAddress,
 			u32 asAddressCount);
 
+		// GPU events
+		void PushMarker(u8 colorIndex, char const* format, ...);
+		void PopMarker();
+
 		// getter
 		CommandQueue* GetParentQueue() { return pParentQueue_; }
 		DescriptorStackList* GetViewDescriptorStack() { return pViewDescStack_; }
@@ -92,5 +128,7 @@ namespace sl12
 	};	// class CommandList
 
 }	// namespace sl12
+
+#define GPU_MARKER(pCmdList, colorIndex, format, ...)	sl12::CommandList::GpuMarker gm(pCmdList, colorIndex, format, __VA_ARGS__)
 
 //	EOF
