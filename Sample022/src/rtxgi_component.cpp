@@ -1,15 +1,20 @@
 ﻿#include "rtxgi_component.h"
 
+#include <rtxgi/ddgi/DDGIVolume.h>
+
 #include "../shader/rtxgi/volume_desc.h"
 
 // shader include
-#include "CompiledShaders/irradiance_blending.c.hlsl.h"
-#include "CompiledShaders/distance_blending.c.hlsl.h"
-#include "CompiledShaders/border_row_update.c.hlsl.h"
-#include "CompiledShaders/border_column_update.c.hlsl.h"
-#include "CompiledShaders/probe_relocation.c.hlsl.h"
-#include "CompiledShaders/state_classifier.c.hlsl.h"
-#include "CompiledShaders/state_activate_all.c.hlsl.h"
+#include "CompiledShaders/rtxgi_irradiance_blending.c.hlsl.h"
+#include "CompiledShaders/rtxgi_distance_blending.c.hlsl.h"
+#include "CompiledShaders/rtxgi_border_row_update_irradiance.c.hlsl.h"
+#include "CompiledShaders/rtxgi_border_row_update_distance.c.hlsl.h"
+#include "CompiledShaders/rtxgi_border_clm_update_irradiance.c.hlsl.h"
+#include "CompiledShaders/rtxgi_border_clm_update_distance.c.hlsl.h"
+#include "CompiledShaders/rtxgi_probe_relocation.c.hlsl.h"
+#include "CompiledShaders/rtxgi_probe_relocation_reset.c.hlsl.h"
+#include "CompiledShaders/rtxgi_probe_classification.c.hlsl.h"
+#include "CompiledShaders/rtxgi_probe_classification_reset.c.hlsl.h"
 
 
 //----
@@ -19,57 +24,117 @@ bool RtxgiComponent::Initialize()
 		return false;
 
 	// set volume descriptor.
-	ddgiVolumeDesc_.viewBias = SGI_VIEW_BIAS;
-	ddgiVolumeDesc_.normalBias = SGI_NORMAL_BIAS;
-	ddgiVolumeDesc_.probeChangeThreshold = SGI_CHANGE_THRESHOLD;
+	ddgiVolumeDesc_.name = "Sample Volume";
+	ddgiVolumeDesc_.index = 0;
+	ddgiVolumeDesc_.rngSeed = 0;
+	ddgiVolumeDesc_.origin = { 0.0f, 0.0f, 0.0f };
+	ddgiVolumeDesc_.eulerAngles = { 0.0f, 0.0f, 0.0f };
+	ddgiVolumeDesc_.probeSpacing = { SGI_GRID_SPACING_X, SGI_GRID_SPACING_Y, SGI_GRID_SPACING_Z };
+	ddgiVolumeDesc_.probeCounts = { SGI_GRID_COUNT_X, SGI_GRID_COUNT_Y, SGI_GRID_COUNT_Z };
+	ddgiVolumeDesc_.probeNumRays = SGI_NUM_RAYS_PER_PROBE;
+	ddgiVolumeDesc_.probeNumIrradianceTexels = SGI_NUM_IRRADIANCE_TEXELS;
+	ddgiVolumeDesc_.probeNumDistanceTexels = SGI_NUM_DISTANCE_TEXELS;
+	ddgiVolumeDesc_.probeHysteresis = SGI_HYSTERESIS;
+	ddgiVolumeDesc_.probeNormalBias = SGI_NORMAL_BIAS;
+	ddgiVolumeDesc_.probeViewBias = SGI_VIEW_BIAS;
+	ddgiVolumeDesc_.probeMaxRayDistance = SGI_MAX_RAY_DISTANCE;
+	ddgiVolumeDesc_.probeIrradianceThreshold = SGI_IRRADIANCE_THRESHOLD;
 	ddgiVolumeDesc_.probeBrightnessThreshold = SGI_BRIGHTNESS_THRESHOLD;
-	ddgiVolumeDesc_.numRaysPerProbe = SGI_NUM_RAYS_PER_PROBE;
-	ddgiVolumeDesc_.numIrradianceTexels = SGI_NUM_IRRADIANCE_TEXELS;
-	ddgiVolumeDesc_.numDistanceTexels = SGI_NUM_DISTANCE_TEXELS;
-	ddgiVolumeDesc_.probeGridCounts.x = SGI_GRID_COUNT_X;
-	ddgiVolumeDesc_.probeGridCounts.y = SGI_GRID_COUNT_Y;
-	ddgiVolumeDesc_.probeGridCounts.z = SGI_GRID_COUNT_Z;
-	ddgiVolumeDesc_.probeGridSpacing.x = SGI_GRID_SPACING_X;
-	ddgiVolumeDesc_.probeGridSpacing.y = SGI_GRID_SPACING_Y;
-	ddgiVolumeDesc_.probeGridSpacing.z = SGI_GRID_SPACING_Z;
+
+	ddgiVolumeDesc_.showProbes = true;
+
+	ddgiVolumeDesc_.probeRayDataFormat = 1;
+	ddgiVolumeDesc_.probeIrradianceFormat = 1;
+	ddgiVolumeDesc_.probeDistanceFormat = 1;
+	ddgiVolumeDesc_.probeDataFormat = 1;
+
+	ddgiVolumeDesc_.probeRelocationEnabled = true;
+	ddgiVolumeDesc_.probeMinFrontfaceDistance = 0.1f;
+	ddgiVolumeDesc_.probeClassificationEnabled = true;
+
+	ddgiVolumeDesc_.movementType = rtxgi::EDDGIVolumeMovementType::Default;
 
 	// initialize shaders.
 	if (!InitializeShaders())
 		return false;
 
 	// new volume instance.
-	ddgiVolume_.reset(new rtxgi::DDGIVolume("DDGI Volume"));
+	ddgiVolume_.reset(new rtxgi::d3d12::DDGIVolume());
+
+	// TEST: only one DDGIVolume
+	static const sl12::u32 kMaxVolumes = 1;
 
 	// descriptor heap.
 	auto p_device_dep = pParentDevice_->GetDeviceDep();
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC desc;
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		desc.NumDescriptors = 32;
+		desc.NumDescriptors = 
+			1			// constants structured buffer count
+			+ rtxgi::GetDDGIVolumeNumUAVDescriptors() * kMaxVolumes
+			+ rtxgi::GetDDGIVolumeNumSRVDescriptors() * kMaxVolumes;
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		desc.NodeMask = 0x01;
-		auto hr = p_device_dep->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pDescriptorHeap_));
+		auto hr = p_device_dep->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pSrvDescriptorHeap_));
+		if (FAILED(hr))
+			return false;
+
+		desc.NumDescriptors = rtxgi::GetDDGIVolumeNumRTVDescriptors() * kMaxVolumes;
+		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+
+		// Create the RTV heap
+		hr = p_device_dep->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pRtvDescriptorHeap_));
 		if (FAILED(hr))
 			return false;
 	}
-	ddgiVolumeResource_.descriptorHeap = pDescriptorHeap_;
-	ddgiVolumeResource_.descriptorHeapDescSize = p_device_dep->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	ddgiVolumeResource_.descriptorHeapOffset = 0;
+	ddgiVolumeResource_.descriptorHeapDesc.heap = pSrvDescriptorHeap_;
+	ddgiVolumeResource_.descriptorHeapDesc.constsOffset = 0;														// constants structured buffer start index.
+	ddgiVolumeResource_.descriptorHeapDesc.uavOffset = 1;															// uav start index.
+	ddgiVolumeResource_.descriptorHeapDesc.srvOffset = 1 + rtxgi::GetDDGIVolumeNumUAVDescriptors() * kMaxVolumes;	// srv start index.
+
+	// unmanaged mode + no bindless.
+	ddgiVolumeResource_.managed.enabled = false;
+	ddgiVolumeResource_.unmanaged.enabled = true;
+	ddgiVolumeResource_.unmanaged.rootParamSlotRootConstants = 0;
+	ddgiVolumeResource_.unmanaged.rootParamSlotDescriptorTable = 1;
 
 	// constant buffer.
 	{
-		auto size = rtxgi::GetDDGIVolumeConstantBufferSize();
-		for (int i = 0; i < 2; i++)
+		sl12::u32 stride = sizeof(rtxgi::DDGIVolumeDescGPUPacked);
+		sl12::u32 size = stride * kMaxVolumes;
+		if (!constantSTB_.Initialize(pParentDevice_, size, stride, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COPY_DEST, false, false))
 		{
-			if (!volumeCBs_[i].Initialize(pParentDevice_, size, 0, sl12::BufferUsage::ConstantBuffer, true, false))
-			{
-				return false;
-			}
-			if (!volumeCBVs_[i].Initialize(pParentDevice_, &volumeCBs_[0]))
-			{
-				return false;
-			}
+			return false;
 		}
+		if (!constantSTBUpload_.Initialize(pParentDevice_, size * 2, stride, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, true, false))
+		{
+			return false;
+		}
+		ddgiVolumeResource_.constantsBuffer = constantSTB_.GetResourceDep();
+		ddgiVolumeResource_.constantsBufferUpload = constantSTBUpload_.GetResourceDep();
+		ddgiVolumeResource_.constantsBufferSizeInBytes = size;
+
+		if (!constantSTBView_.Initialize(pParentDevice_, &constantSTB_, 0, kMaxVolumes, stride))
+		{
+			return false;
+		}
+
+		// create SRV for RTXGI.
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srvDesc.Buffer.NumElements = kMaxVolumes;
+		srvDesc.Buffer.StructureByteStride = stride;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		auto p_device_dep = pParentDevice_->GetDeviceDep();
+		UINT srvDescSize = p_device_dep->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE handle;
+		handle = ddgiVolumeResource_.descriptorHeapDesc.heap->GetCPUDescriptorHandleForHeapStart();
+		handle.ptr += (ddgiVolumeResource_.descriptorHeapDesc.constsOffset * srvDescSize);
+		p_device_dep->CreateShaderResourceView(constantSTB_.GetResourceDep(), &srvDesc, handle);
 	}
 
 	// create texture resources.
@@ -99,13 +164,16 @@ bool RtxgiComponent::InitializeShaders()
 		return false;																		\
 	}
 
-	ShaderInit(EShaderType::IrradianceBlending, g_pIrradianceBlendingCS);
-	ShaderInit(EShaderType::DistanceBlending, g_pDistanceBlendingCS);
-	ShaderInit(EShaderType::BorderRowUpdate, g_pBorderRowUpdateCS);
-	ShaderInit(EShaderType::BorderColumnUpdate, g_pBorderColumnUpdateCS);
-	ShaderInit(EShaderType::ProbeRelocation, g_pProbeRelocationCS);
-	ShaderInit(EShaderType::StateClassifier, g_pStateClassifierCS);
-	ShaderInit(EShaderType::StateActivateAll, g_pStateActivateAllCS);
+	ShaderInit(EShaderType::IrradianceBlending, g_pRTXGIIrradianceBlendingCS);
+	ShaderInit(EShaderType::DistanceBlending, g_pRTXGIDistanceBlendingCS);
+	ShaderInit(EShaderType::BorderRowUpdateIrradiance, g_pRTXGIBorderRowUpdateIrradianceCS);
+	ShaderInit(EShaderType::BorderClmUpdateIrradiance, g_pRTXGIBorderClmUpdateIrradianceCS);
+	ShaderInit(EShaderType::BorderRowUpdateDistance, g_pRTXGIBorderRowUpdateDistanceCS);
+	ShaderInit(EShaderType::BorderClmUpdateDistance, g_pRTXGIBorderClmUpdateDistanceCS);
+	ShaderInit(EShaderType::ProbeRelocation, g_pRTXGIProbeRelocationCS);
+	ShaderInit(EShaderType::ProbeRelocationReset, g_pRTXGIProbeRelocationResetCS);
+	ShaderInit(EShaderType::ProbeClassification, g_pRTXGIProbeClassificationCS);
+	ShaderInit(EShaderType::ProbeClassificationReset, g_pRTXGIProbeClassificationResetCS);
 
 #undef ShaderInit
 
@@ -122,91 +190,128 @@ bool RtxgiComponent::CreateTextures()
 	desc.sampleCount = 1;
 	desc.isUav = true;
 
-	D3D12_CPU_DESCRIPTOR_HANDLE handle = ddgiVolumeResource_.descriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	handle.ptr += (ddgiVolumeResource_.descriptorHeapDescSize * ddgiVolumeResource_.descriptorHeapOffset);
-
-	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-
-	auto p_device_dep = pParentDevice_->GetDeviceDep();
+	// create texture resources.
+	rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGIVolumeTextureType::RayData, desc.width, desc.height);
+	desc.format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::RayData, ddgiVolumeDesc_.probeRayDataFormat);
+	desc.initialState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	desc.isRenderTarget = false;
+	if (!textures_[ETextureType::RayData].Initialize(pParentDevice_, desc))
 	{
-		rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGITextureType::RTRadiance, desc.width, desc.height);
-		desc.format = uavDesc.Format = rtxgi::GetDDGIVolumeTextureFormat(rtxgi::EDDGITextureType::RTRadiance);
-		desc.initialState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		if (!textures_[ETextureType::Radiance].Initialize(pParentDevice_, desc))
-			return false;
-		ddgiVolumeResource_.probeRTRadiance = textures_[ETextureType::Radiance].GetResourceDep();
-
-		p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.probeRTRadiance, nullptr, &uavDesc, handle);
-		handle.ptr += ddgiVolumeResource_.descriptorHeapDescSize;
-
-		// uav for sl12
-		if (!textureUavs_[ETextureType::Radiance].Initialize(pParentDevice_, &textures_[ETextureType::Radiance]))
-			return false;
+		return false;
 	}
+	ddgiVolumeResource_.unmanaged.probeRayData = textures_[ETextureType::RayData].GetResourceDep();
+
+	rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGIVolumeTextureType::Irradiance, desc.width, desc.height);
+	desc.format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::Irradiance, ddgiVolumeDesc_.probeIrradianceFormat);
+	desc.initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	desc.isRenderTarget = true;
+	if (!textures_[ETextureType::Irradiance].Initialize(pParentDevice_, desc))
 	{
-		rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGITextureType::Irradiance, desc.width, desc.height);
-		desc.format = uavDesc.Format = rtxgi::GetDDGIVolumeTextureFormat(rtxgi::EDDGITextureType::Irradiance);
-		desc.initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		if (!textures_[ETextureType::Irradiance].Initialize(pParentDevice_, desc))
-			return false;
-		ddgiVolumeResource_.probeIrradiance = textures_[ETextureType::Irradiance].GetResourceDep();
-
-		p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.probeIrradiance, nullptr, &uavDesc, handle);
-		handle.ptr += ddgiVolumeResource_.descriptorHeapDescSize;
-
-		// srv for sl12
-		if (!textureSrvs_[ETextureType::Irradiance].Initialize(pParentDevice_, &textures_[ETextureType::Irradiance]))
-			return false;
+		return false;
 	}
+	ddgiVolumeResource_.unmanaged.probeIrradiance = textures_[ETextureType::Irradiance].GetResourceDep();
+
+	rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGIVolumeTextureType::Distance, desc.width, desc.height);
+	desc.format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::Distance, ddgiVolumeDesc_.probeDistanceFormat);
+	desc.initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	desc.isRenderTarget = true;
+	if (!textures_[ETextureType::Distance].Initialize(pParentDevice_, desc))
 	{
-		rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGITextureType::Distance, desc.width, desc.height);
-		desc.format = uavDesc.Format = rtxgi::GetDDGIVolumeTextureFormat(rtxgi::EDDGITextureType::Distance);
-		desc.initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		if (!textures_[ETextureType::Distance].Initialize(pParentDevice_, desc))
-			return false;
-		ddgiVolumeResource_.probeDistance = textures_[ETextureType::Distance].GetResourceDep();
-
-		p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.probeDistance, nullptr, &uavDesc, handle);
-		handle.ptr += ddgiVolumeResource_.descriptorHeapDescSize;
-
-		// srv for sl12
-		if (!textureSrvs_[ETextureType::Distance].Initialize(pParentDevice_, &textures_[ETextureType::Distance]))
-			return false;
+		return false;
 	}
+	ddgiVolumeResource_.unmanaged.probeDistance = textures_[ETextureType::Distance].GetResourceDep();
+
+	rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGIVolumeTextureType::Data, desc.width, desc.height);
+	desc.format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::Data, ddgiVolumeDesc_.probeDataFormat);
+	desc.initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	desc.isRenderTarget = false;
+	if (!textures_[ETextureType::ProbeData].Initialize(pParentDevice_, desc))
 	{
-		rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGITextureType::Offsets, desc.width, desc.height);
-		if (desc.width <= 0)
-			return false;
-		desc.format = uavDesc.Format = rtxgi::GetDDGIVolumeTextureFormat(rtxgi::EDDGITextureType::Offsets);
-		desc.initialState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		if (!textures_[ETextureType::Offset].Initialize(pParentDevice_, desc))
-			return false;
-		ddgiVolumeResource_.probeOffsets = textures_[ETextureType::Offset].GetResourceDep();
-
-		p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.probeOffsets, nullptr, &uavDesc, handle);
-		handle.ptr += ddgiVolumeResource_.descriptorHeapDescSize;
-
-		// uav for sl12
-		if (!textureUavs_[ETextureType::Offset].Initialize(pParentDevice_, &textures_[ETextureType::Offset]))
-			return false;
+		return false;
 	}
+	ddgiVolumeResource_.unmanaged.probeData = textures_[ETextureType::ProbeData].GetResourceDep();
+
+	// store descriptor heap.
 	{
-		rtxgi::GetDDGIVolumeTextureDimensions(ddgiVolumeDesc_, rtxgi::EDDGITextureType::States, desc.width, desc.height);
-		if (desc.width <= 0)
-			return false;
-		desc.format = uavDesc.Format = rtxgi::GetDDGIVolumeTextureFormat(rtxgi::EDDGITextureType::States);
-		desc.initialState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		if (!textures_[ETextureType::State].Initialize(pParentDevice_, desc))
-			return false;
-		ddgiVolumeResource_.probeStates = textures_[ETextureType::State].GetResourceDep();
+		auto p_device_dep = pParentDevice_->GetDeviceDep();
 
-		p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.probeStates, nullptr, &uavDesc, handle);
-		handle.ptr += ddgiVolumeResource_.descriptorHeapDescSize;
+		D3D12_CPU_DESCRIPTOR_HANDLE srvHandle, uavHandle, rtvHandle;
+		srvHandle = uavHandle = ddgiVolumeResource_.descriptorHeapDesc.heap->GetCPUDescriptorHandleForHeapStart();
+		rtvHandle = pRtvDescriptorHeap_->GetCPUDescriptorHandleForHeapStart();
 
-		// uav for sl12
-		if (!textureUavs_[ETextureType::State].Initialize(pParentDevice_, &textures_[ETextureType::State]))
+		UINT srvDescSize = p_device_dep->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		UINT rtvDescSize = p_device_dep->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+		uavHandle.ptr += (ddgiVolumeResource_.descriptorHeapDesc.uavOffset * srvDescSize);
+		srvHandle.ptr += (ddgiVolumeResource_.descriptorHeapDesc.srvOffset * srvDescSize);
+
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+
+		// ray data.
+		{
+			srvDesc.Format = uavDesc.Format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::RayData, ddgiVolumeDesc_.probeRayDataFormat);
+			p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.unmanaged.probeRayData, nullptr, &uavDesc, uavHandle);
+			p_device_dep->CreateShaderResourceView(ddgiVolumeResource_.unmanaged.probeRayData, &srvDesc, srvHandle);
+		}
+
+		uavHandle.ptr += srvDescSize;
+		srvHandle.ptr += srvDescSize;
+
+		// irradiance.
+		{
+			srvDesc.Format = uavDesc.Format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::Irradiance, ddgiVolumeDesc_.probeIrradianceFormat);
+			p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.unmanaged.probeIrradiance, nullptr, &uavDesc, uavHandle);
+			p_device_dep->CreateShaderResourceView(ddgiVolumeResource_.unmanaged.probeIrradiance, &srvDesc, srvHandle);
+
+			ddgiVolumeResource_.unmanaged.probeIrradianceRTV.ptr = rtvHandle.ptr + (ddgiVolumeDesc_.index * rtxgi::GetDDGIVolumeNumRTVDescriptors() * rtvDescSize);
+			p_device_dep->CreateRenderTargetView(ddgiVolumeResource_.unmanaged.probeIrradiance, &rtvDesc, ddgiVolumeResource_.unmanaged.probeIrradianceRTV);
+		}
+
+		uavHandle.ptr += srvDescSize;
+		srvHandle.ptr += srvDescSize;
+		rtvHandle.ptr += rtvDescSize;
+
+		// distance.
+		{
+			srvDesc.Format = uavDesc.Format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::Distance, ddgiVolumeDesc_.probeDistanceFormat);
+			p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.unmanaged.probeDistance, nullptr, &uavDesc, uavHandle);
+			p_device_dep->CreateShaderResourceView(ddgiVolumeResource_.unmanaged.probeDistance, &srvDesc, srvHandle);
+
+			ddgiVolumeResource_.unmanaged.probeDistanceRTV.ptr = ddgiVolumeResource_.unmanaged.probeIrradianceRTV.ptr + rtvDescSize;
+			p_device_dep->CreateRenderTargetView(ddgiVolumeResource_.unmanaged.probeDistance, &rtvDesc, ddgiVolumeResource_.unmanaged.probeDistanceRTV);
+		}
+
+		uavHandle.ptr += srvDescSize;
+		srvHandle.ptr += srvDescSize;
+
+		// Probe data texture descriptors
+		{
+			srvDesc.Format = uavDesc.Format = rtxgi::d3d12::GetDDGIVolumeTextureFormat(rtxgi::EDDGIVolumeTextureType::Data, ddgiVolumeDesc_.probeDataFormat);
+			p_device_dep->CreateUnorderedAccessView(ddgiVolumeResource_.unmanaged.probeData, nullptr, &uavDesc, uavHandle);
+			p_device_dep->CreateShaderResourceView(ddgiVolumeResource_.unmanaged.probeData, &srvDesc, srvHandle);
+		}
+	}
+
+	// create views for sl12
+	for (int i = 0; i < ETextureType::Max; i++)
+	{
+		if (!textureSrvs_[i].Initialize(pParentDevice_, &textures_[i]))
+		{
 			return false;
+		}
+		if (!textureUavs_[i].Initialize(pParentDevice_, &textures_[i]))
+		{
+			return false;
+		}
 	}
 
 	return true;
@@ -220,7 +325,7 @@ bool RtxgiComponent::CreatePipelines()
 	// create root signature.
 	{
 		ID3DBlob* signature;
-		if (!rtxgi::GetDDGIVolumeRootSignatureDesc(ddgiVolumeResource_.descriptorHeapOffset, &signature))
+		if (!rtxgi::d3d12::GetDDGIVolumeRootSignatureDesc(ddgiVolumeResource_.descriptorHeapDesc.constsOffset, ddgiVolumeResource_.descriptorHeapDesc.uavOffset, signature))
 			return false;
 		if (signature == nullptr)
 			return false;
@@ -230,62 +335,103 @@ bool RtxgiComponent::CreatePipelines()
 		if (FAILED(hr))
 			return false;
 
-		ddgiVolumeResource_.rootSignature = pRootSignature_;
+		ddgiVolumeResource_.unmanaged.rootSignature = pRootSignature_;
 	}
 
 	// create psos.
 	{
 		D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.pRootSignature = pRootSignature_;
+		psoDesc.pRootSignature = ddgiVolumeResource_.unmanaged.rootSignature;
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::IrradianceBlending].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::IrradianceBlending].GetData();
-		auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::IrradianceBlending]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeRadianceBlendingPSO = psos_[EShaderType::IrradianceBlending];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::IrradianceBlending].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::IrradianceBlending].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::IrradianceBlending]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeBlendingIrradiancePSO = psos_[EShaderType::IrradianceBlending];
+		}
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::DistanceBlending].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::DistanceBlending].GetData();
-		hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::DistanceBlending]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeDistanceBlendingPSO = psos_[EShaderType::DistanceBlending];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::DistanceBlending].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::DistanceBlending].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::DistanceBlending]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeBlendingDistancePSO = psos_[EShaderType::DistanceBlending];
+		}
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::BorderRowUpdate].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::BorderRowUpdate].GetData();
-		hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::BorderRowUpdate]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeBorderRowPSO = psos_[EShaderType::BorderRowUpdate];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::BorderRowUpdateIrradiance].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::BorderRowUpdateIrradiance].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::BorderRowUpdateIrradiance]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeBorderRowUpdateIrradiancePSO = psos_[EShaderType::BorderRowUpdateIrradiance];
+		}
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::BorderColumnUpdate].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::BorderColumnUpdate].GetData();
-		hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::BorderColumnUpdate]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeBorderColumnPSO = psos_[EShaderType::BorderColumnUpdate];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::BorderClmUpdateIrradiance].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::BorderClmUpdateIrradiance].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::BorderClmUpdateIrradiance]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeBorderColumnUpdateIrradiancePSO = psos_[EShaderType::BorderClmUpdateIrradiance];
+		}
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::ProbeRelocation].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::ProbeRelocation].GetData();
-		hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::ProbeRelocation]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeRelocationPSO = psos_[EShaderType::ProbeRelocation];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::BorderRowUpdateDistance].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::BorderRowUpdateDistance].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::BorderRowUpdateDistance]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeBorderRowUpdateDistancePSO = psos_[EShaderType::BorderRowUpdateDistance];
+		}
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::StateClassifier].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::StateClassifier].GetData();
-		hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::StateClassifier]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeStateClassifierPSO = psos_[EShaderType::StateClassifier];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::BorderClmUpdateDistance].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::BorderClmUpdateDistance].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::BorderClmUpdateDistance]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeBorderColumnUpdateDistancePSO = psos_[EShaderType::BorderClmUpdateDistance];
+		}
 
-		psoDesc.CS.BytecodeLength = shaders_[EShaderType::StateActivateAll].GetSize();
-		psoDesc.CS.pShaderBytecode = shaders_[EShaderType::StateActivateAll].GetData();
-		hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::StateActivateAll]));
-		if (FAILED(hr))
-			return false;
-		ddgiVolumeResource_.probeStateClassifierActivateAllPSO = psos_[EShaderType::StateActivateAll];
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::ProbeRelocation].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::ProbeRelocation].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::ProbeRelocation]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeRelocation.updatePSO = psos_[EShaderType::ProbeRelocation];
+		}
+
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::ProbeRelocationReset].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::ProbeRelocationReset].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::ProbeRelocationReset]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeRelocation.resetPSO = psos_[EShaderType::ProbeRelocationReset];
+		}
+
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::ProbeClassification].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::ProbeClassification].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::ProbeClassification]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeClassification.updatePSO = psos_[EShaderType::ProbeClassification];
+		}
+
+		{
+			psoDesc.CS.BytecodeLength = shaders_[EShaderType::ProbeClassificationReset].GetSize();
+			psoDesc.CS.pShaderBytecode = shaders_[EShaderType::ProbeClassificationReset].GetData();
+			auto hr = p_device_dep->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&psos_[EShaderType::ProbeClassificationReset]));
+			if (FAILED(hr))
+				return false;
+			ddgiVolumeResource_.unmanaged.probeClassification.resetPSO = psos_[EShaderType::ProbeClassificationReset];
+		}
 	}
 
 	return true;
@@ -295,7 +441,8 @@ bool RtxgiComponent::CreatePipelines()
 void RtxgiComponent::Destroy()
 {
 	for (auto&& v : shaders_) v.Destroy();
-	sl12::SafeRelease(pDescriptorHeap_);
+	sl12::SafeRelease(pSrvDescriptorHeap_);
+	sl12::SafeRelease(pRtvDescriptorHeap_);
 	for (auto&& v : volumeCBVs_) v.Destroy();
 	for (auto&& v : volumeCBs_) v.Destroy();
 	for (auto&& v : textureUavs_) v.Destroy();
@@ -310,32 +457,49 @@ void RtxgiComponent::Destroy()
 //----
 void RtxgiComponent::UpdateVolume(const DirectX::XMFLOAT3* pTranslate)
 {
-	flipIndex_ = 1 - flipIndex_;
 	if (pTranslate)
 	{
-		rtxgi::float3 v = { pTranslate->x, pTranslate->y, pTranslate->z };
-		ddgiVolume_->Move(v);
+		rtxgi::float3 origin;
+		origin.x = pTranslate->x;
+		origin.y = pTranslate->y;
+		origin.z = pTranslate->z;
+		ddgiVolume_->SetOrigin(origin);
 	}
+	ddgiVolume_->Update();
+}
 
-	ddgiVolume_->Update(volumeCBs_[flipIndex_].GetResourceDep(), 0);
+//----
+void RtxgiComponent::ClearProbes(sl12::CommandList* pCmdList)
+{
+	ddgiVolume_->ClearProbes(pCmdList->GetLatestCommandList());
+}
+
+//----
+void RtxgiComponent::UploadConstants(sl12::CommandList* pCmdList, sl12::u32 frameIndex)
+{
+	auto volumes = ddgiVolume_.get();
+	rtxgi::d3d12::UploadDDGIVolumeConstants(pCmdList->GetLatestCommandList(), frameIndex & 0x01, 1, &volumes);
 }
 
 //----
 void RtxgiComponent::UpdateProbes(sl12::CommandList* pCmdList)
 {
-	ddgiVolume_->UpdateProbes(pCmdList->GetDxrCommandList());
+	auto volumes = ddgiVolume_.get();
+	rtxgi::d3d12::UpdateDDGIVolumeProbes(pCmdList->GetLatestCommandList(), 1, &volumes);
 }
 
 //----
 void RtxgiComponent::RelocateProbes(sl12::CommandList* pCmdList, float distanceScale)
 {
-	ddgiVolume_->RelocateProbes(pCmdList->GetDxrCommandList(), distanceScale);
+	auto volumes = ddgiVolume_.get();
+	rtxgi::d3d12::RelocateDDGIVolumeProbes(pCmdList->GetLatestCommandList(), 1, &volumes);
 }
 
 //----
 void RtxgiComponent::ClassifyProbes(sl12::CommandList* pCmdList)
 {
-	ddgiVolume_->ClassifyProbes(pCmdList->GetDxrCommandList());
+	auto volumes = ddgiVolume_.get();
+	rtxgi::d3d12::ClassifyDDGIVolumeProbes(pCmdList->GetLatestCommandList(), 1, &volumes);
 }
 
 

@@ -10,6 +10,15 @@
     <Filter Include="shader\rtxgi">
       <UniqueIdentifier>{36676003-1e81-4e1a-ac29-796f5aa05d84}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\RTXGI">
+      <UniqueIdentifier>{560cceac-4dce-4c0a-a3de-3c8345cdd59d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\RTXGI\ddgi">
+      <UniqueIdentifier>{5a306d5b-b6f9-4660-8317-17cb1e1a3a6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\RTXGI\ddgi\gfx">
+      <UniqueIdentifier>{c3a7abb1-750f-41b4-9ab4-2e6540e8e0a1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -23,6 +32,15 @@
     </ClCompile>
     <ClCompile Include="src\rtxgi_component.cpp">
       <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\Math.cpp">
+      <Filter>src\RTXGI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\ddgi\DDGIVolume.cpp">
+      <Filter>src\RTXGI\ddgi</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\ddgi\gfx\DDGIVolume_D3D12.cpp">
+      <Filter>src\RTXGI\ddgi\gfx</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -62,27 +80,6 @@
     <FxCompile Include="shader\temporal_blend.c.hlsl">
       <Filter>shader</Filter>
     </FxCompile>
-    <FxCompile Include="shader\rtxgi\irradiance_blending.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\rtxgi\distance_blending.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\rtxgi\border_row_update.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\rtxgi\border_column_update.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\rtxgi\probe_relocation.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\rtxgi\state_classifier.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
-    <FxCompile Include="shader\rtxgi\state_activate_all.c.hlsl">
-      <Filter>shader\rtxgi</Filter>
-    </FxCompile>
     <FxCompile Include="shader\rtxgi\probe_lighting.lib.hlsl">
       <Filter>shader\rtxgi</Filter>
     </FxCompile>
@@ -91,6 +88,36 @@
     </FxCompile>
     <FxCompile Include="shader\debug_probe.p.hlsl">
       <Filter>shader</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_distance_blending.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_irradiance_blending.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_border_row_update_irradiance.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_border_clm_update_irradiance.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_border_clm_update_distance.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_border_row_update_distance.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_probe_relocation.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_probe_relocation_reset.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_probe_classification.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
+    </FxCompile>
+    <FxCompile Include="shader\rtxgi\rtxgi_probe_classification_reset.c.hlsl">
+      <Filter>shader\rtxgi</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
@@ -103,6 +130,9 @@
     </None>
     <None Include="shader\raytrace.hlsli">
       <Filter>shader</Filter>
+    </None>
+    <None Include="shader\rtxgi\rtxgi_common_defines.hlsli">
+      <Filter>shader\rtxgi</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -120,6 +150,9 @@
     </ClInclude>
     <ClInclude Include="src\rtxgi_component.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="shader\rtxgi\rtxgi_common_defines.h">
+      <Filter>shader\rtxgi</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

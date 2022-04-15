@@ -55,8 +55,8 @@
 
 namespace
 {
-	static const int	kScreenWidth = 1280;
-	static const int	kScreenHeight = 720;
+	static const int	kScreenWidth = 2560;
+	static const int	kScreenHeight = 1440;
 	static const int	MaxSample = 512;
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 10000.0f;
@@ -202,7 +202,7 @@ public:
 		}
 		{
 			D3D12_SAMPLER_DESC samDesc{};
-			samDesc.AddressU = samDesc.AddressV = samDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+			samDesc.AddressU = samDesc.AddressV = samDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 			samDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
 			samDesc.MinLOD = 0.0f;
 			samDesc.MaxLOD = FLT_MAX;
@@ -563,7 +563,6 @@ public:
 		auto&& prevGBuffer = gbuffers_[prevFrameIndex];
 
 		UpdateSceneCB(frameIndex);
-		rtxgiComponent_->UpdateVolume(nullptr);
 
 		pCBCache_->BeginNewFrame();
 		gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
@@ -620,15 +619,19 @@ public:
 			{
 				rtxgiComponent_->SetDescHysteresis(hysteresis);
 			}
-			float changeT = rtxgiComponent_->GetDDGIVolume()->GetProbeChangeThreshold();
-			if (ImGui::SliderFloat("Change Threshold", &changeT, 0.0f, 1.0f))
+			float irrT = rtxgiComponent_->GetDDGIVolume()->GetProbeIrradianceThreshold();
+			if (ImGui::SliderFloat("Irradiance Threshold", &irrT, 0.0f, 1.0f))
 			{
-				rtxgiComponent_->SetDescChangeThreshold(changeT);
+				rtxgiComponent_->SetDescIrradianceThreshold(irrT);
 			}
 			float brightT = rtxgiComponent_->GetDDGIVolume()->GetProbeBrightnessThreshold();
 			if (ImGui::SliderFloat("Brightness Threshold", &brightT, 0.0f, 10.0f))
 			{
 				rtxgiComponent_->SetDescBrightnessThreshold(brightT);
+			}
+			if (ImGui::Button("Probe Clear"))
+			{
+				isClearProbe_ = true;
 			}
 			if (ImGui::Button("Probe Relocation"))
 			{
@@ -664,6 +667,15 @@ public:
 			hReflectionCB = pCBCache_->GetUnusedConstBuffer(sizeof(cb), &cb);
 		}
 		frameTime_++;
+
+		sl12::ConstantBufferCache::Handle hDDGICB;
+		{
+			rtxgi::DDGIConstants cb;
+			cb.volumeIndex = 0;
+			cb.uavOffset = 0;
+			cb.srvOffset = 0;
+			hDDGICB = pCBCache_->GetUnusedConstBuffer(sizeof(cb), &cb);
+		}
 
 		gpuTimestamp_[frameIndex].Reset();
 		gpuTimestamp_[frameIndex].Query(pCmdList);
@@ -705,6 +717,15 @@ public:
 			cb.mtxLocalToWorld = cb.mtxPrevLocalToWorld = mesh.pInstance->GetMtxTransform();
 			mesh.cbHandle = pCBCache_->GetUnusedConstBuffer(sizeof(cb), &cb);
 		}
+
+		// frame update for RTXGI
+		if (isClearProbe_)
+		{
+			rtxgiComponent_->ClearProbes(pCmdList);
+			isClearProbe_ = false;
+		}
+		rtxgiComponent_->UpdateVolume(nullptr);
+		rtxgiComponent_->UploadConstants(pCmdList, frameTime_);
 
 		// GPU culling
 		if (isIndirectDraw_)
@@ -909,14 +930,14 @@ public:
 		{
 			// デスクリプタを設定
 			rtGlobalDescSet_.Reset();
-			rtGlobalDescSet_.SetCsCbv(0, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(0, hDDGICB.GetCBV()->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(1, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(2, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsSrv(3, irrTexSrv_.GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsUav(0, rtxgiComponent_->GetRadianceUAV()->GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsUav(1, rtxgiComponent_->GetOffsetUAV()->GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsUav(2, rtxgiComponent_->GetStateUAV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(1, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(2, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(3, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(4, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(5, irrTexSrv_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(0, rtxgiComponent_->GetRayDataUAV()->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSampler(0, trilinearSampler_.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSampler(1, hdrSampler_.GetDescInfo().cpuHandle);
 
@@ -943,7 +964,7 @@ public:
 			pCmdList->GetDxrCommandList()->DispatchRays(&desc);
 
 			// uav barrier.
-			pCmdList->UAVBarrier(rtxgiComponent_->GetRadiance());
+			pCmdList->UAVBarrier(rtxgiComponent_->GetRayData());
 
 			// update probes.
 			rtxgiComponent_->UpdateProbes(pCmdList);
@@ -1047,12 +1068,14 @@ public:
 
 		pCmdList->SetDescriptorHeapDirty();
 
+		pCmdList->TransitionBarrier(&curGBuffer.fTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
 		// lighting pass
 		{
 			// set rendar target.
 			auto&& rtv = swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle;
-			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
-			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
+			//auto&& rtv = curGBuffer.fRtv.GetDescInfo().cpuHandle;
+			d3dCmdList->OMSetRenderTargets(1, &rtv, false, nullptr);
 
 			// set viewport and scissor rect.
 			D3D12_VIEWPORT vp;
@@ -1078,7 +1101,6 @@ public:
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(2, hReflectionCB.GetCBV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(3, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(0, curGBuffer.gbufferSRV[0].GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(1, curGBuffer.gbufferSRV[1].GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(2, curGBuffer.gbufferSRV[2].GetDescInfo().cpuHandle);
@@ -1086,10 +1108,10 @@ public:
 			descSet_.SetPsSrv(4, rtShadowResult_.srv.GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(5, pCurrReflResult->srv.GetDescInfo().cpuHandle);
 			descSet_.SetPsSrv(6, irrTexSrv_.GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(7, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(8, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsUav(0, rtxgiComponent_->GetOffsetUAV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsUav(1, rtxgiComponent_->GetStateUAV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(7, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(8, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(9, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(10, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, anisoSampler_.GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(1, hdrSampler_.GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(2, trilinearSampler_.GetDescInfo().cpuHandle);
@@ -1098,6 +1120,16 @@ public:
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			d3dCmdList->IASetIndexBuffer(nullptr);
 			d3dCmdList->DrawInstanced(3, 1, 0, 0);
+		}
+
+		pCmdList->TransitionBarrier(&curGBuffer.fTex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+		pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+		{
+			// set rendar target.
+			auto&& rtv = swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle;
+			auto&& dsv = curGBuffer.depthDSV.GetDescInfo().cpuHandle;
+			d3dCmdList->OMSetRenderTargets(1, &rtv, false, &dsv);
 		}
 
 		// display probe.
@@ -1109,14 +1141,15 @@ public:
 			// 基本Descriptor設定
 			descSet_.Reset();
 			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetVsCbv(1, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
+			descSet_.SetVsSrv(0, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			descSet_.SetVsSrv(1, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
+
 			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			descSet_.SetPsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetPsCbv(2, rtxgiComponent_->GetCurrentVolumeCBV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(0, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsSrv(1, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsUav(0, rtxgiComponent_->GetOffsetUAV()->GetDescInfo().cpuHandle);
-			descSet_.SetPsUav(1, rtxgiComponent_->GetStateUAV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(0, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(1, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(2, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(3, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
 			descSet_.SetPsSampler(0, trilinearSampler_.GetDescInfo().cpuHandle);
 			pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&debugProbeRS_, &descSet_);
 
@@ -1133,7 +1166,6 @@ public:
 
 		ImGui::Render();
 
-		pCmdList->TransitionBarrier(&curGBuffer.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 		pCmdList->TransitionBarrier(swapchain.GetCurrentTexture(kSwapchainBufferOffset), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 
 		gpuTimestamp_[frameIndex].Query(pCmdList);
@@ -1607,7 +1639,7 @@ private:
 		}
 
 		// コマンド発行
-		if (!pBottomAS->Build(pCmdList, bottomInput))
+		if (!pBottomAS->Build(&device_, pCmdList, bottomInput))
 		{
 			return false;
 		}
@@ -2430,6 +2462,9 @@ private:
 		sl12::TextureView			depthSRV;
 		sl12::DepthStencilView		depthDSV;
 
+		sl12::Texture				fTex;
+		sl12::RenderTargetView		fRtv;
+
 		bool Initialize(sl12::Device* pDev, int width, int height)
 		{
 			{
@@ -2471,6 +2506,17 @@ private:
 					{
 						return false;
 					}
+				}
+
+				desc.format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+				if (!fTex.Initialize(pDev, desc))
+				{
+					return false;
+				}
+
+				if (!fRtv.Initialize(pDev, &fTex))
+				{
+					return false;
 				}
 			}
 
@@ -2697,6 +2743,7 @@ private:
 	bool					isFreezeCull_ = false;
 	bool					isStopSpot_ = false;
 	bool					isDebugProbe_ = false;
+	bool					isClearProbe_ = true;
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 
 	int		frameIndex_ = 0;

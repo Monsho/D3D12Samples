@@ -1,0 +1,21 @@
+#ifndef RTXGI_COMMON_DEFINES_H
+#define RTXGI_COMMON_DEFINES_H
+
+// unmanaged mode.
+#define RTXGI_DDGI_RESOURCE_MANAGEMENT	0
+
+// right hand y-up.
+#define RTXGI_COORDINATE_SYSTEM			2
+
+// unuse shader reflection.
+#define RTXGI_DDGI_SHADER_REFLECTION	0
+
+// no bindless.
+#define RTXGI_DDGI_BINDLESS_RESOURCES	0
+
+// for debug.
+#define RTXGI_DDGI_DEBUG_PROBE_INDEXING			0
+#define RTXGI_DDGI_DEBUG_OCTAHEDRAL_INDEXING	0
+#define RTXGI_DDGI_DEBUG_BORDER_COPY_INDEXING	0
+
+#endif // RTXGI_COMMON_DEFINES_H

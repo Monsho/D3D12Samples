@@ -177,8 +177,8 @@ void GlobalIlluminationRGS()
 [shader("miss")]
 void GlobalIlluminationMS(inout MaterialPayload payload : SV_RayPayload)
 {
-	MaterialParam mat_param;
-	mat_param.baseColor.rgb = SkyColor(mat_param.normal) * cbLight.skyPower;
+	MaterialParam mat_param = (MaterialParam)0;
+	mat_param.baseColor.rgb = SkyColor(WorldRayDirection()) * cbLight.skyPower;
 	EncodeMaterialPayload(mat_param, payload);
 	payload.hitT = -1.0;
 }

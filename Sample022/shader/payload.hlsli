@@ -65,8 +65,8 @@ void DecodeMaterialPayload(
 		payload.normalMetallicRoughness.y >> 16);
 	param.normal = (float3(n) - 32767.0) * (1.0 / 32767.0);
 
-	param.metallic = float((payload.normalMetallicRoughness.y & 0xff00) >> 8) / 255.0;
-	param.roughness = float(payload.normalMetallicRoughness.y & 0x00ff) / 255.0;
+	param.metallic = saturate(float((payload.normalMetallicRoughness.y >> 8) & 0x00ff) / 255.0);
+	param.roughness = saturate(float(payload.normalMetallicRoughness.y & 0x00ff) / 255.0);
 
 	uint4 bc = uint4(
 		(payload.baseColorUnorm >> 0) & 0xff,

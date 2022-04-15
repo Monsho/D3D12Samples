@@ -1,6 +1,8 @@
 #include <vector>
 #include <random>
 
+#include <optick.h>
+
 #include "sl12/application.h"
 #include "sl12/command_list.h"
 #include "sl12/root_signature.h"
@@ -95,6 +97,8 @@ namespace
 		"ui.vv.hlsl",
 		"ui.p.hlsl",
 		"ui.p.hlsl",
+		"compute_sh.c.hlsl",
+		"compute_sh.c.hlsl",
 	};
 
 	static const char* kShaderEntryPoints[] = 
@@ -130,6 +134,8 @@ namespace
 		"main",
 		"main",
 		"mainIndirect",
+		"ComputePerFace",
+		"ComputeAll",
 	};
 
 	enum ShaderFileKind
@@ -165,6 +171,8 @@ namespace
 		SHADER_UI_VV,
 		SHADER_UI_P,
 		SHADER_UI_INDIRECT_P,
+		SHADER_COMPUTE_SH_PER_FACE_C,
+		SHADER_COMPUTE_SH_ALL_C,
 
 		SHADER_MAX
 	};
@@ -257,6 +265,7 @@ public:
 		hBlueNoiseRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/blue_noise.tga");
 		hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 		hSuzanneRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/suzanne/suzanne.rmesh");
+		hHDRIRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/jougasaki_03.exr");
 		for (int i = 0; i < UI_MAX; i++)
 		{
 			hUITextureRes_[i] = resLoader_.LoadRequest<sl12::ResourceItemTexture>(kUITextureNames[i]);
@@ -406,6 +415,16 @@ public:
 
 			clampLinearSampler_.Initialize(&device_, desc);
 		}
+		{
+			D3D12_SAMPLER_DESC samDesc{};
+			samDesc.AddressU = samDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			samDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+			samDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			if (!hdriSampler_.Initialize(&device_, samDesc))
+			{
+				return false;
+			}
+		}
 
 		const auto kTonemapShader = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? SHADER_TONEMAP_709_P : SHADER_TONEMAP_2020_P;
 		const auto kOetfShader = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? SHADER_OETF_SRGB_P : SHADER_OETF_ST2084_P;
@@ -534,6 +553,11 @@ public:
 		}
 		if (!NisScalerHDRRS_.Initialize(&device_,
 			hShaders_[SHADER_NIS_SCALER_HDR_C].GetShader()))
+		{
+			return false;
+		}
+		if (!ComputeSHRS_.Initialize(&device_,
+			hShaders_[SHADER_COMPUTE_SH_PER_FACE_C].GetShader()))
 		{
 			return false;
 		}
@@ -924,9 +948,26 @@ public:
 				return false;
 			}
 		}
+		{
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &ComputeSHRS_;
+			desc.pCS = hShaders_[SHADER_COMPUTE_SH_PER_FACE_C].GetShader();
+
+			if (!ComputeSHPerFacePSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pCS = hShaders_[SHADER_COMPUTE_SH_ALL_C].GetShader();
+
+			if (!ComputeSHAllPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
 
 		// ポイントライト
-		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 3.0f, 20.0f, 10.0f, 20.0f))
+		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 3.0f, 5.0f, 10.0f, 100.0f))
 		{
 			return false;
 		}
@@ -976,6 +1017,8 @@ public:
 
 	bool Execute() override
 	{
+		OPTICK_FRAME("MainThread");
+
 		device_.WaitPresent();
 		device_.SyncKillObjects();
 
@@ -1066,13 +1109,7 @@ public:
 			CreateSceneCB();
 
 			InitializeRaytracingPipeline();
-#if 0
-			utilCmdList_.Reset();
-			CreateAS(&utilCmdList_);
-			utilCmdList_.Close();
-			utilCmdList_.Execute();
-			device_.WaitDrawDone();
-#else
+
 			std::vector<int> TableOffsets;
 			std::vector<sl12::Buffer*> InfoBuffers;
 
@@ -1096,7 +1133,7 @@ public:
 
 			sceneRoot_->AttachNode(sponzaMesh_);
 			sceneRoot_->AttachNode(suzanneMesh_);
-#endif
+
 			InitializeRaytracingResource();
 
 			sceneState_ = 1;
@@ -1105,6 +1142,8 @@ public:
 
 	void ExecuteMainScene()
 	{
+		OPTICK_EVENT();
+
 		const auto kSwapchainFormat = device_.GetSwapchain().GetTexture(0)->GetTextureDesc().format;
 		const int kSwapchainBufferOffset = 1;
 		auto frameIndex = (device_.GetSwapchain().GetFrameIndex() + sl12::Swapchain::kMaxBuffer - 1) % sl12::Swapchain::kMaxBuffer;
@@ -1139,181 +1178,201 @@ public:
 			isCameraMove_ = false;
 		}
 
-		cbvCache_.BeginNewFrame();
+		{
+			OPTICK_EVENT("ConstantBufferCache::BeginNewFrame");
+			cbvCache_.BeginNewFrame();
+		}
 
 		// gather mesh render commands.
 		sl12::RenderCommandsList meshRenderCmds;
-		sceneRoot_->GatherRenderCommands(&cbvCache_, meshRenderCmds);
+		{
+			OPTICK_EVENT("SceneRoot::GatherRenderCommands");
+			sceneRoot_->GatherRenderCommands(&cbvCache_, meshRenderCmds);
+		}
 
 		// add commands to BVH manager.
-		for (auto&& cmd : meshRenderCmds)
 		{
-			if (cmd->GetType() == sl12::RenderCommandType::Mesh)
+			OPTICK_EVENT("BvhManaer::AddGeometry");
+			for (auto&& cmd : meshRenderCmds)
 			{
-				bvhManager_->AddGeometry(static_cast<sl12::MeshRenderCommand*>(cmd.get()));
+				if (cmd->GetType() == sl12::RenderCommandType::Mesh)
+				{
+					bvhManager_->AddGeometry(static_cast<sl12::MeshRenderCommand*>(cmd.get()));
+				}
 			}
 		}
 
 		// GUI
-		gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
 		{
-			if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
+			OPTICK_EVENT("ImGui::Setup");
+			gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
 			{
-			}
-			if (ImGui::SliderFloat("Light Intensity", &lightPower_, 0.0f, 100.0f))
-			{
-			}
-			if (ImGui::ColorEdit3("Light Color", lightColor_))
-			{
-			}
-			if (ImGui::SliderFloat2("Roughness Range", (float*)&roughnessRange_, 0.0f, 1.0f))
-			{
-			}
-			if (ImGui::SliderFloat2("Metallic Range", (float*)&metallicRange_, 0.0f, 1.0f))
-			{
-			}
-			if (ImGui::Checkbox("Occlusion Cull", &isOcclusionCulling_))
-			{
-				isOcclusionReset_ = true;
-			}
-			if (ImGui::Checkbox("Freeze Cull", &isFreezeCull_))
-			{
-				isOcclusionReset_ = true;
-			}
-			const char* kRenderResItems[] = {
-				"2560 x 1440",
-				"1920 x 1080",
-				"1280 x 720",
-			};
-			if (ImGui::Combo("Render Res", &currRenderRes_, kRenderResItems, ARRAYSIZE(kRenderResItems)))
-			{
-				// recreate render targets.
-				const int kRenderSize[] = {
-					2560, 1440,
-					1920, 1080,
-					1280, 720,
+				if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
+				{
+				}
+				if (ImGui::SliderFloat("Light Intensity", &lightPower_, 0.0f, 100.0f))
+				{
+				}
+				if (ImGui::ColorEdit3("Light Color", lightColor_))
+				{
+				}
+				if (ImGui::SliderFloat2("Roughness Range", (float*)&roughnessRange_, 0.0f, 1.0f))
+				{
+				}
+				if (ImGui::SliderFloat2("Metallic Range", (float*)&metallicRange_, 0.0f, 1.0f))
+				{
+				}
+				if (ImGui::Checkbox("Occlusion Cull", &isOcclusionCulling_))
+				{
+					isOcclusionReset_ = true;
+				}
+				if (ImGui::Checkbox("Freeze Cull", &isFreezeCull_))
+				{
+					isOcclusionReset_ = true;
+				}
+				const char* kRenderResItems[] = {
+					"2560 x 1440",
+					"1920 x 1080",
+					"1280 x 720",
 				};
-				renderWidth_ = kRenderSize[currRenderRes_ * 2 + 0];
-				renderHeight_ = kRenderSize[currRenderRes_ * 2 + 1];
+				if (ImGui::Combo("Render Res", &currRenderRes_, kRenderResItems, ARRAYSIZE(kRenderResItems)))
+				{
+					// recreate render targets.
+					const int kRenderSize[] = {
+						2560, 1440,
+						1920, 1080,
+						1280, 720,
+					};
+					renderWidth_ = kRenderSize[currRenderRes_ * 2 + 0];
+					renderHeight_ = kRenderSize[currRenderRes_ * 2 + 1];
 
-				gbuffers_.Destroy();
-				accumTemp_.Destroy();
-				HiZ_.Destroy();
-				ldrTarget_.Destroy();
-				if (!gbuffers_.Initialize(&device_, renderWidth_, renderHeight_))
-				{
-					assert(!"Error: Recreate gbuffers.");
-				}
-				for (int i = 0; i < ARRAYSIZE(accumRTs_); i++)
-				{
-					accumRTs_[i].Destroy();
-					if (!accumRTs_[i].Initialize(&device_, renderWidth_, renderHeight_, DXGI_FORMAT_R11G11B10_FLOAT, true))
+					gbuffers_.Destroy();
+					accumTemp_.Destroy();
+					HiZ_.Destroy();
+					ldrTarget_.Destroy();
+					if (!gbuffers_.Initialize(&device_, renderWidth_, renderHeight_))
 					{
-						assert(!"Error: Recreate accumRTs");
+						assert(!"Error: Recreate gbuffers.");
+					}
+					for (int i = 0; i < ARRAYSIZE(accumRTs_); i++)
+					{
+						accumRTs_[i].Destroy();
+						if (!accumRTs_[i].Initialize(&device_, renderWidth_, renderHeight_, DXGI_FORMAT_R11G11B10_FLOAT, true))
+						{
+							assert(!"Error: Recreate accumRTs");
+						}
+					}
+					if (!accumTemp_.Initialize(&device_, renderWidth_, renderHeight_, DXGI_FORMAT_R11G11B10_FLOAT, true))
+					{
+						assert(!"Error: Recreate accumTemp");
+					}
+					if (!HiZ_.Initialize(&device_, renderWidth_, renderHeight_))
+					{
+						assert(!"Error: Recreate HiZ");
+					}
+					if (!ldrTarget_.Initialize(&device_, renderWidth_, renderHeight_, kSwapchainFormat, true))
+					{
+						assert(!"Error: Recreate LDR target");
+					}
+					{
+						sl12::TextureDesc desc{};
+						desc.format = DXGI_FORMAT_R8_UNORM;
+						desc.width = renderWidth_;
+						desc.height = renderHeight_;
+						desc.depth = 1;
+						desc.dimension = sl12::TextureDimension::Texture2D;
+						desc.mipLevels = 1;
+						desc.sampleCount = 1;
+						desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
+						desc.isRenderTarget = true;
+						desc.isUav = true;
+
+						rtShadowResult_.Destroy();
+						if (!rtShadowResult_.Initialize(&device_, desc))
+						{
+							assert(!"Error: Recreate Shadow Result");
+						}
 					}
 				}
-				if (!accumTemp_.Initialize(&device_, renderWidth_, renderHeight_, DXGI_FORMAT_R11G11B10_FLOAT, true))
+				const char* kUpscaleItems[] = {
+					"Bilinear",
+					"FSR",
+					"NIS",
+				};
+				if (ImGui::Combo("Upscaler", &currUpscaler_, kUpscaleItems, ARRAYSIZE(kUpscaleItems)))
 				{
-					assert(!"Error: Recreate accumTemp");
 				}
-				if (!HiZ_.Initialize(&device_, renderWidth_, renderHeight_))
+				if (currUpscaler_ != 0)
 				{
-					assert(!"Error: Recreate HiZ");
-				}
-				if (!ldrTarget_.Initialize(&device_, renderWidth_, renderHeight_, kSwapchainFormat, true))
-				{
-					assert(!"Error: Recreate LDR target");
-				}
-				{
-					sl12::TextureDesc desc{};
-					desc.format = DXGI_FORMAT_R8_UNORM;
-					desc.width = renderWidth_;
-					desc.height = renderHeight_;
-					desc.depth = 1;
-					desc.dimension = sl12::TextureDimension::Texture2D;
-					desc.mipLevels = 1;
-					desc.sampleCount = 1;
-					desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
-					desc.isRenderTarget = true;
-					desc.isUav = true;
-
-					rtShadowResult_.Destroy();
-					if (!rtShadowResult_.Initialize(&device_, desc))
+					if (ImGui::SliderFloat("Sharpness", &upscalerSharpness_, 0.0f, 1.0f))
 					{
-						assert(!"Error: Recreate Shadow Result");
 					}
 				}
-			}
-			const char* kUpscaleItems[] = {
-				"Bilinear",
-				"FSR",
-				"NIS",
-			};
-			if (ImGui::Combo("Upscaler", &currUpscaler_, kUpscaleItems, ARRAYSIZE(kUpscaleItems)))
-			{
-			}
-			if (currUpscaler_ != 0)
-			{
-				if (ImGui::SliderFloat("Sharpness", &upscalerSharpness_, 0.0f, 1.0f))
+				if (ImGui::Checkbox("LOD Bias", &enableLodBias_))
 				{
 				}
-			}
-			if (ImGui::Checkbox("LOD Bias", &enableLodBias_))
-			{
-			}
-			if (ImGui::Checkbox("Use TAA", &useTAA_))
-			{
-				taaFirstRender_ = true;
-			}
-			const char* kTonemapTypes[] = {
-				"None",
-				"Reinhard",
-				"GT",
-			};
-			if (ImGui::Combo("Tonemap", &tonemapType_, kTonemapTypes, ARRAYSIZE(kTonemapTypes)))
-			{
-			}
-			if (ImGui::SliderFloat("Base Luminance", &baseLuminance_, 80.0f, 300.0f))
-			{
-			}
-			if (ImGui::Checkbox("Test Gradient", &enableTestGradient_))
-			{
-			}
-			if (ImGui::Checkbox("UI Enable", &uiDrawEnable_))
-			{
-			}
-			const char* kUIDrawTypes[] = {
-				"AfterOETF Direct SRGB",
-				"AfterOETF Direct Rec2020",
-				"BeforeOETF Direct SRGB",
-				"BeforeOETF Direct Rec2020",
-				"AfterOETF Indirect",
-				"BeforeOETF InDirect",
-			};
-			if (ImGui::Combo("UI Draw Timing", &uiDrawType_, kUIDrawTypes, ARRAYSIZE(kUIDrawTypes)))
-			{
-			}
-			if (ImGui::SliderFloat("UI Intensity", &uiIntensity_, 1.0f, 10.0f))
-			{
-			}
-			if (ImGui::SliderFloat("UI Alpha", &uiAlpha_, 0.0f, 1.0f))
-			{
-			}
+				if (ImGui::Checkbox("Use TAA", &useTAA_))
+				{
+					taaFirstRender_ = true;
+				}
+				const char* kTonemapTypes[] = {
+					"None",
+					"Reinhard",
+					"GT",
+				};
+				if (ImGui::Combo("Tonemap", &tonemapType_, kTonemapTypes, ARRAYSIZE(kTonemapTypes)))
+				{
+				}
+				if (ImGui::SliderFloat("Base Luminance", &baseLuminance_, 80.0f, 300.0f))
+				{
+				}
+				if (ImGui::Checkbox("Test Gradient", &enableTestGradient_))
+				{
+				}
+				if (ImGui::Checkbox("UI Enable", &uiDrawEnable_))
+				{
+				}
+				const char* kUIDrawTypes[] = {
+					"AfterOETF Direct SRGB",
+					"AfterOETF Direct Rec2020",
+					"BeforeOETF Direct SRGB",
+					"BeforeOETF Direct Rec2020",
+					"AfterOETF Indirect",
+					"BeforeOETF InDirect",
+				};
+				if (ImGui::Combo("UI Draw Timing", &uiDrawType_, kUIDrawTypes, ARRAYSIZE(kUIDrawTypes)))
+				{
+				}
+				if (ImGui::SliderFloat("UI Intensity", &uiIntensity_, 1.0f, 10.0f))
+				{
+				}
+				if (ImGui::SliderFloat("UI Alpha", &uiAlpha_, 0.0f, 1.0f))
+				{
+				}
+				const char* kRenderColorSpaces[] = {
+					"Rec.709",
+					"Rec.2020",
+					"Rec.2020 with light color",
+				};
+				if (ImGui::Combo("Render Color Space", &renderColorSpace_, kRenderColorSpaces, ARRAYSIZE(kRenderColorSpaces)))
+				{
+				}
 
-			// draw count.
-			auto draw_count = (sl12::u32*)DrawCountReadbacks_[frameIndex].Map(nullptr);
-			ImGui::Text("Draw Count: %d", *draw_count);
-			DrawCountReadbacks_[frameIndex].Unmap();
+				// draw count.
+				auto draw_count = (sl12::u32*)DrawCountReadbacks_[frameIndex].Map(nullptr);
+				ImGui::Text("Draw Count: %d", *draw_count);
+				DrawCountReadbacks_[frameIndex].Unmap();
 
-			// time stamp.
-			uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
-			uint64_t timestamp[6];
+				// time stamp.
+				uint64_t freq = device_.GetGraphicsQueue().GetTimestampFrequency();
+				uint64_t timestamp[6];
 
-			gpuTimestamp_[frameIndex].GetTimestamp(0, 6, timestamp);
-			uint64_t all_time = timestamp[2] - timestamp[0];
-			float all_ms = (float)all_time / ((float)freq / 1000.0f);
+				gpuTimestamp_[frameIndex].GetTimestamp(0, 6, timestamp);
+				uint64_t all_time = timestamp[2] - timestamp[0];
+				float all_ms = (float)all_time / ((float)freq / 1000.0f);
 
-			ImGui::Text("All GPU: %f (ms)", all_ms);
+				ImGui::Text("All GPU: %f (ms)", all_ms);
+			}
 		}
 
 		pCmdList->PushMarker(0, "Frame");
@@ -1323,6 +1382,8 @@ public:
 
 		device_.LoadRenderCommands(pCmdList);
 
+		CreateSH(pCmdList);
+
 		// determine rendering sampler.
 		auto&& anisoSampler = (currUpscaler_ == 0) || !enableLodBias_
 			? anisoSamplers_[0]
@@ -1331,15 +1392,20 @@ public:
 		// update scene constant buffer.
 		UpdateSceneCB(frameIndex, useTAA_);
 
-		// build BVH.
-		bvhManager_->BuildGeometry(pCmdList);
-		sl12::RenderCommandsTempList tmpRenderCmds;
-		auto pBvhScene = bvhManager_->BuildScene(pCmdList, meshRenderCmds, kRTMaterialTableCount, tmpRenderCmds);
-		bvhManager_->CopyCompactionInfoOnGraphicsQueue(pCmdList);
+		sl12::BvhScene* pBvhScene = nullptr;
+		{
+			OPTICK_EVENT("BVH and SBT update");
 
-		// create ray tracing shader table.
-		bool bCreateRTShaderTableSuccess = CreateRayTracingShaderTable(tmpRenderCmds);
-		assert(bCreateRTShaderTableSuccess);
+			// build BVH.
+			bvhManager_->BuildGeometry(pCmdList);
+			sl12::RenderCommandsTempList tmpRenderCmds;
+			pBvhScene = bvhManager_->BuildScene(pCmdList, meshRenderCmds, kRTMaterialTableCount, tmpRenderCmds);
+			bvhManager_->CopyCompactionInfoOnGraphicsQueue(pCmdList);
+
+			// create ray tracing shader table.
+			bool bCreateRTShaderTableSuccess = CreateRayTracingShaderTable(tmpRenderCmds);
+			assert(bCreateRTShaderTableSuccess);
+		}
 
 		auto&& swapchain = device_.GetSwapchain();
 		pCmdList->TransitionBarrier(swapchain.GetCurrentTexture(kSwapchainBufferOffset), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -1364,6 +1430,7 @@ public:
 
 		// cluster culling.
 		{
+			OPTICK_EVENT("GPU::ClusterCulling");
 			GPU_MARKER(pCmdList, 1, "ClusterCulling");
 
 			pCmdList->TransitionBarrier(&clusterInfoBuffer_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -1381,6 +1448,7 @@ public:
 		// 1st phase culling.
 		if (!isFreezeCull_)
 		{
+			OPTICK_EVENT("GPU::1stPhaseCulling");
 			GPU_MARKER(pCmdList, 1, "1stPhaseCulling");
 
 			descSet_.Reset();
@@ -1541,6 +1609,7 @@ public:
 
 		// 1st phase depth pre pass.
 		{
+			OPTICK_EVENT("GPU::1stPhasePrePass");
 			GPU_MARKER(pCmdList, 1, "1stPhasePrePass");
 			RenderDepthPrePass(1);
 		}
@@ -1597,6 +1666,7 @@ public:
 		// if occlusion culling enabled, execute 2nd phase culling.
 		if (isOcclusionCulling_ && !isOcclusionReset_ && !isFreezeCull_)
 		{
+			OPTICK_EVENT("GPU::OcclusionCulling");
 			GPU_MARKER(pCmdList, 1, "OcclusionCulling");
 
 			// render HiZ
@@ -1718,6 +1788,7 @@ public:
 
 		// gbuffer pass.
 		{
+			OPTICK_EVENT("GPU::RenderGBuffer");
 			GPU_MARKER(pCmdList, 1, "RenderGBuffer");
 
 			auto myPso = &GBufferPSO_;
@@ -1801,12 +1872,14 @@ public:
 
 		// render HiZ
 		{
+			OPTICK_EVENT("GPU::RenderHiZ");
 			GPU_MARKER(pCmdList, 1, "RenderHiZ");
 			RenderHiZ();
 		}
 
 		// raytrace shadow.
 		{
+			OPTICK_EVENT("GPU::RaytradedShadow");
 			GPU_MARKER(pCmdList, 1, "RaytradedShadow");
 
 			pCmdList->TransitionBarrier(rtShadowResult_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -1852,6 +1925,7 @@ public:
 
 		// lighting.
 		{
+			OPTICK_EVENT("GPU::Lighting");
 			GPU_MARKER(pCmdList, 1, "Lighting");
 
 			auto&& target = useTAA_ ? accumTemp_ : currAccum;
@@ -1870,6 +1944,9 @@ public:
 			descSet_.SetCsSrv(5, pointLightsPosSRV_.GetDescInfo().cpuHandle);
 			descSet_.SetCsSrv(6, pointLightsColorSRV_.GetDescInfo().cpuHandle);
 			descSet_.SetCsSrv(7, clusterInfoSRV_.GetDescInfo().cpuHandle);
+			descSet_.SetCsSrv(8, hHDRIRes_.GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle);
+			descSet_.SetCsSrv(9, sh9BV_.GetDescInfo().cpuHandle);
+			descSet_.SetCsSampler(0, hdriSampler_.GetDescInfo().cpuHandle);
 			descSet_.SetCsUav(0, target.uav->GetDescInfo().cpuHandle);
 
 			d3dCmdList->SetPipelineState(LightingPSO_.GetPSO());
@@ -1882,6 +1959,7 @@ public:
 		// TAA
 		if (useTAA_)
 		{
+			OPTICK_EVENT("GPU::TAA");
 			GPU_MARKER(pCmdList, 1, "TAA");
 
 			pCmdList->TransitionBarrier(accumTemp_.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -1938,6 +2016,7 @@ public:
 
 		// Tonemap
 		{
+			OPTICK_EVENT("GPU::Tonemap");
 			GPU_MARKER(pCmdList, 1, "Tonemap");
 
 			TonemapCB cb;
@@ -1948,6 +2027,7 @@ public:
 			}
 			cb.baseLuminance = baseLuminance_;
 			cb.maxLuminance = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? 100.0f : device_.GetMaxLuminance();
+			cb.renderColorSpace = renderColorSpace_;
 			auto hCB = cbvCache_.GetUnusedConstBuffer(sizeof(cb), &cb);
 
 			pCmdList->TransitionBarrier(currAccum.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -1973,6 +2053,7 @@ public:
 		// FSR
 		if (upscalerType == 1)
 		{
+			OPTICK_EVENT("GPU::FSR");
 			GPU_MARKER(pCmdList, 1, "FSR");
 
 			// create constant buffer.
@@ -2042,6 +2123,7 @@ public:
 		// NIS
 		else if (upscalerType == 2)
 		{
+			OPTICK_EVENT("GPU::NIS");
 			GPU_MARKER(pCmdList, 1, "NIS");
 
 			auto RS = colorSpaceType_ == sl12::ColorSpaceType::Rec709 ? &NisScalerRS_ : &NisScalerHDRRS_;
@@ -2170,6 +2252,7 @@ public:
 		// UI indirect draw.
 		if (uiDrawEnable_ && isUIDrawIndirect)
 		{
+			OPTICK_EVENT("GPU::IndirectUI");
 			GPU_MARKER(pCmdList, 1, "IndirectUI");
 
 			pCmdList->TransitionBarrier(uiTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -2203,6 +2286,7 @@ public:
 		// UI draw before OETF.
 		if (uiDrawEnable_ && isUIDrawBeforeOETF)
 		{
+			OPTICK_EVENT("GPU::BeforeOETF UI");
 			GPU_MARKER(pCmdList, 1, "BeforeOETF UI");
 
 			pCmdList->TransitionBarrier(eotfTarget_.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -2369,6 +2453,7 @@ public:
 		// UI.
 		if (uiDrawEnable_ && !isUIDrawBeforeOETF)
 		{
+			OPTICK_EVENT("GPU::AfterOETF UI");
 			GPU_MARKER(pCmdList, 1, "AfterOETF UI");
 
 			if (!isUIDrawIndirect)
@@ -2643,6 +2728,7 @@ private:
 			cb->screenInfo.w = (float)renderHeight_;
 			DirectX::XMStoreFloat4(&cb->camPos, cp);
 			cb->isOcclusionCull = isOcclusionCulling_;
+			cb->renderColorSpace = renderColorSpace_;
 			sceneCBs_[frameIndex].Unmap();
 		}
 
@@ -2670,6 +2756,8 @@ private:
 
 	void ControlCamera()
 	{
+		OPTICK_EVENT();
+
 		// カメラ操作系入力
 		const float kRotAngle = 1.0f;
 		const float kMoveSpeed = 0.2f;
@@ -3424,6 +3512,79 @@ private:
 		return true;
 	}
 
+	void CreateSH(sl12::CommandList* pCmdList)
+	{
+		if (sh9Buffer_.GetResourceDep() == nullptr)
+		{
+			// create buffer.
+			if (!sh9Buffer_.Initialize(&device_, sizeof(DirectX::XMFLOAT3) * 9, sizeof(DirectX::XMFLOAT3) * 9, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			{
+				assert(!"Do NOT create SH buffers.");
+			}
+			if (!sh9BV_.Initialize(&device_, &sh9Buffer_, 0, 1, sizeof(DirectX::XMFLOAT3) * 9))
+			{
+				assert(!"Do NOT create SH buffers.");
+			}
+			if (!sh9UAV_.Initialize(&device_, &sh9Buffer_, 0, 1, sizeof(DirectX::XMFLOAT3) * 9, 0))
+			{
+				assert(!"Do NOT create SH buffers.");
+			}
+
+			// create work buffer.
+			sl12::Buffer*	pWork0 = new sl12::Buffer();
+			sl12::Buffer*	pWork1 = new sl12::Buffer();;
+			sl12::UnorderedAccessView*	pWorkUAV0 = new sl12::UnorderedAccessView();
+			sl12::UnorderedAccessView*	pWorkUAV1 = new sl12::UnorderedAccessView();
+			size_t workSize0 = sizeof(DirectX::XMFLOAT3) * 9 * 6;
+			size_t workSize1 = sizeof(float) * 6;
+
+			if (!pWork0->Initialize(&device_, workSize0, sizeof(DirectX::XMFLOAT3) * 9, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			{
+				assert(!"Do NOT create SH work buffers.");
+			}
+			if (!pWork1->Initialize(&device_, workSize1, sizeof(float), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			{
+				assert(!"Do NOT create SH work buffers.");
+			}
+			if (!pWorkUAV0->Initialize(&device_, pWork0, 0, 6, sizeof(DirectX::XMFLOAT3) * 9, 0))
+			{
+				assert(!"Do NOT create SH work buffers.");
+			}
+			if (!pWorkUAV1->Initialize(&device_, pWork1, 0, 6, sizeof(float), 0))
+			{
+				assert(!"Do NOT create SH work buffers.");
+			}
+
+			// compute sh.
+			descSet_.Reset();
+			descSet_.SetCsSrv(0, hHDRIRes_.GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle);
+			descSet_.SetCsUav(0, sh9UAV_.GetDescInfo().cpuHandle);
+			descSet_.SetCsUav(1, pWorkUAV0->GetDescInfo().cpuHandle);
+			descSet_.SetCsUav(2, pWorkUAV1->GetDescInfo().cpuHandle);
+			descSet_.SetCsSampler(0, hdriSampler_.GetDescInfo().cpuHandle);
+
+			pCmdList->GetLatestCommandList()->SetPipelineState(ComputeSHPerFacePSO_ .GetPSO());
+			pCmdList->SetComputeRootSignatureAndDescriptorSet(&ComputeSHRS_, &descSet_);
+
+			pCmdList->GetLatestCommandList()->Dispatch(6, 1, 1);
+
+			pCmdList->UAVBarrier(pWork0);
+			pCmdList->UAVBarrier(pWork1);
+
+			pCmdList->GetLatestCommandList()->SetPipelineState(ComputeSHAllPSO_.GetPSO());
+			pCmdList->SetComputeRootSignatureAndDescriptorSet(&ComputeSHRS_, &descSet_);
+
+			pCmdList->GetLatestCommandList()->Dispatch(1, 1, 1);
+
+			// finish.
+			pCmdList->TransitionBarrier(&sh9Buffer_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+			device_.KillObject(pWorkUAV0);
+			device_.KillObject(pWorkUAV1);
+			device_.KillObject(pWork0);
+			device_.KillObject(pWork1);
+		}
+	}
+
 private:
 	struct RaytracingResult
 	{
@@ -3806,6 +3967,7 @@ private:
 	sl12::Sampler			anisoSamplers_[3];
 	sl12::Sampler			clampPointSampler_;
 	sl12::Sampler			clampLinearSampler_;
+	sl12::Sampler			hdriSampler_;
 
 	sl12::Buffer				sceneCBs_[kBufferCount];
 	sl12::ConstantBufferView	sceneCBVs_[kBufferCount];
@@ -3847,12 +4009,16 @@ private:
 	sl12::BufferView			clusterInfoSRV_;
 	sl12::UnorderedAccessView	clusterInfoUAV_;
 
+	sl12::Buffer				sh9Buffer_;
+	sl12::BufferView			sh9BV_;
+	sl12::UnorderedAccessView	sh9UAV_;
+
 	ID3D12CommandSignature*		commandSig_ = nullptr;
 
 	sl12::RootSignature			PrePassRS_, GBufferRS_, TonemapRS_, OetfRS_, EotfRS_, ReduceDepth1stRS_, ReduceDepth2ndRS_, TargetCopyRS_, UIDrawRS_, UIIndirectRS_;
-	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_;
+	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_, ComputeSHRS_;
 	sl12::GraphicsPipelineState	PrePassPSO_, GBufferPSO_, TonemapPSO_, OetfPSO_, EotfPSO_, ReduceDepth1stPSO_, ReduceDepth2ndPSO_, TargetCopyPSO_, UIDrawPSO_, UIDrawOffPSO_, UIIndirectPSO_;
-	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_;
+	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_, ComputeSHPerFacePSO_, ComputeSHAllPSO_;
 
 	sl12::DescriptorSet			descSet_;
 
@@ -3900,6 +4066,7 @@ private:
 	int						uiDrawType_ = 5;
 	float					uiIntensity_ = 1.0f;
 	float					uiAlpha_ = 1.0f;
+	int						renderColorSpace_ = 0;		// 0: sRGB, 1: Rec.2020(render only), 2: Rec.2020(with light)
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 	DirectX::XMFLOAT4		frustumCamPos_;
 
@@ -3909,6 +4076,7 @@ private:
 	sl12::ResourceHandle	hSponzaRes_;
 	sl12::ResourceHandle	hSuzanneRes_;
 	sl12::ResourceHandle	hBlueNoiseRes_;
+	sl12::ResourceHandle	hHDRIRes_;
 	sl12::ResourceHandle	hUITextureRes_[UI_MAX];
 
 	sl12::ConstantBufferCache	cbvCache_;

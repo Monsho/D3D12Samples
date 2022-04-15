@@ -50,7 +50,7 @@ namespace sl12
 		}
 
 		// コマンド発行
-		if (!pBlas_->Build(pCmdList, bottomInput))
+		if (!pBlas_->Build(pDevice, pCmdList, bottomInput))
 		{
 			delete pBlas_;
 			return false;

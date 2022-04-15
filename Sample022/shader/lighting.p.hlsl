@@ -1,4 +1,5 @@
 #include "common.hlsli"
+#include "rtxgi/rtxgi_common_defines.hlsli"
 #include "ddgi/Irradiance.hlsl"
 #include "ddgi/../../include/rtxgi/ddgi/DDGIVolumeDescGPU.h"
 
@@ -11,7 +12,6 @@ struct PSInput
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
 ConstantBuffer<LightCB>					cbLight			: register(b1);
 ConstantBuffer<ReflectionCB>			cbReflection	: register(b2);
-ConstantBuffer<DDGIVolumeDescGPU>		cbDDGIVolume	: register(b3);
 
 Texture2D			texNormal			: register(t0);
 Texture2D			texBaseColor		: register(t1);
@@ -20,15 +20,14 @@ Texture2D<float>	texDepth			: register(t3);
 Texture2D<float2>	texScreenShadow		: register(t4);
 Texture2D			texReflection		: register(t5);
 Texture2D			texSkyHdr			: register(t6);
-Texture2D<float4>	DDGIProbeIrradianceSRV	: register(t7);
-Texture2D<float4>	DDGIProbeDistanceSRV	: register(t8);
-
-RWTexture2D<float4>	DDGIProbeOffsets	: register(u0);
-RWTexture2D<uint>	DDGIProbeStates		: register(u1);
+StructuredBuffer<DDGIVolumeDescGPUPacked>	DDGIVolumeDesc			: register(t7);
+Texture2D<float4>							DDGIProbeIrradiance		: register(t8);
+Texture2D<float4>							DDGIProbeDistance		: register(t9);
+Texture2D<float4>							DDGIProbeData			: register(t10);
 
 SamplerState		texColor_s			: register(s0);
 SamplerState		texSkyHdr_s			: register(s1);
-SamplerState		TrilinearSampler	: register(s2);
+SamplerState		BilinearWrapSampler	: register(s2);
 
 float4 main(PSInput In) : SV_TARGET0
 {
@@ -87,24 +86,33 @@ float4 main(PSInput In) : SV_TARGET0
 
 	// RTXGI compute irradiance.
 	float3 irradiance = 0;
+	if (cbLight.giIntensity > 0.0)
 	{
-		float3 surfaceBias = DDGIGetSurfaceBias(normalInWS, -V, cbDDGIVolume);
+		DDGIVolumeDescGPU volume = UnpackDDGIVolumeDescGPU(DDGIVolumeDesc[0]);	// only one DDGIVolume.
+		float3 surfaceBias = DDGIGetSurfaceBias(normalInWS, -V, volume);
 
+		// setup ddgi resources.
 		DDGIVolumeResources resources;
-		resources.probeIrradianceSRV = DDGIProbeIrradianceSRV;
-		resources.probeDistanceSRV = DDGIProbeDistanceSRV;
-		resources.trilinearSampler = TrilinearSampler;
-		resources.probeOffsets = DDGIProbeOffsets;
-		resources.probeStates = DDGIProbeStates;
+		resources.probeIrradiance = DDGIProbeIrradiance;
+		resources.probeDistance = DDGIProbeDistance;
+		resources.probeData = DDGIProbeData;
+		resources.bilinearSampler = BilinearWrapSampler;
 
-		irradiance = DDGIGetVolumeIrradiance(
-			worldPos.xyz,
-			surfaceBias,
-			normalInWS,
-			cbDDGIVolume,
-			resources);
+		// get volume blend weight
+		float volumeBlendWeight = DDGIGetVolumeBlendWeight(worldPos.xyz, volume);
 
-		// todo: multiply ao.
+		if (volumeBlendWeight > 0.0)
+		{
+			// get irradiance.
+			irradiance = DDGIGetVolumeIrradiance(
+				worldPos.xyz,
+				surfaceBias,
+				normalInWS,
+				volume,
+				resources);
+			// attenuation.
+			irradiance *= volumeBlendWeight;
+		}
 	}
 
 	float3 finalColor =

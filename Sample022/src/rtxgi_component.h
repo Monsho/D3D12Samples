@@ -1,6 +1,8 @@
 ﻿#pragma once
 
+#include "../shader/rtxgi/rtxgi_common_defines.h"
 #include <rtxgi/ddgi/DDGIVolume.h>
+#include <rtxgi/ddgi/gfx/DDGIVolume_D3D12.h>
 
 #include <memory>
 #include <sl12/device.h>
@@ -20,11 +22,15 @@ class RtxgiComponent
 		{
 			IrradianceBlending,
 			DistanceBlending,
-			BorderRowUpdate,
-			BorderColumnUpdate,
+			BorderRowUpdateIrradiance,
+			BorderClmUpdateIrradiance,
+			BorderRowUpdateDistance,
+			BorderClmUpdateDistance,
 			ProbeRelocation,
-			StateClassifier,
-			StateActivateAll,
+			ProbeRelocationReset,
+			ProbeClassification,
+			ProbeClassificationReset,
+
 			Max
 		};
 	};
@@ -33,11 +39,11 @@ class RtxgiComponent
 	{
 		enum Type
 		{
-			Radiance,
+			RayData,
 			Irradiance,
 			Distance,
-			Offset,
-			State,
+			ProbeData,
+
 			Max
 		};
 	};
@@ -55,10 +61,16 @@ public:
 	void Destroy();
 
 	void UpdateVolume(const DirectX::XMFLOAT3* pTranslate);
+	void ClearProbes(sl12::CommandList* pCmdList);
+	void UploadConstants(sl12::CommandList* pCmdList, sl12::u32 frameIndex);
 	void UpdateProbes(sl12::CommandList* pCmdList);
 	void RelocateProbes(sl12::CommandList* pCmdList, float distanceScale);
 	void ClassifyProbes(sl12::CommandList* pCmdList);
 
+	sl12::BufferView* GetConstantSTBView()
+	{
+		return &constantSTBView_;
+	}
 	sl12::TextureView* GetIrradianceSRV()
 	{
 		return &textureSrvs_[ETextureType::Irradiance];
@@ -67,27 +79,27 @@ public:
 	{
 		return &textureSrvs_[ETextureType::Distance];
 	}
-	sl12::Texture* GetRadiance()
+	sl12::TextureView* GetProbeDataSRV()
 	{
-		return &textures_[ETextureType::Radiance];
+		return &textureSrvs_[ETextureType::ProbeData];
 	}
-	sl12::UnorderedAccessView* GetRadianceUAV()
+	sl12::Texture* GetRayData()
 	{
-		return &textureUavs_[ETextureType::Radiance];
+		return &textures_[ETextureType::RayData];
 	}
-	sl12::UnorderedAccessView* GetOffsetUAV()
+	sl12::UnorderedAccessView* GetRayDataUAV()
 	{
-		return &textureUavs_[ETextureType::Offset];
+		return &textureUavs_[ETextureType::RayData];
 	}
-	sl12::UnorderedAccessView* GetStateUAV()
+	sl12::UnorderedAccessView* GetProbeDataUAV()
 	{
-		return &textureUavs_[ETextureType::State];
+		return &textureUavs_[ETextureType::ProbeData];
 	}
 	sl12::ConstantBufferView* GetCurrentVolumeCBV()
 	{
 		return &volumeCBVs_[flipIndex_];
 	}
-	const rtxgi::DDGIVolume* GetDDGIVolume() const
+	const rtxgi::d3d12::DDGIVolume* GetDDGIVolume() const
 	{
 		return ddgiVolume_.get();
 	}
@@ -100,9 +112,9 @@ public:
 	{
 		ddgiVolume_->SetProbeHysteresis(v);
 	}
-	void SetDescChangeThreshold(float v)
+	void SetDescIrradianceThreshold(float v)
 	{
-		ddgiVolume_->SetProbeChangeThreshold(v);
+		ddgiVolume_->SetProbeIrradianceThreshold(v);
 	}
 	void SetDescBrightnessThreshold(float v)
 	{
@@ -116,14 +128,18 @@ private:
 
 private:
 	// rtxgi
-	std::unique_ptr<rtxgi::DDGIVolume>	ddgiVolume_ = nullptr;
-	rtxgi::DDGIVolumeDesc				ddgiVolumeDesc_{};
-	rtxgi::DDGIVolumeResources			ddgiVolumeResource_{};
+	std::unique_ptr<rtxgi::d3d12::DDGIVolume>	ddgiVolume_ = nullptr;
+	rtxgi::DDGIVolumeDesc						ddgiVolumeDesc_{};
+	rtxgi::d3d12::DDGIVolumeResources			ddgiVolumeResource_{};
 
 	// system objects
 	sl12::Device*				pParentDevice_ = nullptr;
 	sl12::Shader				shaders_[EShaderType::Max];
-	ID3D12DescriptorHeap*		pDescriptorHeap_ = nullptr;
+	ID3D12DescriptorHeap*		pSrvDescriptorHeap_ = nullptr;
+	ID3D12DescriptorHeap*		pRtvDescriptorHeap_ = nullptr;
+	sl12::Buffer				constantSTB_;
+	sl12::Buffer				constantSTBUpload_;
+	sl12::BufferView			constantSTBView_;
 	sl12::Buffer				volumeCBs_[2];
 	sl12::ConstantBufferView	volumeCBVs_[2];
 	sl12::Texture				textures_[ETextureType::Max];

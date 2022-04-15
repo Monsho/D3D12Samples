@@ -19,3 +19,9 @@
 [submodule "External/cereal"]
 	path = External/cereal
 	url = https://github.com/USCiLab/cereal
+[submodule "External/optick"]
+	path = External/optick
+	url = https://github.com/bombomby/optick
+[submodule "External/RTXGI"]
+	path = External/RTXGI
+	url = https://github.com/NVIDIAGameWorks/RTXGI.git

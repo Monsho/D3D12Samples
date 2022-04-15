@@ -1,53 +1,72 @@
 #define RTXGI_DDGI_PROBE_RELOCATION			1
 #define RTXGI_DDGI_PROBE_STATE_CLASSIFIER	1
 
+#include "rtxgi_common_defines.hlsli"
 #include "ddgi/Irradiance.hlsl"
 #include "ddgi/../../include/rtxgi/ddgi/DDGIVolumeDescGPU.h"
 #include "../common.hlsli"
 #include "../payload.hlsli"
 #include "../raytrace.hlsli"
 
-#define TMax			10000.0
+#define kShadowRayTMax			10000.0
 
 // global
-RaytracingAccelerationStructure			Scene					: register(t0, space0);
-Texture2D<float4>						DDGIProbeIrradianceSRV	: register(t1);
-Texture2D<float4>						DDGIProbeDistanceSRV	: register(t2);
-Texture2D								SkyIrrTex				: register(t3);
+RaytracingAccelerationStructure				Scene					: register(t0, space0);
+StructuredBuffer<DDGIVolumeDescGPUPacked>	DDGIVolumeDesc			: register(t1);
+Texture2D<float4>							DDGIProbeIrradiance		: register(t2);
+Texture2D<float4>							DDGIProbeDistance		: register(t3);
+Texture2D<float4>							DDGIProbeData			: register(t4);
+Texture2D									SkyIrrTex				: register(t5);
 
-RWTexture2D<float4>						DDGIProbeRTRadiance		: register(u0);
-RWTexture2D<float4>						DDGIProbeOffsets		: register(u1);
-RWTexture2D<uint>						DDGIProbeStates			: register(u2);
+RWTexture2D<float4>							DDGIRayData				: register(u0);
 
-ConstantBuffer<DDGIVolumeDescGPU>		cbDDGIVolume			: register(b0);
-ConstantBuffer<LightCB>					cbLight					: register(b1);
+ConstantBuffer<DDGIConstants>				cbDDGIConst				: register(b0);
+ConstantBuffer<LightCB>						cbLight					: register(b1);
 
-SamplerState							TrilinearSampler		: register(s0);
-SamplerState							SkyIrrTex_s				: register(s1);
+SamplerState								BilinearWrapSampler		: register(s0);
+SamplerState								SkyIrrTex_s				: register(s1);
 
 
 [shader("raygeneration")]
 void ProbeLightingRGS()
 {
-	float4 result = 0.f;
-
 	uint2 DispatchIndex = DispatchRaysIndex().xy;
 	int rayIndex = DispatchIndex.x;						// index of ray within a probe
 	int probeIndex = DispatchIndex.y;					// index of current probe
 
-	int2 texelPosition = DDGIGetProbeTexelPosition(probeIndex, cbDDGIVolume.probeGridCounts);
-	int  probeState = DDGIProbeStates[texelPosition];
-	if (probeState == PROBE_STATE_INACTIVE)
+	uint volumeIndex = cbDDGIConst.volumeIndex;
+
+	// get volume desc.
+	DDGIVolumeDescGPU volume = UnpackDDGIVolumeDescGPU(DDGIVolumeDesc[volumeIndex]);
+
+	// get probe grid coords.
+	float3 probeCoords = DDGIGetProbeCoords(probeIndex, volume);
+
+	// adjust probe index for scroll.
+	probeIndex = DDGIGetScrollingProbeIndex(probeCoords, volume);
+
+	// get probe state.
+	float probeState = DDGILoadProbeState(probeIndex, DDGIProbeData, volume);
+
+	// early out.
+	if (probeState == RTXGI_DDGI_PROBE_STATE_INACTIVE && rayIndex >= RTXGI_DDGI_NUM_FIXED_RAYS)
 	{
-		//return;		// if the probe is inactive, do not shoot rays
+		return;
 	}
 
-	// get ray origin and direction.
-	float3 probeWorldPosition = DDGIGetProbeWorldPositionWithOffset(probeIndex, cbDDGIVolume.origin, cbDDGIVolume.probeGridCounts, cbDDGIVolume.probeGridSpacing, DDGIProbeOffsets);
-	float3 probeRayDirection = DDGIGetProbeRayDirection(rayIndex, cbDDGIVolume.numRaysPerProbe, cbDDGIVolume.probeRayRotationTransform);
+	// get probe's world position and normalized ray direction.
+	float3 probeWorldPosition = DDGIGetProbeWorldPosition(probeCoords, volume, DDGIProbeData);
+	float3 probeRayDirection = DDGIGetProbeRayDirection(rayIndex, volume);
+
+	// get output coords.
+	uint2 texCoords = uint2(rayIndex, probeIndex);
 
 	// trace probe ray.
-	RayDesc ray = { probeWorldPosition, 0.0, probeRayDirection, 1e27 };
+	RayDesc ray;
+	ray.Origin = probeWorldPosition;
+	ray.Direction = probeRayDirection;
+	ray.TMin = 0.0;
+	ray.TMax = volume.probeMaxRayDistance;
 	MaterialPayload payload = (MaterialPayload)0;
 	payload.hitT = -1.0;
 	TraceRay(Scene, RAY_FLAG_NONE, ~0, kMaterialContribution, kGeometricContributionMult, 0, ray, payload);
@@ -55,7 +74,9 @@ void ProbeLightingRGS()
 	// ray miss.
 	if (payload.hitT < 0.0)
 	{
-		DDGIProbeRTRadiance[DispatchIndex.xy] = float4(0, 0, 0, 1e27);
+		//float3 SkyLight = float3(1,0,0);
+		float3 SkyLight = SkyTextureLookup(SkyIrrTex, SkyIrrTex_s, probeRayDirection) * cbLight.skyPower;
+		DDGIStoreProbeRayMiss(DDGIRayData, texCoords, volume, SkyLight);
 		return;
 	}
 
@@ -65,7 +86,14 @@ void ProbeLightingRGS()
 	// ray hit back face.
 	if (mat_param.flag & kFlagBackFaceHit)
 	{
-		DDGIProbeRTRadiance[DispatchIndex.xy] = float4(0.f, 0.f, 0.f, -mat_param.hitT * 0.2f);
+		DDGIStoreProbeRayBackfaceHit(DDGIRayData, texCoords, volume, payload.hitT);
+		return;
+	}
+
+	// early out: store ray hit distance only.
+	if((volume.probeRelocationEnabled || volume.probeClassificationEnabled) && rayIndex < RTXGI_DDGI_NUM_FIXED_RAYS)
+	{
+		DDGIStoreProbeRayFrontfaceHit(DDGIRayData, texCoords, volume, payload.hitT);
 		return;
 	}
 
@@ -79,7 +107,11 @@ void ProbeLightingRGS()
 		float3 shadow_dir = -cbLight.lightDir.xyz;
 
 		// shadow ray trace.
-		RayDesc shadow_ray = { shadow_orig, 0.0, shadow_dir, TMax };
+		RayDesc shadow_ray;
+		shadow_ray.Origin = shadow_orig;
+		shadow_ray.Direction = shadow_dir;
+		shadow_ray.TMin = 0.0;
+		shadow_ray.TMax = kShadowRayTMax;
 		HitPayload shadow_pay;
 		shadow_pay.hitT = -1;
 		TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, kShadowContribution, kGeometricContributionMult, 1, shadow_ray, shadow_pay);
@@ -128,35 +160,36 @@ void ProbeLightingRGS()
 	// calc irradiance recursive.
 	float3 irradiance = 0;
 	{
-		float3 surfaceBias = DDGIGetSurfaceBias(mat_param.normal, ray.Direction, cbDDGIVolume);
+		float3 surfaceBias = DDGIGetSurfaceBias(mat_param.normal, ray.Direction, volume);
 
+		// setup ddgi resources.
 		DDGIVolumeResources resources;
-		resources.probeIrradianceSRV = DDGIProbeIrradianceSRV;
-		resources.probeDistanceSRV = DDGIProbeDistanceSRV;
-		resources.trilinearSampler = TrilinearSampler;
-		resources.probeOffsets = DDGIProbeOffsets;
-		resources.probeStates = DDGIProbeStates;
+		resources.probeIrradiance = DDGIProbeIrradiance;
+		resources.probeDistance = DDGIProbeDistance;
+		resources.probeData = DDGIProbeData;
+		resources.bilinearSampler = BilinearWrapSampler;
 
-		float3 hit_pos = probeWorldPosition + probeRayDirection * payload.hitT;
-		float volumeBlendWeight = DDGIGetVolumeBlendWeight(hit_pos, cbDDGIVolume);
+		// get volume blend weight
+		float volumeBlendWeight = DDGIGetVolumeBlendWeight(shadow_pos, volume);
 
-		// if inside volume, blend weight > 0.
-		if (volumeBlendWeight > 0)
+		if (volumeBlendWeight > 0.0)
 		{
+			// get irradiance.
 			irradiance = DDGIGetVolumeIrradiance(
-				hit_pos,
+				shadow_pos,
 				surfaceBias,
 				mat_param.normal,
-				cbDDGIVolume,
+				volume,
 				resources);
 
+			// attenuation.
 			irradiance *= volumeBlendWeight;
 		}
 	}
 
 	// output.
-	result = float4(diffuse + ((diffuseColor / PI) * irradiance), mat_param.hitT);
-	DDGIProbeRTRadiance[DispatchIndex.xy] = result;
+	float3 radiance = diffuse + ((diffuseColor / PI) * irradiance);
+	DDGIStoreProbeRayFrontfaceHit(DDGIRayData, texCoords, volume, radiance, payload.hitT);
 }
 
 [shader("miss")]

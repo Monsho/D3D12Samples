@@ -1,4 +1,5 @@
 #include "common.hlsli"
+#include "rtxgi/rtxgi_common_defines.hlsli"
 #include "ddgi/Irradiance.hlsl"
 #include "ddgi/../../include/rtxgi/ddgi/DDGIVolumeDescGPU.h"
 
@@ -11,15 +12,13 @@ struct PSInput
 
 ConstantBuffer<SceneCB>				cbScene			: register(b0);
 ConstantBuffer<LightCB>				cbLight			: register(b1);
-ConstantBuffer<DDGIVolumeDescGPU>	cbDDGIVolume	: register(b2);
 
-Texture2D<float4>	DDGIProbeIrradianceSRV	: register(t0);
-Texture2D<float4>	DDGIProbeDistanceSRV	: register(t1);
+StructuredBuffer<DDGIVolumeDescGPUPacked>	DDGIVolumeDesc			: register(t0);
+Texture2D<float4>							DDGIProbeIrradiance		: register(t1);
+Texture2D<float4>							DDGIProbeDistance		: register(t2);
+Texture2D<float4>							DDGIProbeData			: register(t3);
 
-RWTexture2D<float4>	DDGIProbeOffsets	: register(u0);
-RWTexture2D<uint>	DDGIProbeStates		: register(u1);
-
-SamplerState		TrilinearSampler	: register(s0);
+SamplerState		BilinearWrapSampler	: register(s0);
 
 float4 main(PSInput In) : SV_TARGET0
 {
@@ -28,20 +27,20 @@ float4 main(PSInput In) : SV_TARGET0
 	// RTXGI compute irradiance.
 	float3 irradiance = 0;
 	{
-		float3 surfaceBias = DDGIGetSurfaceBias(In.normal, -V, cbDDGIVolume);
+		DDGIVolumeDescGPU volume = UnpackDDGIVolumeDescGPU(DDGIVolumeDesc[0]);	// only one DDGIVolume.
+		float3 surfaceBias = DDGIGetSurfaceBias(In.normal, -V, volume);
 
 		DDGIVolumeResources resources;
-		resources.probeIrradianceSRV = DDGIProbeIrradianceSRV;
-		resources.probeDistanceSRV = DDGIProbeDistanceSRV;
-		resources.trilinearSampler = TrilinearSampler;
-		resources.probeOffsets = DDGIProbeOffsets;
-		resources.probeStates = DDGIProbeStates;
+		resources.probeIrradiance = DDGIProbeIrradiance;
+		resources.probeDistance = DDGIProbeDistance;
+		resources.probeData = DDGIProbeData;
+		resources.bilinearSampler = BilinearWrapSampler;
 
 		irradiance = DDGIGetVolumeIrradiance(
 			In.posInWS,
 			surfaceBias,
 			In.normal,
-			cbDDGIVolume,
+			volume,
 			resources);
 	}
 	irradiance *= cbLight.giIntensity;

@@ -1,4 +1,5 @@
 #include "common.hlsli"
+#include "rtxgi/rtxgi_common_defines.hlsli"
 #include "ddgi/Irradiance.hlsl"
 #include "ddgi/../../include/rtxgi/ddgi/DDGIVolumeDescGPU.h"
 
@@ -15,9 +16,9 @@ struct VSOutput
 };
 
 ConstantBuffer<SceneCB>				cbScene			: register(b0);
-ConstantBuffer<DDGIVolumeDescGPU>	cbDDGIVolume	: register(b1);
 
-//RWTexture2D<float4>	DDGIProbeOffsets	: register(u0);
+StructuredBuffer<DDGIVolumeDescGPUPacked>	DDGIVolumeDesc			: register(t0);
+Texture2D<float4>							DDGIProbeData			: register(t1);
 
 VSOutput main(const VSInput In, uint instanceIndex : SV_InstanceID)
 {
@@ -25,8 +26,12 @@ VSOutput main(const VSInput In, uint instanceIndex : SV_InstanceID)
 
 	VSOutput Out;
 
-	float3 probeWorldPosition = DDGIGetProbeWorldPosition(instanceIndex, cbDDGIVolume.origin, cbDDGIVolume.probeGridCounts, cbDDGIVolume.probeGridSpacing);
-	//float3 probeWorldPosition = DDGIGetProbeWorldPositionWithOffset(instanceIndex, cbDDGIVolume.origin, cbDDGIVolume.probeGridCounts, cbDDGIVolume.probeGridSpacing, DDGIProbeOffsets);
+	// get volume desc.
+	DDGIVolumeDescGPU volume = UnpackDDGIVolumeDescGPU(DDGIVolumeDesc[0]);
+
+	// get probe world position.
+	float3 probeCoords = DDGIGetProbeCoords(instanceIndex, volume);
+	float3 probeWorldPosition = DDGIGetProbeWorldPosition(probeCoords, volume, DDGIProbeData);
 
 	float3 wp = In.position * kSphereRadius + probeWorldPosition;
 	Out.posInWS = wp;

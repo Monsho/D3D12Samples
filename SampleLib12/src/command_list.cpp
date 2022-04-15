@@ -608,9 +608,11 @@ namespace sl12
 		u32 slot_index = 0;
 		auto SetViewDesc = [&](u32 count, u32 offset, const D3D12_CPU_DESCRIPTOR_HANDLE* handles)
 		{
-			if (count > offset)
+			//if (count > offset)
+			if (count > 0)
 			{
-				auto cnt = count - offset;
+				auto cnt = count;
+				//auto cnt = count - offset;
 				for (u32 i = 0; i < cnt; i++)
 				{
 					tmp[i] = (handles[i + offset].ptr > 0) ? handles[i + offset] : def_view;

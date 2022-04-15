@@ -21,6 +21,7 @@ struct SceneCB
 	float4		camPos;
 	uint		isOcclusionCull;
 	uint		isMeshletColor;
+	uint		renderColorSpace;
 };
 
 struct LightCB
@@ -101,6 +102,7 @@ struct TonemapCB
 	uint	type;
 	float	baseLuminance;
 	float	maxLuminance;
+	uint	renderColorSpace;
 };
 
 struct UIDrawCB
