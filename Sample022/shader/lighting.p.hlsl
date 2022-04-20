@@ -118,7 +118,7 @@ float4 main(PSInput In) : SV_TARGET0
 	float3 finalColor =
 		directionalColor * direct_shadow.r
 		+ spotColor * direct_shadow.g
-		+ skyColor
+		//+ skyColor
 		+ reflectionColor
 		+ (diffuseColor / PI) * irradiance * cbLight.giIntensity;
 	return float4(pow(saturate(finalColor), 1 / 2.2), 1);

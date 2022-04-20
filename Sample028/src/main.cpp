@@ -99,6 +99,7 @@ namespace
 		"compute_sh.c.hlsl",
 		"compute_sh.c.hlsl",
 		"ray_binning.c.hlsl",
+		"ray_gather.c.hlsl",
 		"composite_reflection.p.hlsl",
 	};
 
@@ -138,6 +139,7 @@ namespace
 		"ComputeAll",
 		"main",
 		"main",
+		"main",
 	};
 
 	enum ShaderFileKind
@@ -175,6 +177,7 @@ namespace
 		SHADER_COMPUTE_SH_PER_FACE_C,
 		SHADER_COMPUTE_SH_ALL_C,
 		SHADER_RAY_BINNING_C,
+		SHADER_RAY_GATHER_C,
 		SHADER_COMPOSITE_REFLECTION_P,
 
 		SHADER_MAX
@@ -533,6 +536,11 @@ public:
 		}
 		if (!RayBinningRS_.Initialize(&device_,
 			hShaders_[SHADER_RAY_BINNING_C].GetShader()))
+		{
+			return false;
+		}
+		if (!RayGatherRS_.Initialize(&device_,
+			hShaders_[SHADER_RAY_GATHER_C].GetShader()))
 		{
 			return false;
 		}
@@ -902,6 +910,16 @@ public:
 			desc.pCS = hShaders_[SHADER_RAY_BINNING_C].GetShader();
 
 			if (!RayBinningPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &RayGatherRS_;
+			desc.pCS = hShaders_[SHADER_RAY_GATHER_C].GetShader();
+
+			if (!RayGatherPSO_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -1283,6 +1301,9 @@ public:
 					"Rec.2020 with light color",
 				};
 				if (ImGui::Combo("Render Color Space", &renderColorSpace_, kRenderColorSpaces, ARRAYSIZE(kRenderColorSpaces)))
+				{
+				}
+				if (ImGui::Checkbox("Pre Ray Generation", &enablePreRayGen_))
 				{
 				}
 				if (ImGui::Checkbox("Ray Binning", &enableBinning_))
@@ -1908,9 +1929,12 @@ public:
 			const sl12::u32 kBufferSize = kTileCount * kBinningTileSize * kBinningTileSize * sizeof(RayData);
 
 			// ray binning.
-			if (enableBinning_)
+			if (enablePreRayGen_)
 			{
 				GPU_MARKER(pCmdList, 2, "RayBinning");
+
+				auto RS = enableBinning_ ? &RayBinningRS_ : &RayGatherRS_;
+				auto PSO = enableBinning_ ? &RayBinningPSO_ : &RayGatherPSO_;
 
 				if (pRayDataBuffer_ && pRayDataBuffer_->GetSize() < kBufferSize)
 				{
@@ -1939,8 +1963,8 @@ public:
 				descSet_.SetCsSrv(3, gbuffers_.depthSRV->GetDescInfo().cpuHandle);
 				descSet_.SetCsUav(0, pRayDataUAV_->GetDescInfo().cpuHandle);
 
-				d3dCmdList->SetPipelineState(RayBinningPSO_.GetPSO());
-				pCmdList->SetComputeRootSignatureAndDescriptorSet(&RayBinningRS_, &descSet_);
+				d3dCmdList->SetPipelineState(PSO->GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(RS, &descSet_);
 
 				d3dCmdList->Dispatch(kTileCount, 1, 1);
 
@@ -1961,7 +1985,7 @@ public:
 			rtGlobalDescSet_.SetCsSrv(6, pointLightsColorSRV_.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(7, hHDRIRes_.GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(8, sh9BV_.GetDescInfo().cpuHandle);
-			if (enableBinning_)
+			if (enablePreRayGen_)
 			{
 				rtGlobalDescSet_.SetCsSrv(9, pRayDataBV_->GetDescInfo().cpuHandle);
 			}
@@ -1982,7 +2006,7 @@ public:
 			desc.MissShaderTable.StartAddress = ReflectionMSTable_->GetResourceDep()->GetGPUVirtualAddress();
 			desc.MissShaderTable.SizeInBytes = ReflectionMSTable_->GetSize();
 			desc.MissShaderTable.StrideInBytes = bvhShaderRecordSize_;
-			if (enableBinning_)
+			if (enablePreRayGen_)
 			{
 				desc.RayGenerationShaderRecord.StartAddress = ReflectionBinningRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
 				desc.RayGenerationShaderRecord.SizeInBytes = ReflectionBinningRGSTable_->GetSize();
@@ -3958,9 +3982,9 @@ private:
 	ID3D12CommandSignature*		commandSig_ = nullptr;
 
 	sl12::RootSignature			PrePassRS_, GBufferRS_, TonemapRS_, OetfRS_, EotfRS_, ReduceDepth1stRS_, ReduceDepth2ndRS_, TargetCopyRS_, CompositeReflectionRS_;
-	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_, ComputeSHRS_, RayBinningRS_;
+	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_, ComputeSHRS_, RayBinningRS_, RayGatherRS_;
 	sl12::GraphicsPipelineState	PrePassPSO_, GBufferPSO_, TonemapPSO_, OetfPSO_, EotfPSO_, ReduceDepth1stPSO_, ReduceDepth2ndPSO_, TargetCopyPSO_, CompositeReflectionPSO_;
-	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_, ComputeSHPerFacePSO_, ComputeSHAllPSO_, RayBinningPSO_;
+	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_, ComputeSHPerFacePSO_, ComputeSHAllPSO_, RayBinningPSO_, RayGatherPSO_;
 
 	sl12::DescriptorSet			descSet_;
 
@@ -4005,7 +4029,8 @@ private:
 	float					baseLuminance_ = 80.0f;
 	bool					enableTestGradient_ = false;
 	int						renderColorSpace_ = 0;		// 0: sRGB, 1: Rec.2020(render only), 2: Rec.2020(with light)
-	bool					enableBinning_ = false;
+	bool					enablePreRayGen_ = false;
+	bool					enableBinning_ = true;
 	int						reflectionDisplay_ = 0;		// 0: default, 1: reflection only, 2: no reflection
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 	DirectX::XMFLOAT4		frustumCamPos_;
