@@ -3,6 +3,7 @@
 #include <sl12/device.h>
 #include <sl12/shader.h>
 #include <sl12/descriptor_set.h>
+#include <sl12/descriptor_heap.h>
 
 
 namespace sl12
@@ -699,11 +700,34 @@ namespace sl12
 		sl12::RootSignature* pGlobalRS,
 		sl12::RootSignature* pLocalRS)
 	{
+		RaytracingDescriptorCount globalCount, localCount;
+
+		globalCount.cbv = globalCbvCount;
+		globalCount.srv = globalSrvCount;
+		globalCount.uav = globalUavCount;
+		globalCount.sampler = globalSamplerCount;
+		localCount.cbv = sl12::kCbvMax - globalCbvCount;
+		localCount.srv = sl12::kSrvMax - globalSrvCount - asCount;
+		localCount.uav = sl12::kUavMax - globalUavCount;
+		localCount.sampler = sl12::kSamplerMax - globalSamplerCount;
+
+		return CreateRaytracingRootSignature(pDevice, asCount, globalCount, localCount, pGlobalRS, pLocalRS);
+	}
+
+	//----
+	bool CreateRaytracingRootSignature(
+		sl12::Device* pDevice,
+		sl12::u32 asCount,
+		const RaytracingDescriptorCount& globalCount,
+		const RaytracingDescriptorCount& localCount,
+		sl12::RootSignature* pGlobalRS,
+		sl12::RootSignature* pLocalRS)
+	{
 		{
 			sl12::u32 range_cnt = 0;
 			D3D12_DESCRIPTOR_RANGE ranges[4]{};
 			D3D12_ROOT_PARAMETER params[16]{};
-			if (globalCbvCount > 0)
+			if (globalCount.cbv > 0)
 			{
 				auto&& p = params[range_cnt];
 				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -713,11 +737,11 @@ namespace sl12
 
 				auto&& r = ranges[range_cnt++];
 				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-				r.NumDescriptors = globalCbvCount;
+				r.NumDescriptors = globalCount.cbv;
 				r.BaseShaderRegister = 0;
 				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 			}
-			if (globalSrvCount > 0)
+			if (globalCount.srv > 0)
 			{
 				auto&& p = params[range_cnt];
 				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -727,11 +751,11 @@ namespace sl12
 
 				auto&& r = ranges[range_cnt++];
 				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-				r.NumDescriptors = globalSrvCount;
+				r.NumDescriptors = globalCount.srv;
 				r.BaseShaderRegister = asCount;
 				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 			}
-			if (globalUavCount > 0)
+			if (globalCount.uav > 0)
 			{
 				auto&& p = params[range_cnt];
 				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -741,11 +765,11 @@ namespace sl12
 
 				auto&& r = ranges[range_cnt++];
 				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-				r.NumDescriptors = globalUavCount;
+				r.NumDescriptors = globalCount.uav;
 				r.BaseShaderRegister = 0;
 				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 			}
-			if (globalSamplerCount > 0)
+			if (globalCount.sampler > 0)
 			{
 				auto&& p = params[range_cnt];
 				p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -755,7 +779,7 @@ namespace sl12
 
 				auto&& r = ranges[range_cnt++];
 				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-				r.NumDescriptors = globalSamplerCount;
+				r.NumDescriptors = globalCount.sampler;
 				r.BaseShaderRegister = 0;
 				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 			}
@@ -782,23 +806,43 @@ namespace sl12
 			}
 		}
 		{
-			D3D12_DESCRIPTOR_RANGE ranges[] = {
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-				{ D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND },
-			};
-			ranges[0].NumDescriptors = sl12::kCbvMax - globalCbvCount;
-			ranges[1].NumDescriptors = sl12::kSrvMax - globalSrvCount - asCount;
-			ranges[2].NumDescriptors = sl12::kUavMax - globalUavCount;
-			ranges[3].NumDescriptors = sl12::kSamplerMax - globalSamplerCount;
-			ranges[0].BaseShaderRegister = globalCbvCount;
-			ranges[1].BaseShaderRegister = globalSrvCount + asCount;
-			ranges[2].BaseShaderRegister = globalUavCount;
-			ranges[3].BaseShaderRegister = globalSamplerCount;
+			D3D12_DESCRIPTOR_RANGE ranges[4]{};
+			int range_cnt = 0;
+			if (localCount.cbv > 0)
+			{
+				auto&& r = ranges[range_cnt++];
+				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+				r.NumDescriptors = localCount.cbv;
+				r.BaseShaderRegister = globalCount.cbv;
+				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+			}
+			if (localCount.srv > 0)
+			{
+				auto&& r = ranges[range_cnt++];
+				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+				r.NumDescriptors = localCount.srv;
+				r.BaseShaderRegister = globalCount.srv + asCount;
+				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+			}
+			if (localCount.uav > 0)
+			{
+				auto&& r = ranges[range_cnt++];
+				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+				r.NumDescriptors = localCount.uav;
+				r.BaseShaderRegister = globalCount.uav;
+				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+			}
+			if (localCount.sampler > 0)
+			{
+				auto&& r = ranges[range_cnt++];
+				r.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+				r.NumDescriptors = localCount.sampler;
+				r.BaseShaderRegister = globalCount.sampler;
+				r.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+			}
 
 			D3D12_ROOT_PARAMETER params[ARRAYSIZE(ranges)]{};
-			for (int i = 0; i < ARRAYSIZE(ranges); i++)
+			for (int i = 0; i < range_cnt; i++)
 			{
 				params[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 				params[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
@@ -807,7 +851,7 @@ namespace sl12
 			}
 
 			D3D12_ROOT_SIGNATURE_DESC sigDesc{};
-			sigDesc.NumParameters = ARRAYSIZE(params);
+			sigDesc.NumParameters = range_cnt;
 			sigDesc.pParameters = params;
 			sigDesc.NumStaticSamplers = 0;
 			sigDesc.pStaticSamplers = nullptr;

@@ -4,6 +4,8 @@
 #include <sl12/swapchain.h>
 #include <sl12/command_queue.h>
 #include <sl12/descriptor_heap.h>
+#include <sl12/texture.h>
+#include <sl12/command_list.h>
 #include <string>
 
 namespace sl12
@@ -293,6 +295,9 @@ namespace sl12
 	{
 		SyncKillObjects(true);
 
+		dummyTextureViews_.clear();
+		dummyTextures_.clear();
+
 		SafeRelease(pFence_);
 
 		SafeDelete(pSwapchain_);
@@ -357,6 +362,113 @@ namespace sl12
 		{
 			pSwapchain_->WaitPresent();
 		}
+	}
+
+	//----
+	bool Device::CreateDummyTextures(CommandList* pCmdList)
+	{
+		dummyTextures_.clear();
+		dummyTextureViews_.clear();
+		dummyTextures_.resize(DummyTex::Max);
+		dummyTextureViews_.resize(DummyTex::Max);
+
+		// Black
+		{
+			TextureDesc desc{};
+			desc.initialState = D3D12_RESOURCE_STATE_COPY_DEST;
+			desc.width = desc.height = 4;
+			desc.depth = 1;
+			desc.dimension = TextureDimension::Texture2D;
+			desc.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.mipLevels = 1;
+
+			std::vector<sl12::u32> bin;
+			bin.resize(64 * 4);
+			for (auto&& pix : bin)
+			{
+				pix = 0x00000000;
+			}
+
+			dummyTextures_[DummyTex::Black] = std::make_unique<Texture>();
+			if (!dummyTextures_[DummyTex::Black]->InitializeFromImageBin(this, pCmdList, desc, bin.data()))
+			{
+				return false;
+			}
+
+			dummyTextureViews_[DummyTex::Black] = std::make_unique<TextureView>();
+			if (!dummyTextureViews_[DummyTex::Black]->Initialize(this, dummyTextures_[DummyTex::Black].get()))
+			{
+				return false;
+			}
+
+		}
+
+		// White
+		{
+			TextureDesc desc{};
+			desc.initialState = D3D12_RESOURCE_STATE_COPY_DEST;
+			desc.width = desc.height = 4;
+			desc.depth = 1;
+			desc.dimension = TextureDimension::Texture2D;
+			desc.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.mipLevels = 1;
+
+			std::vector<sl12::u32> bin;
+			bin.resize(64 * 4);
+			for (auto&& pix : bin)
+			{
+				pix = 0xFFFFFFFF;
+			}
+
+			dummyTextures_[DummyTex::White] = std::make_unique<Texture>();
+			if (!dummyTextures_[DummyTex::White]->InitializeFromImageBin(this, pCmdList, desc, bin.data()))
+			{
+				return false;
+			}
+
+			dummyTextureViews_[DummyTex::White] = std::make_unique<TextureView>();
+			if (!dummyTextureViews_[DummyTex::White]->Initialize(this, dummyTextures_[DummyTex::White].get()))
+			{
+				return false;
+			}
+		}
+
+		// FlatNormal
+		{
+			TextureDesc desc{};
+			desc.initialState = D3D12_RESOURCE_STATE_COPY_DEST;
+			desc.width = desc.height = 4;
+			desc.depth = 1;
+			desc.dimension = TextureDimension::Texture2D;
+			desc.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.mipLevels = 1;
+
+			std::vector<sl12::u32> bin;
+			bin.resize(64 * 4);
+			for (auto&& pix : bin)
+			{
+				pix = 0xFF7F7FFF;
+			}
+
+			dummyTextures_[DummyTex::FlatNormal] = std::make_unique<Texture>();
+			if (!dummyTextures_[DummyTex::FlatNormal]->InitializeFromImageBin(this, pCmdList, desc, bin.data()))
+			{
+				return false;
+			}
+
+			dummyTextureViews_[DummyTex::FlatNormal] = std::make_unique<TextureView>();
+			if (!dummyTextureViews_[DummyTex::FlatNormal]->Initialize(this, dummyTextures_[DummyTex::FlatNormal].get()))
+			{
+				return false;
+			}
+		}
+
+		for (auto&& tex : dummyTextures_)
+		{
+			pCmdList->TransitionBarrier(tex.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+		}
+
+		return true;
 	}
 
 }	// namespace sl12

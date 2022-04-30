@@ -22,6 +22,15 @@
     <Filter Include="ソース ファイル\shader">
       <UniqueIdentifier>{22282890-4b13-440d-86d3-5c3a97906a27}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\RTXGI">
+      <UniqueIdentifier>{87aeb9fe-baae-4fc5-bbdb-c0d0fce5daa9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\RTXGI\ddgi">
+      <UniqueIdentifier>{9f733366-8d9f-461f-99a9-7ede00c448c7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\RTXGI\ddgi\gfx">
+      <UniqueIdentifier>{bb029a01-5c47-45a3-b4c3-f627f08d0498}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
@@ -168,6 +177,9 @@
     <ClInclude Include="include\sl12\scene_root.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="include\sl12\rtxgi_component.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\swapchain.cpp">
@@ -276,6 +288,18 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="src\bvh_manager.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\Math.cpp">
+      <Filter>ソース ファイル\RTXGI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\ddgi\DDGIVolume.cpp">
+      <Filter>ソース ファイル\RTXGI\ddgi</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\ddgi\gfx\DDGIVolume_D3D12.cpp">
+      <Filter>ソース ファイル\RTXGI\ddgi\gfx</Filter>
+    </ClCompile>
+    <ClCompile Include="src\rtxgi_component.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>

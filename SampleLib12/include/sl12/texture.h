@@ -55,6 +55,7 @@ namespace sl12
 
 		bool Initialize(Device* pDev, const TextureDesc& desc);
 		bool InitializeFromDXImage(Device* pDev, const DirectX::ScratchImage& image, bool isForceSRGB);
+		bool InitializeFromDDS(Device* pDev, CommandList* pCmdList, const void* pDdsBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB);
 		bool InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB);
 		bool InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB);
 		bool InitializeFromEXR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels);
@@ -62,6 +63,7 @@ namespace sl12
 		bool InitializeFromImageBin(Device* pDev, CommandList* pCmdList, const TextureDesc& desc, const void* pImageBin);
 		bool InitializeFromSwapchain(Device* pDev, Swapchain* pSwapchain, int bufferIndex);
 
+		std::unique_ptr<DirectX::ScratchImage> InitializeFromDDSwoLoad(Device* pDev, const void* pTgaBin, size_t size, sl12::u32 mipLevels);
 		std::unique_ptr<DirectX::ScratchImage> InitializeFromTGAwoLoad(Device* pDev, const void* pTgaBin, size_t size, sl12::u32 mipLevels);
 		std::unique_ptr<DirectX::ScratchImage> InitializeFromPNGwoLoad(Device* pDev, const void* pPngBin, size_t size, sl12::u32 mipLevels);
 		std::unique_ptr<DirectX::ScratchImage> InitializeFromEXRwoLoad(Device* pDev, const void* pPngBin, size_t size, sl12::u32 mipLevels);

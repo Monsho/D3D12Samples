@@ -73,7 +73,7 @@ void DecodeMaterialPayload(
 		(payload.baseColorUnorm >> 8) & 0xff,
 		(payload.baseColorUnorm >> 16) & 0xff,
 		0xff);
-	param.baseColor = float4(bc) * (1.0 / 255.0);
+	param.baseColor = saturate(float4(bc) * (1.0 / 255.0));
 	param.flag = (payload.baseColorUnorm >> 24) & 0xff;
 }
 

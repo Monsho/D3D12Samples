@@ -29,6 +29,7 @@ struct LightCB
 	float4		lightDir;
 	float4		lightColor;
 	float		skyPower;
+	float		giIntensity;
 };
 
 struct MaterialCB
@@ -130,6 +131,8 @@ struct RayData
 #define CLUSTER_DIV_Z		16
 
 #define HIZ_MIP_LEVEL		5
+
+#define ENABLE_POINT_LIGHTS		1
 
 #endif // CONSTANT_H
 //	EOF

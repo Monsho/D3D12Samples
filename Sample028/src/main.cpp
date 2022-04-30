@@ -34,6 +34,7 @@
 #include "sl12/scene_mesh.h"
 #include "sl12/render_command.h"
 #include "sl12/bvh_manager.h"
+#include "sl12/rtxgi_component.h"
 
 #define A_CPU
 #include "../shader/AMD/ffx_a.h"
@@ -57,12 +58,26 @@ namespace
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 100.0f;
 
-	static const float	kSponzaScale = 20.0f;
+	static const float	kSponzaScale = 1.0f;
 	static const float	kSuzanneScale = 1.0f;
 
 	static const std::string	kShaderDir("../Sample028/shader/");
+	static const std::string	kDDGIShaderDir("../External/RTXGI/rtxgi-sdk/shaders/ddgi/");
 
 	static const sl12::u32	kDrawArgSize = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+
+	static const sl12::RaytracingDescriptorCount kRTDescriptorCountGlobal = {
+		4,	// cbv
+		9,	// srv
+		4,	// uav
+		4,	// sampler
+	};
+	static const sl12::RaytracingDescriptorCount kRTDescriptorCountLocal = {
+		1,	// cbv
+		5,	// srv
+		0,	// uav
+		1,	// sampler
+	};
 
 	static const char* kShaderFiles[] =
 	{
@@ -101,6 +116,7 @@ namespace
 		"ray_binning.c.hlsl",
 		"ray_gather.c.hlsl",
 		"composite_reflection.p.hlsl",
+		"probe_lighting.lib.hlsl",
 	};
 
 	static const char* kShaderEntryPoints[] = 
@@ -137,6 +153,7 @@ namespace
 		"main",
 		"ComputePerFace",
 		"ComputeAll",
+		"main",
 		"main",
 		"main",
 		"main",
@@ -179,6 +196,7 @@ namespace
 		SHADER_RAY_BINNING_C,
 		SHADER_RAY_GATHER_C,
 		SHADER_COMPOSITE_REFLECTION_P,
+		SHADER_PROBE_LIGHTING_LIB,
 
 		SHADER_MAX
 	};
@@ -198,6 +216,8 @@ namespace
 	static LPCWSTR kReflectionMS = L"ReflectionMS";
 	static LPCWSTR kReflectionStandardRGS = L"ReflectionStandardRGS";
 	static LPCWSTR kReflectionBinningRGS = L"ReflectionBinningRGS";
+	static LPCWSTR kProbeLightingRGS = L"ProbeLightingRGS";
+	static LPCWSTR kProbeLightingMS = L"ProbeLightingMS";
 
 	static const DXGI_FORMAT	kReytracingResultFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
@@ -247,7 +267,10 @@ public:
 			return false;
 		}
 		hBlueNoiseRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/blue_noise.tga");
-		hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
+		hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/IntelSponza/IntelSponza.rmesh");
+		hCurtainRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/IntelCurtain/IntelCurtain.rmesh");
+		hIvyRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/IntelIvy/IntelIvy.rmesh");
+		//hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 		hSuzanneRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/suzanne/suzanne.rmesh");
 		hHDRIRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/jougasaki_03.exr");
 
@@ -926,7 +949,7 @@ public:
 		}
 
 		// ポイントライト
-		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, -10.0f, -15.0f), DirectX::XMFLOAT3(20.0f, 10.0f, 15.0f), 3.0f, 5.0f, 10.0f, 100.0f))
+		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, 0.0f, -20.0f), DirectX::XMFLOAT3(20.0f, 20.0f, 20.0f), 3.0f, 5.0f, 10.0f, 40.0f))
 		{
 			return false;
 		}
@@ -940,7 +963,31 @@ public:
 			}
 		}
 
+		// RTXGI
+		{
+			rtxgiComponent_ = std::make_unique<sl12::RtxgiComponent>(&device_, kDDGIShaderDir);
+
+			sl12::RtxgiVolumeDesc desc{};
+			desc.name = "main volume";
+			desc.origin = DirectX::XMFLOAT3(0.0f, 16.0f, 0.0f);
+			desc.probeSpacing = DirectX::XMFLOAT3(2.0f, 2.0f, 2.0f);
+			desc.probeCount = DirectX::XMINT3(20, 16, 20);
+			if (!rtxgiComponent_->Initialize(&shaderManager_, &desc, 1))
+			{
+				return false;
+			}
+
+			rtxgiComponent_->SetDescHysteresis(0.99f);
+			rtxgiComponent_->SetDescIrradianceThreshold(0.4f);
+		}
+
 		utilCmdList_.Reset();
+
+		// create dummy textures.
+		if (!device_.CreateDummyTextures(&utilCmdList_))
+		{
+			return false;
+		}
 
 		// GUIの初期化
 		if (!gui_.Initialize(&device_, kSwapchainFormat))
@@ -991,6 +1038,8 @@ public:
 			// main scene
 			ExecuteMainScene();
 		}
+
+		frameIndex_++;
 
 		return true;
 	}
@@ -1079,18 +1128,24 @@ public:
 
 			sceneRoot_ = std::make_unique<sl12::SceneRoot>();
 			sponzaMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hSponzaRes_.GetItem<sl12::ResourceItemMesh>());
+			curtainMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hCurtainRes_.GetItem<sl12::ResourceItemMesh>());
+			ivyMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hIvyRes_.GetItem<sl12::ResourceItemMesh>());
 			suzanneMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hSuzanneRes_.GetItem<sl12::ResourceItemMesh>());
 
 			DirectX::XMMATRIX m = DirectX::XMMatrixScaling(kSponzaScale, kSponzaScale, kSponzaScale);
 			DirectX::XMFLOAT4X4 mf;
 			DirectX::XMStoreFloat4x4(&mf, m);
 			sponzaMesh_->SetMtxLocalToWorld(mf);
+			curtainMesh_->SetMtxLocalToWorld(mf);
+			ivyMesh_->SetMtxLocalToWorld(mf);
 
 			m = DirectX::XMMatrixScaling(kSuzanneScale, kSuzanneScale, kSuzanneScale);
 			DirectX::XMStoreFloat4x4(&mf, m);
 			suzanneMesh_->SetMtxLocalToWorld(mf);
 
 			sceneRoot_->AttachNode(sponzaMesh_);
+			sceneRoot_->AttachNode(curtainMesh_);
+			sceneRoot_->AttachNode(ivyMesh_);
 			sceneRoot_->AttachNode(suzanneMesh_);
 
 			InitializeRaytracingResource();
@@ -1119,7 +1174,7 @@ public:
 			static float sSuzanneAngle = 0.0f;
 
 			DirectX::XMMATRIX ms = DirectX::XMMatrixScaling(kSuzanneScale, kSuzanneScale, kSuzanneScale);
-			DirectX::XMMATRIX mt = DirectX::XMMatrixTranslation(0.0f, -5.0f, -5.0f);
+			DirectX::XMMATRIX mt = DirectX::XMMatrixTranslation(0.0f, 2.0f, -5.0f);
 			DirectX::XMMATRIX mr = DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(sSuzanneAngle));
 			DirectX::XMMATRIX m = DirectX::XMMatrixMultiply(DirectX::XMMatrixMultiply(ms, mt), mr);
 			DirectX::XMFLOAT4X4 mf;
@@ -1166,7 +1221,10 @@ public:
 			OPTICK_EVENT("ImGui::Setup");
 			gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
 			{
-				if (ImGui::SliderFloat("Sky Power", &skyPower_, 0.0f, 10.0f))
+				if (ImGui::SliderFloat("Sky Intensity", &skyPower_, 0.0f, 10.0f))
+				{
+				}
+				if (ImGui::SliderFloat("GI Intensity", &giIntensity_, 0.0f, 10.0f))
 				{
 				}
 				if (ImGui::SliderFloat("Light Intensity", &lightPower_, 0.0f, 100.0f))
@@ -1351,6 +1409,7 @@ public:
 
 		// update scene constant buffer.
 		UpdateSceneCB(frameIndex, useTAA_);
+		sl12::ConstantBufferCache::Handle hDDGICB = rtxgiComponent_->CreateConstantBuffer(&cbvCache_, 0);
 
 		sl12::BvhScene* pBvhScene = nullptr;
 		{
@@ -1387,6 +1446,74 @@ public:
 			D3D12_SHADING_RATE_COMBINER_PASSTHROUGH,
 			D3D12_SHADING_RATE_COMBINER_OVERRIDE,
 		};
+
+		// frame update for RTXGI
+		if (isClearProbe_)
+		{
+			rtxgiComponent_->ClearProbes(pCmdList);
+			isClearProbe_ = false;
+		}
+		rtxgiComponent_->UpdateVolume(nullptr);
+		rtxgiComponent_->UploadConstants(pCmdList, frameIndex_);
+
+		// probe lighting.
+		{
+			// デスクリプタを設定
+			rtGlobalDescSet_.Reset();
+			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(2, hDDGICB.GetCBV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(1, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(2, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(3, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(4, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(5, pointLightsPosSRV_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(6, pointLightsColorSRV_.GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSrv(7, hHDRIRes_.GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsUav(0, rtxgiComponent_->GetRayDataUAV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsSampler(0, hdriSampler_.GetDescInfo().cpuHandle);
+
+			// コピーしつつコマンドリストに積む
+			D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
+				pBvhScene->GetGPUAddress(),
+			};
+			pCmdList->SetRaytracingGlobalRootSignatureAndDescriptorSet(&rtGlobalRootSig_, &rtGlobalDescSet_, bvhDescMan_.get(), as_address, ARRAYSIZE(as_address));
+
+			// レイトレースを実行
+			D3D12_DISPATCH_RAYS_DESC desc{};
+			desc.HitGroupTable.StartAddress = MaterialHGTable_->GetResourceDep()->GetGPUVirtualAddress();
+			desc.HitGroupTable.SizeInBytes = MaterialHGTable_->GetSize();
+			desc.HitGroupTable.StrideInBytes = bvhShaderRecordSize_;
+			desc.MissShaderTable.StartAddress = ProbeLightingMSTable_->GetResourceDep()->GetGPUVirtualAddress();
+			desc.MissShaderTable.SizeInBytes = ProbeLightingMSTable_->GetSize();
+			desc.MissShaderTable.StrideInBytes = bvhShaderRecordSize_;
+			desc.RayGenerationShaderRecord.StartAddress = ProbeLightingRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
+			desc.RayGenerationShaderRecord.SizeInBytes = ProbeLightingRGSTable_->GetSize();
+			desc.Width = rtxgiComponent_->GetNumRaysPerProbe();
+			desc.Height = rtxgiComponent_->GetNumProbes();
+			desc.Depth = 1;
+			pCmdList->GetDxrCommandList()->SetPipelineState1(rtRayTracingPSO_.GetPSO());
+			pCmdList->GetDxrCommandList()->DispatchRays(&desc);
+
+			// uav barrier.
+			pCmdList->UAVBarrier(rtxgiComponent_->GetRayData());
+
+			// update probes.
+			rtxgiComponent_->UpdateProbes(pCmdList);
+
+			// relocate probes.
+			if (isReallocateProbe_)
+			{
+				rtxgiComponent_->RelocateProbes(pCmdList, 1.0f);
+			}
+			if (!isReallocateProbe_)
+			{
+				rtxgiComponent_->ClassifyProbes(pCmdList);
+			}
+			isReallocateProbe_ = false;
+
+			pCmdList->SetDescriptorHeapDirty();
+		}
 
 		// cluster culling.
 		{
@@ -1527,10 +1654,14 @@ public:
 					auto sceneSubmesh = subCmds[i]->GetParentSubmesh();
 
 					auto&& material = pResMesh->GetMaterials()[submesh.materialIndex];
-					auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
-					auto&& base_color_srv = bc_tex_res->GetTextureView();
+					auto base_color_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+					if (material.baseColorTex.IsValid())
+					{
+						auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+						base_color_srv = &bc_tex_res->GetTextureView();
+					}
 
-					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
+					descSet_.SetPsSrv(0, base_color_srv->GetDescInfo().cpuHandle);
 					pCmdList->SetGraphicsRootSignatureAndDescriptorSet(myRS, &descSet_);
 
 					const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
@@ -1788,16 +1919,28 @@ public:
 					auto sceneSubmesh = subCmds[i]->GetParentSubmesh();
 
 					auto&& material = pResMesh->GetMaterials()[submesh.materialIndex];
-					auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
-					auto n_tex_res = const_cast<sl12::ResourceItemTexture*>(material.normalTex.GetItem<sl12::ResourceItemTexture>());
-					auto orm_tex_res = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
-					auto&& base_color_srv = bc_tex_res->GetTextureView();
-					auto&& normal_srv = n_tex_res->GetTextureView();
-					auto&& orm_srv = orm_tex_res->GetTextureView();
+					auto base_color_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+					auto normal_srv = device_.GetDummyTextureView(sl12::DummyTex::FlatNormal);
+					auto orm_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+					if (material.baseColorTex.IsValid())
+					{
+						auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+						base_color_srv = &bc_tex_res->GetTextureView();
+					}
+					if (material.normalTex.IsValid())
+					{
+						auto n_tex_res = const_cast<sl12::ResourceItemTexture*>(material.normalTex.GetItem<sl12::ResourceItemTexture>());
+						normal_srv = &n_tex_res->GetTextureView();
+					}
+					if (material.ormTex.IsValid())
+					{
+						auto orm_tex_res = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
+						orm_srv = &orm_tex_res->GetTextureView();
+					}
 
-					descSet_.SetPsSrv(0, base_color_srv.GetDescInfo().cpuHandle);
-					descSet_.SetPsSrv(1, normal_srv.GetDescInfo().cpuHandle);
-					descSet_.SetPsSrv(2, orm_srv.GetDescInfo().cpuHandle);
+					descSet_.SetPsSrv(0, base_color_srv->GetDescInfo().cpuHandle);
+					descSet_.SetPsSrv(1, normal_srv->GetDescInfo().cpuHandle);
+					descSet_.SetPsSrv(2, orm_srv->GetDescInfo().cpuHandle);
 					pCmdList->SetGraphicsRootSignatureAndDescriptorSet(myRS, &descSet_);
 
 					const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
@@ -1906,6 +2049,10 @@ public:
 			descSet_.SetCsSrv(7, clusterInfoSRV_.GetDescInfo().cpuHandle);
 			descSet_.SetCsSrv(8, hHDRIRes_.GetItem<sl12::ResourceItemTexture>()->GetTextureView().GetDescInfo().cpuHandle);
 			descSet_.SetCsSrv(9, sh9BV_.GetDescInfo().cpuHandle);
+			descSet_.SetCsSrv(10, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			descSet_.SetCsSrv(11, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetCsSrv(12, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetCsSrv(13, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
 			descSet_.SetCsSampler(0, hdriSampler_.GetDescInfo().cpuHandle);
 			descSet_.SetCsUav(0, target.uav->GetDescInfo().cpuHandle);
 
@@ -2413,6 +2560,8 @@ public:
 		zpreCmdLists_.Destroy();
 
 		sponzaMesh_.reset();
+		curtainMesh_.reset();
+		ivyMesh_.reset();
 		suzanneMesh_.reset();
 		sceneRoot_.reset();
 		shaderManager_.Destroy();
@@ -2588,6 +2737,7 @@ private:
 			cb->lightDir = lightDir;
 			cb->lightColor = lightColor;
 			cb->skyPower = skyPower_;
+			cb->giIntensity = giIntensity_;
 			lightCBs_[frameIndex].Unmap();
 		}
 
@@ -2891,10 +3041,8 @@ private:
 		// only one fixed root signature.
 		if (!sl12::CreateRaytracingRootSignature(&device_,
 			1,		// AS count
-			4,		// Global CBV count
-			9,		// Global SRV count
-			4,		// Global UAV count
-			4,		// Global Sampler count
+			kRTDescriptorCountGlobal,
+			kRTDescriptorCountLocal,
 			&rtGlobalRootSig_, &rtLocalRootSig_))
 		{
 			return false;
@@ -2929,9 +3077,6 @@ private:
 			// if use only one root signature, do not need export association.
 			dxrDesc.AddLocalRootSignatureAndExportAssociation(rtLocalRootSig_, nullptr, 0);
 
-			// RaytracingPipelineConfigをリンク先で設定するため、このフラグが必要
-			//dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
-
 			// PSO生成
 			if (!rtOcclusionCollection_.Initialize(&device_, dxrDesc, D3D12_STATE_OBJECT_TYPE_COLLECTION))
 			{
@@ -2965,9 +3110,6 @@ private:
 			// local root signature.
 			// if use only one root signature, do not need export association.
 			dxrDesc.AddLocalRootSignatureAndExportAssociation(rtLocalRootSig_, nullptr, 0);
-
-			// RaytracingPipelineConfigをリンク先で設定するため、このフラグが必要
-			//dxrDesc.AddStateObjectConfig(D3D12_STATE_OBJECT_FLAG_ALLOW_LOCAL_DEPENDENCIES_ON_EXTERNAL_DEFINITIONS);
 
 			// PSO生成
 			sl12::CpuTimer time = sl12::CpuTimer::CurrentTime();
@@ -3040,6 +3182,32 @@ private:
 		{
 			sl12::DxrPipelineStateDesc dxrDesc;
 
+			// export shader from library.
+			auto shader = hShaders_[SHADER_PROBE_LIGHTING_LIB].GetShader();
+			D3D12_EXPORT_DESC libExport[] = {
+				{ kProbeLightingRGS,	nullptr, D3D12_EXPORT_FLAG_NONE },
+				{ kProbeLightingMS,		nullptr, D3D12_EXPORT_FLAG_NONE },
+			};
+			dxrDesc.AddDxilLibrary(shader->GetData(), shader->GetSize(), libExport, ARRAYSIZE(libExport));
+
+			// payload size and intersection attr size.
+			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+
+			// global root signature.
+			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
+
+			// TraceRay recursive count.
+			dxrDesc.AddRaytracinConfig(1);
+
+			// PSO生成
+			if (!rtProbeLightingPSO_.Initialize(&device_, dxrDesc, D3D12_STATE_OBJECT_TYPE_COLLECTION))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::DxrPipelineStateDesc dxrDesc;
+
 			// payload size and intersection attr size.
 			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
 
@@ -3054,6 +3222,7 @@ private:
 			dxrDesc.AddExistingCollection(rtOcclusionCollection_.GetPSO(), nullptr, 0);
 			dxrDesc.AddExistingCollection(rtDirectShadowPSO_.GetPSO(), nullptr, 0);
 			dxrDesc.AddExistingCollection(rtReflectionPSO_.GetPSO(), nullptr, 0);
+			dxrDesc.AddExistingCollection(rtProbeLightingPSO_.GetPSO(), nullptr, 0);
 
 			// PSO生成
 			if (!rtRayTracingPSO_.Initialize(&device_, dxrDesc))
@@ -3130,12 +3299,10 @@ private:
 		// initialize descriptor manager.
 		bvhDescMan_ = std::make_unique<sl12::RaytracingDescriptorManager>();
 		if (!bvhDescMan_->Initialize(&device_,
-			2,		// Render Count
+			3,		// Render Count
 			1,		// AS Count
-			4,		// Global CBV Count
-			9,		// Global SRV Count
-			4,		// Global UAV Count
-			4,		// Global Sampler Count
+			kRTDescriptorCountGlobal,
+			kRTDescriptorCountLocal,
 			totalMaterialCount))
 		{
 			return false;
@@ -3162,8 +3329,18 @@ private:
 			{
 				auto&& submesh = submeshes[i];
 				auto&& material = pMeshItem->GetMaterials()[submesh.materialIndex];
-				auto pTexBC = material.baseColorTex.GetItem<sl12::ResourceItemTexture>();
-				auto pTexORM = material.ormTex.GetItem<sl12::ResourceItemTexture>();
+				auto bc_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+				auto orm_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+				if (material.baseColorTex.IsValid())
+				{
+					auto pTexBC = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+					bc_srv = &pTexBC->GetTextureView();
+				}
+				if (material.ormTex.IsValid())
+				{
+					auto pTexORM = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
+					orm_srv = &pTexORM->GetTextureView();
+				}
 
 				opaque_table.push_back(material.isOpaque);
 
@@ -3177,8 +3354,8 @@ private:
 					submesh.indexView.GetDescInfo().cpuHandle,
 					submesh.normalView.GetDescInfo().cpuHandle,
 					submesh.texcoordView.GetDescInfo().cpuHandle,
-					const_cast<sl12::ResourceItemTexture*>(pTexBC)->GetTextureView().GetDescInfo().cpuHandle,
-					const_cast<sl12::ResourceItemTexture*>(pTexORM)->GetTextureView().GetDescInfo().cpuHandle,
+					bc_srv->GetDescInfo().cpuHandle,
+					orm_srv->GetDescInfo().cpuHandle,
 				};
 				sl12::u32 srv_cnt = ARRAYSIZE(srv);
 				device_.GetDeviceDep()->CopyDescriptors(
@@ -3308,7 +3485,7 @@ private:
 				return false;
 			}
 		}
-		// for DirectShadow.
+		// for Reflection.
 		{
 			void* rgs_identifier[2];
 			void* ms_identifier;
@@ -3333,6 +3510,26 @@ private:
 				return false;
 			}
 		}
+		// for Probe Lighting.
+		{
+			void* rgs_identifier;
+			void* ms_identifier;
+			{
+				ID3D12StateObjectProperties* prop;
+				rtRayTracingPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
+				rgs_identifier = prop->GetShaderIdentifier(kProbeLightingRGS);
+				ms_identifier = prop->GetShaderIdentifier(kProbeLightingMS);
+				prop->Release();
+			}
+			if (!GenShaderTable(&rgs_identifier, 1, ProbeLightingRGSTable_, 1))
+			{
+				return false;
+			}
+			if (!GenShaderTable(&ms_identifier, 1, ProbeLightingMSTable_, 1))
+			{
+				return false;
+			}
+		}
 
 		return true;
 	}
@@ -3345,6 +3542,7 @@ private:
 		rtMaterialCollection_.Destroy();
 		rtDirectShadowPSO_.Destroy();
 		rtReflectionPSO_.Destroy();
+		rtProbeLightingPSO_.Destroy();
 		rtRayTracingPSO_.Destroy();
 
 		DirectShadowRGSTable_.reset();
@@ -3923,6 +4121,7 @@ private:
 	sl12::DxrPipelineState				rtMaterialCollection_;
 	sl12::DxrPipelineState				rtDirectShadowPSO_;
 	sl12::DxrPipelineState				rtReflectionPSO_;
+	sl12::DxrPipelineState				rtProbeLightingPSO_;
 	sl12::DxrPipelineState				rtRayTracingPSO_;
 
 	sl12::Sampler			imageSampler_;
@@ -3993,8 +4192,8 @@ private:
 
 	sl12::Timestamp			gpuTimestamp_[sl12::Swapchain::kMaxBuffer];
 
-	DirectX::XMFLOAT4		camPos_ = { -5.0f, -5.0f, 0.0f, 1.0f };
-	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, -5.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		camPos_ = { -5.0f, 5.0f, 0.0f, 1.0f };
+	DirectX::XMFLOAT4		tgtPos_ = { 0.0f, 5.0f, 0.0f, 1.0f };
 	DirectX::XMFLOAT4		upVec_ = { 0.0f, 1.0f, 0.0f, 0.0f };
 	float					skyPower_ = 1.0f;
 	float					lightColor_[3] = { 1.0f, 1.0f, 1.0f };
@@ -4035,10 +4234,15 @@ private:
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 	DirectX::XMFLOAT4		frustumCamPos_;
 
+	bool					isClearProbe_ = true;
+	bool					isReallocateProbe_ = true;
+
 	int		frameIndex_ = 0;
 
 	sl12::ResourceLoader	resLoader_;
 	sl12::ResourceHandle	hSponzaRes_;
+	sl12::ResourceHandle	hCurtainRes_;
+	sl12::ResourceHandle	hIvyRes_;
 	sl12::ResourceHandle	hSuzanneRes_;
 	sl12::ResourceHandle	hBlueNoiseRes_;
 	sl12::ResourceHandle	hHDRIRes_;
@@ -4047,9 +4251,9 @@ private:
 	sl12::ShaderManager			shaderManager_;
 	sl12::ShaderHandle			hShaders_[SHADER_MAX];
 	std::unique_ptr<sl12::SceneRoot>	sceneRoot_;
-	std::shared_ptr<sl12::SceneMesh>	sponzaMesh_, suzanneMesh_;
+	std::shared_ptr<sl12::SceneMesh>	sponzaMesh_, curtainMesh_, ivyMesh_, suzanneMesh_;
 
-	// TEST: BVH Manager
+	// BVH Manager
 	std::unique_ptr<sl12::BvhManager>					bvhManager_;
 	sl12::u32											bvhShaderRecordSize_;
 	std::unique_ptr<sl12::RaytracingDescriptorManager>	bvhDescMan_;
@@ -4058,7 +4262,12 @@ private:
 	std::unique_ptr<sl12::Buffer>						ReflectionStandardRGSTable_;
 	std::unique_ptr<sl12::Buffer>						ReflectionBinningRGSTable_;
 	std::unique_ptr<sl12::Buffer>						ReflectionMSTable_;
+	std::unique_ptr<sl12::Buffer>						ProbeLightingRGSTable_;
+	std::unique_ptr<sl12::Buffer>						ProbeLightingMSTable_;
 	std::unique_ptr<sl12::Buffer>						MaterialHGTable_;
+
+	// RTXGI
+	std::unique_ptr<sl12::RtxgiComponent>				rtxgiComponent_;
 
 	sl12::ColorSpaceType	colorSpaceType_;
 

@@ -186,6 +186,64 @@ namespace sl12
 	}
 
 	//----
+	bool Texture::InitializeFromDDS(Device* pDev, CommandList* pCmdList, const void* pDdsBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
+	{
+		auto image = InitializeFromDDSwoLoad(pDev, pDdsBin, size, mipLevels);
+		if (image.get() == nullptr)
+		{
+			return false;
+		}
+
+		// D3D12リソースを作成
+		if (!InitializeFromDXImage(pDev, *image, isForceSRGB))
+		{
+			return false;
+		}
+
+		// コピー命令発行
+		ID3D12Resource* pSrcImage = nullptr;
+		if (!UpdateImage(pDev, pCmdList, *image, &pSrcImage))
+		{
+			return false;
+		}
+		pDev->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
+
+		return true;
+	}
+
+	//----
+	std::unique_ptr<DirectX::ScratchImage> Texture::InitializeFromDDSwoLoad(Device* pDev, const void* pTgaBin, size_t size, sl12::u32 mipLevels)
+	{
+		if (!pDev)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+		if (!pTgaBin || !size)
+		{
+			return std::unique_ptr<DirectX::ScratchImage>();
+		}
+
+		// TGAファイルフォーマットからイメージリソースを作成
+		std::unique_ptr<DirectX::ScratchImage> image(new DirectX::ScratchImage());
+		DirectX::TexMetadata info;
+		auto hr = DirectX::LoadFromDDSMemory(pTgaBin, size, DirectX::DDS_FLAGS_NONE, &info, *image);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		// ミップマップ生成
+		if (mipLevels != 1 && info.mipLevels == 1)
+		{
+			std::unique_ptr<DirectX::ScratchImage> mipped_image(new DirectX::ScratchImage());
+			DirectX::GenerateMipMaps(*image->GetImage(0, 0, 0), DirectX::TEX_FILTER_CUBIC | DirectX::TEX_FILTER_FORCE_NON_WIC, 0, *mipped_image);
+			image.swap(mipped_image);
+		}
+
+		return std::move(image);
+	}
+
+	//----
 	bool Texture::InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
 	{
 		auto image = InitializeFromTGAwoLoad(pDev, pTgaBin, size, mipLevels);
@@ -702,7 +760,7 @@ namespace sl12
 				const DirectX::Image* pImage = image.GetImage(m, 0, d);
 				if (rowSize[i] == footprint[i].Footprint.RowPitch)
 				{
-					memcpy(dstData.pData, pImage->pixels, pImage->rowPitch * pImage->height);
+					memcpy(dstData.pData, pImage->pixels, pImage->rowPitch * numRows[i]);
 				}
 				else if (rowSize[i] < footprint[i].Footprint.RowPitch)
 				{

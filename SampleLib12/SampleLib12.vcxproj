@@ -116,6 +116,7 @@
     <ClInclude Include="include\sl12\resource_texture.h" />
     <ClInclude Include="include\sl12\root_signature.h" />
     <ClInclude Include="include\sl12\root_signature_manager.h" />
+    <ClInclude Include="include\sl12\rtxgi_component.h" />
     <ClInclude Include="include\sl12\sampler.h" />
     <ClInclude Include="include\sl12\scene_mesh.h" />
     <ClInclude Include="include\sl12\scene_root.h" />
@@ -134,6 +135,9 @@
     <ClCompile Include="..\External\imgui\imgui_demo.cpp" />
     <ClCompile Include="..\External\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\External\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\ddgi\DDGIVolume.cpp" />
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\ddgi\gfx\DDGIVolume_D3D12.cpp" />
+    <ClCompile Include="..\External\RTXGI\rtxgi-sdk\src\Math.cpp" />
     <ClCompile Include="src\acceleration_structure.cpp" />
     <ClCompile Include="src\application.cpp" />
     <ClCompile Include="src\buffer.cpp" />
@@ -157,6 +161,7 @@
     <ClCompile Include="src\resource_texture.cpp" />
     <ClCompile Include="src\root_signature.cpp" />
     <ClCompile Include="src\root_signature_manager.cpp" />
+    <ClCompile Include="src\rtxgi_component.cpp" />
     <ClCompile Include="src\sampler.cpp" />
     <ClCompile Include="src\scene_mesh.cpp" />
     <ClCompile Include="src\scene_root.cpp" />

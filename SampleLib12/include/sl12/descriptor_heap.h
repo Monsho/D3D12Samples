@@ -232,6 +232,19 @@ namespace sl12
 	};	// class SamplerDescriptorCache
 
 
+	struct RaytracingDescriptorCount
+	{
+		u32		cbv = 0;
+		u32		srv = 0;
+		u32		uav = 0;
+		u32		sampler = 0;
+
+		u32 GetViewTotal() const
+		{
+			return cbv + srv + uav;
+		}
+	};	// struct RaytracingDescriptorCount
+
 	class RaytracingDescriptorHeap
 	{
 	public:
@@ -251,6 +264,13 @@ namespace sl12
 			u32 globalUavCount,
 			u32 globalSamplerCount,
 			u32 materialCount);
+		bool Initialize(
+			Device* pDev,
+			u32 bufferCount,
+			u32 asCount,
+			const RaytracingDescriptorCount& globalCount,
+			const RaytracingDescriptorCount& localCount,
+			u32 materialCount);
 		void Destroy();
 
 		void GetGlobalViewHandleStart(u32 frameIndex, D3D12_CPU_DESCRIPTOR_HANDLE& cpu, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
@@ -267,21 +287,21 @@ namespace sl12
 		u32 GetSamplerDescSize() const { return samplerDescSize_; }
 		u32 GetBufferCount() const { return bufferCount_; }
 		u32 GetASCount() const { return asCount_; }
-		u32 GetGlobalCbvCount() const { return globalCbvCount_; }
-		u32 GetGlobalSrvCount() const { return globalSrvCount_; }
-		u32 GetGlobalUavCount() const { return globalUavCount_; }
-		u32 GetGlobalSamplerCount() const { return globalSamplerCount_; }
+		u32 GetGlobalCbvCount() const { return globalCount_.cbv; }
+		u32 GetGlobalSrvCount() const { return globalCount_.srv; }
+		u32 GetGlobalUavCount() const { return globalCount_.uav; }
+		u32 GetGlobalSamplerCount() const { return globalCount_.sampler; }
 		u32 GetGlobalViewCount() const
 		{
-			return globalCbvCount_ + globalSrvCount_ + globalUavCount_;
+			return globalCount_.GetViewTotal();
 		}
-		u32 GetLocalCbvCount() const { return localCbvCount_; }
-		u32 GetLocalSrvCount() const { return localSrvCount_; }
-		u32 GetLocalUavCount() const { return localUavCount_; }
-		u32 GetLocalSamplerCount() const { return localSamplerCount_; }
+		u32 GetLocalCbvCount() const { return localCount_.cbv; }
+		u32 GetLocalSrvCount() const { return localCount_.srv; }
+		u32 GetLocalUavCount() const { return localCount_.uav; }
+		u32 GetLocalSamplerCount() const { return localCount_.sampler; }
 		u32 GetLocalViewCount() const
 		{
-			return localCbvCount_ + localSrvCount_ + localUavCount_;
+			return localCount_.GetViewTotal();
 		}
 
 	private:
@@ -296,17 +316,11 @@ namespace sl12
 		u32							viewDescSize_ = 0;
 		u32							samplerDescSize_ = 0;
 
-		u32		bufferCount_ = 0;
-		u32		asCount_ = 0;
-		u32		globalCbvCount_ = 0;
-		u32		globalSrvCount_ = 0;
-		u32		globalUavCount_ = 0;
-		u32		globalSamplerCount_ = 0;
-		u32		localCbvCount_ = 0;
-		u32		localSrvCount_ = 0;
-		u32		localUavCount_ = 0;
-		u32		localSamplerCount_ = 0;
-		u32		materialCount_ = 0;
+		u32							bufferCount_ = 0;
+		u32							asCount_ = 0;
+		RaytracingDescriptorCount	globalCount_;
+		RaytracingDescriptorCount	localCount_;
+		u32							materialCount_ = 0;
 	};	// class RaytracingDescriptorHeap
 
 	class RaytracingDescriptorManager
@@ -360,6 +374,13 @@ namespace sl12
 			u32 globalSrvCount,
 			u32 globalUavCount,
 			u32 globalSamplerCount,
+			u32 materialCount);
+		bool Initialize(
+			Device* pDev,
+			u32 renderCount,
+			u32 asCount,
+			const RaytracingDescriptorCount& globalCount,
+			const RaytracingDescriptorCount& localCount,
 			u32 materialCount);
 		void Destroy();
 

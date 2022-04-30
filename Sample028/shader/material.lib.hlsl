@@ -24,7 +24,7 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 		attr.barycentrics.x * (uvs[1] - uvs[0]) +
 		attr.barycentrics.y * (uvs[2] - uvs[0]);
 
-	MaterialParam param;
+	MaterialParam param = (MaterialParam)0;
 	param.hitT = RayTCurrent();
 
 	param.baseColor = texBaseColor.SampleLevel(texBaseColor_s, uv, 0.0);
@@ -36,6 +36,9 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 	param.normal = n0 +
 		attr.barycentrics.x * (VertexNormal[indices.y] - n0) +
 		attr.barycentrics.y * (VertexNormal[indices.z] - n0);
+
+	param.flag = 0;
+	param.flag |= (HitKind() == HIT_KIND_TRIANGLE_BACK_FACE) ? kFlagBackFaceHit : 0;
 
 	EncodeMaterialPayload(param, payload);
 }

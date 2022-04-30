@@ -8,6 +8,7 @@ namespace sl12
 {
 	class Device;
 	class Shader;
+	struct RaytracingDescriptorCount;
 
 	struct ShaderVisibility
 	{
@@ -140,6 +141,13 @@ namespace sl12
 		sl12::u32 globalSrvCount,
 		sl12::u32 globalUavCount,
 		sl12::u32 globalSamplerCount,
+		sl12::RootSignature* pGlobalRS,
+		sl12::RootSignature* pLocalRS);
+	bool CreateRaytracingRootSignature(
+		sl12::Device* pDevice,
+		sl12::u32 asCount,
+		const RaytracingDescriptorCount& globalCount,
+		const RaytracingDescriptorCount& localCount,
 		sl12::RootSignature* pGlobalRS,
 		sl12::RootSignature* pLocalRS);
 

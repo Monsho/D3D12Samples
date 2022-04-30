@@ -1,6 +1,7 @@
 #include "common.hlsli"
 #include "colorspace.hlsli"
 #include "sh.hlsli"
+#include "rtxgi.hlsli"
 
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
 ConstantBuffer<LightCB>					cbLight			: register(b1);
@@ -15,6 +16,10 @@ StructuredBuffer<PointLightColor>	rLightColorBuffer	: register(t6);
 StructuredBuffer<ClusterInfo>		rClusterInfo		: register(t7);
 Texture2D							texHDRI				: register(t8);
 StructuredBuffer<SH9Color>			rSH					: register(t9);
+StructuredBuffer<DDGIVolumeDescGPUPacked>	DDGIVolumeDesc			: register(t10);
+Texture2D<float4>							DDGIProbeIrradiance		: register(t11);
+Texture2D<float4>							DDGIProbeDistance		: register(t12);
+Texture2D<float4>							DDGIProbeData			: register(t13);
 
 SamplerState						samHDRI				: register(s0);
 
@@ -79,23 +84,19 @@ float3 Lighting(uint2 pixelPos, float depth)
 	// directional light.
 	float3 directColor = BrdfGGX(diffuseColor, specularColor, gb.roughness, normalInWS, -cbLight.lightDir.rgb, -viewDirInWS) * dlightColor;
 	float directShadow = texScreenShadow[pixelPos];
-	float3 finalColor = directColor * directShadow + diffuseColor * skyColor * cbLight.skyPower;
+	float3 finalColor = directColor * directShadow;// + diffuseColor * skyColor * cbLight.skyPower;
 
+#if ENABLE_POINT_LIGHTS
 	// point lights.
 	ClusterInfo cluster = GetCluster(screenPos, depth);
 	for (uint flagIndex = 0; flagIndex < 4; flagIndex++)
 	{
 		uint flags = cluster.lightFlags[flagIndex];
 		uint baseIndex = flagIndex * 32;
-#if 0
-		for (uint index = 0; index < 32; index++)
-		{
-#else
 		while (flags)
 		{
 			uint index = firstbitlow(flags);
 			flags &= ~(0x1 << index);
-#endif
 
 			PointLightPos lightPos = rLightPosBuffer[baseIndex + index];
 			PointLightColor lightColor = rLightColorBuffer[baseIndex + index];
@@ -116,6 +117,45 @@ float3 Lighting(uint2 pixelPos, float depth)
 			finalColor += directColor;
 		}
 	}
+#endif
+
+	// RTXGI compute irradiance.
+	float3 irradiance = 0;
+	if (cbLight.giIntensity > 0.0)
+	{
+		DDGIVolumeDescGPU volume = UnpackDDGIVolumeDescGPU(DDGIVolumeDesc[0]);	// only one DDGIVolume.
+		float3 surfaceBias = DDGIGetSurfaceBias(normalInWS, -viewDirInWS, volume);
+
+		// setup ddgi resources.
+		DDGIVolumeResources resources;
+		resources.probeIrradiance = DDGIProbeIrradiance;
+		resources.probeDistance = DDGIProbeDistance;
+		resources.probeData = DDGIProbeData;
+		resources.bilinearSampler = samHDRI;
+
+		// get volume blend weight
+		float volumeBlendWeight = DDGIGetVolumeBlendWeight(worldPos.xyz, volume);
+
+		if (volumeBlendWeight > 0.0)
+		{
+			// get irradiance.
+			irradiance = DDGIGetVolumeIrradiance(
+				worldPos.xyz,
+				surfaceBias,
+				normalInWS,
+				volume,
+				resources);
+			// attenuation.
+			irradiance *= volumeBlendWeight;
+		}
+
+		if (cbScene.renderColorSpace != 0)
+		{
+			irradiance = Rec709ToRec2020(irradiance);
+		}
+		irradiance = (diffuseColor / PI) * irradiance * cbLight.giIntensity;
+	}
+	finalColor += irradiance;
 
 	return finalColor;
 }

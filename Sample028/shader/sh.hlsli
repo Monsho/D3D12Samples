@@ -109,7 +109,7 @@ float3 DotSH9(SH9Color a, SH9Color b)
 
 SH9Color AddSH9(SH9Color a, SH9Color b)
 {
-	SH9Color result;
+	SH9Color result = (SH9Color)0;
 	[unroll]
 	for(uint i = 0; i < 9; ++i)
 		result.Coefficients[i] = a.Coefficients[i] + b.Coefficients[i];
@@ -119,7 +119,7 @@ SH9Color AddSH9(SH9Color a, SH9Color b)
 
 SH9Color ScaleSH9(SH9Color a, float b)
 {
-	SH9Color result;
+	SH9Color result = (SH9Color)0;
 	[unroll]
 	for(uint i = 0; i < 9; ++i)
 		result.Coefficients[i] = a.Coefficients[i] * b;

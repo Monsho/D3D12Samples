@@ -218,10 +218,13 @@ namespace sl12
 		if (stacks_[stackIndex_].Allocate(count, cpuHandle, gpuHandle))
 			return;
 
-		if (!AddStack())
-			assert(!"[ERROR] Stack Empty!!");
-
 		stackIndex_++;
+		if (stacks_.size() <= stackIndex_)
+		{
+			if (!AddStack())
+				assert(!"[ERROR] Stack Empty!!");
+		}
+
 		if (!stacks_[stackIndex_].Allocate(count, cpuHandle, gpuHandle))
 			assert(!"[ERROR] Stack Empty!!");
 	}
@@ -417,17 +420,33 @@ namespace sl12
 		u32 globalSamplerCount,
 		u32 materialCount)
 	{
+		RaytracingDescriptorCount globalCount, localCount;
+		globalCount.cbv = globalCbvCount;
+		globalCount.srv = globalSrvCount;
+		globalCount.uav = globalUavCount;
+		globalCount.sampler = globalSamplerCount;
+		localCount.cbv = kCbvMax - globalCbvCount;
+		localCount.srv = kSrvMax - asCount - globalSrvCount;
+		localCount.uav = kUavMax - globalUavCount;
+		localCount.sampler = kSamplerMax - globalSamplerCount;
+
+		return Initialize(pDev, bufferCount, asCount, globalCount, localCount, materialCount);
+	}
+
+	//----
+	bool RaytracingDescriptorHeap::Initialize(
+		Device* pDev,
+		u32 bufferCount,
+		u32 asCount,
+		const RaytracingDescriptorCount& globalCount,
+		const RaytracingDescriptorCount& localCount,
+		u32 materialCount)
+	{
 		bufferCount_ = std::max(bufferCount, Swapchain::kMaxBuffer);
 		asCount_ = asCount;
-		globalCbvCount_ = globalCbvCount;
-		globalSrvCount_ = globalSrvCount;
-		globalUavCount_ = globalUavCount;
-		globalSamplerCount_ = globalSamplerCount;
+		globalCount_ = globalCount;
+		localCount_ = localCount;
 		materialCount_ = materialCount;
-		localCbvCount_ = kCbvMax - globalCbvCount;
-		localSrvCount_ = kSrvMax - asCount - globalSrvCount;
-		localUavCount_ = kUavMax - globalUavCount;
-		localSamplerCount_ = kSamplerMax - globalSamplerCount;
 
 		u32 global_view_max = GetGlobalViewCount();
 		u32 global_sampler_max = GetGlobalSamplerCount();
@@ -559,6 +578,29 @@ namespace sl12
 
 		pCurrentHeap_ = new RaytracingDescriptorHeap();
 		if (!pCurrentHeap_->Initialize(pDev, renderCount * Swapchain::kMaxBuffer, asCount, globalCbvCount, globalSrvCount, globalUavCount, globalSamplerCount, materialCount))
+		{
+			delete pCurrentHeap_;
+			return false;
+		}
+
+		globalIndex_ = localIndex_ = 0;
+
+		return true;
+	}
+
+	//----
+	bool RaytracingDescriptorManager::Initialize(
+		Device* pDev,
+		u32 renderCount,
+		u32 asCount,
+		const RaytracingDescriptorCount& globalCount,
+		const RaytracingDescriptorCount& localCount,
+		u32 materialCount)
+	{
+		pParentDevice_ = pDev;
+
+		pCurrentHeap_ = new RaytracingDescriptorHeap();
+		if (!pCurrentHeap_->Initialize(pDev, renderCount * Swapchain::kMaxBuffer, asCount, globalCount, localCount, materialCount))
 		{
 			delete pCurrentHeap_;
 			return false;

@@ -2,6 +2,7 @@
 #include "sl12/device.h"
 #include "sl12/file.h"
 #include "sl12/string_util.h"
+#include "sl12/command_list.h"
 #include <cctype>
 
 
@@ -29,6 +30,8 @@ namespace sl12
 					return;
 				}
 				pDevice->PendingKill(new ReleaseObjectItem<ID3D12Resource>(pSrcImage));
+
+				pCmdlist->TransitionBarrier(pTexture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
 			}
 		};	// struct TexInitRenderCommand
 	}
@@ -50,7 +53,7 @@ namespace sl12
 		// check ext.
 		// NOTE: support .png, .tga, .exr, or .hdr.
 		auto ext = GetExtent(filepath);
-		if (ext != ".png" && ext != ".tga" && ext != ".exr" && ext != ".hdr")
+		if (ext != ".png" && ext != ".dds" && ext != ".tga" && ext != ".exr" && ext != ".hdr")
 		{
 			return nullptr;
 		}
@@ -74,6 +77,10 @@ namespace sl12
 		if (ext == ".png")
 		{
 			image = ret->texture_.InitializeFromPNGwoLoad(device, texBin.GetData(), texBin.GetSize(), 0);
+		}
+		else if (ext == ".dds")
+		{
+			image = ret->texture_.InitializeFromDDSwoLoad(device, texBin.GetData(), texBin.GetSize(), 0);
 		}
 		else if (ext == ".tga")
 		{

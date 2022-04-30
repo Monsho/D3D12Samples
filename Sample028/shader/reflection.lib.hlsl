@@ -87,6 +87,7 @@ float3 Lighting(MaterialParam matParam, float3 worldPos, float3 viewDirInWS)
 	float directShadow = payload.hitT < 0 ? 1.0 : 0.0;
 	float3 finalColor = directColor * directShadow + diffuseColor * skyColor * cbLight.skyPower;
 
+#if ENABLE_POINT_LIGHTS
 	// point lights.
 	for (uint plIdx = 0; plIdx < 128; plIdx++)
 	{
@@ -111,6 +112,7 @@ float3 Lighting(MaterialParam matParam, float3 worldPos, float3 viewDirInWS)
 			* PointLightAttenuation(lightLen, lightPos.posAndRadius.w);
 		finalColor += directColor;
 	}
+#endif
 
 	return finalColor;
 }
@@ -164,7 +166,8 @@ void ReflectionRGS()
 	Ray.direction = reflect(viewDir, normalInWS);
 #endif
 
-	uint rayFlags = RAY_FLAG_NONE;
+	uint rayFlags = RAY_FLAG_CULL_NON_OPAQUE;
+	//uint rayFlags = RAY_FLAG_NONE;
 	RayDesc rayDesc = { Ray.origin, 0.0, Ray.direction, TMax };
 	MaterialPayload payload;
 	payload.hitT = -1;

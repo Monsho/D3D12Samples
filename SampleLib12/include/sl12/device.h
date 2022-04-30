@@ -18,6 +18,8 @@ namespace sl12
 	class DescriptorAllocator;
 	class GlobalDescriptorHeap;
 	class CommandList;
+	class Texture;
+	class TextureView;
 
 	struct IRenderCommand
 	{
@@ -26,6 +28,18 @@ namespace sl12
 
 		virtual void LoadCommand(CommandList* pCmdlist) = 0;
 	};	// struct IRenderCommand
+
+	struct DummyTex
+	{
+		enum Type
+		{
+			Black,
+			White,
+			FlatNormal,
+
+			Max
+		};
+	};	// struct DummyTex
 
 	class Device
 	{
@@ -44,6 +58,8 @@ namespace sl12
 
 		void WaitDrawDone();
 		void WaitPresent();
+
+		bool CreateDummyTextures(CommandList* pCmdList);
 
 		void SyncKillObjects(bool bForce = false)
 		{
@@ -167,6 +183,15 @@ namespace sl12
 			return *pSwapchain_;
 		}
 
+		Texture* GetDummyTexture(DummyTex::Type type)
+		{
+			return dummyTextures_[type].get();
+		}
+		TextureView* GetDummyTextureView(DummyTex::Type type)
+		{
+			return dummyTextureViews_[type].get();
+		}
+
 	private:
 		IDXGIFactory7*	pFactory_{ nullptr };
 		IDXGIAdapter4*	pAdapter_{ nullptr };
@@ -202,6 +227,9 @@ namespace sl12
 		ID3D12Fence*	pFence_{ nullptr };
 		u32				fenceValue_{ 0 };
 		HANDLE			fenceEvent_{ nullptr };
+
+		std::vector<std::unique_ptr<Texture>>		dummyTextures_;
+		std::vector<std::unique_ptr<TextureView>>	dummyTextureViews_;
 
 		DeathList		deathList_;
 
