@@ -1,8 +1,8 @@
 # D3D12Samples
 
 ## 大サイズファイルについて
-一部のファイルはサイズが大きいため、分割保存しています。
-サンプルを実行する場合、以下のバッチファイルを実行してリソースの結合を行ってください。
+一部のファイルはサイズが大きいため、分割保存しています。   
+サンプルを実行する場合、以下のバッチファイルを実行してリソースの結合を行ってください。   
 実行にはPythonが必要です。
 
 resources/data/split/join_all.bat
@@ -193,8 +193,8 @@ https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3
 This sample is implementation of 2-phase occlusion culling using compute shader.
 
 ## Sample027
-https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3%81%AE%E8%A9%B1-%E7%AC%AC178%E5%9B%9E
-https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3%81%AE%E8%A9%B1-%E7%AC%AC179%E5%9B%9E
+https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3%81%AE%E8%A9%B1-%E7%AC%AC178%E5%9B%9E    
+https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3%81%AE%E8%A9%B1-%E7%AC%AC179%E5%9B%9E    
 
 Fidelity-FX Super ResolutionとNVIDIA Image Scalingの実装とHDRを用いたUI描画のサンプルです。
 
@@ -206,4 +206,3 @@ https://sites.google.com/site/monshonosuana/directx%E3%81%AE%E8%A9%B1/directx%E3
 Ray Binningのサンプルです。
 
 This sample use Ray Binning for ray-tracing reflection.
-This sample is implementation of Fidelity-FX Super Resolution (FSR) and NVIDIA Image Scaling (NIS).
