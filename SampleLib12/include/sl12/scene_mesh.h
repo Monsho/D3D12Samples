@@ -10,6 +10,15 @@
 
 namespace sl12
 {
+	struct MeshMaterialData
+	{
+		DirectX::XMFLOAT4	baseColor;
+		DirectX::XMFLOAT3	emissiveColor;
+		float				pad;
+		float				roughness;
+		float				metallic;
+	};	// struct MeshMaterialData
+
 	class SceneSubmesh
 	{
 		friend class SceneMesh;
@@ -48,12 +57,18 @@ namespace sl12
 		}
 
 	private:
+		void BeginNewFrame(CommandList* pCmdList);
+
+	private:
 		Device*		pParentDevice_ = nullptr;
 
 		Buffer*		pMeshletBoundsB_ = nullptr;
 		Buffer*		pMeshletDrawInfoB_ = nullptr;
 		BufferView* pMeshletBoundsBV_ = nullptr;
 		BufferView* pMeshletDrawInfoBV_ = nullptr;
+
+		Buffer*		pBoundsStaging_ = nullptr;
+		Buffer*		pDrawInfoStaging_ = nullptr;
 
 		MeshletCB	cbData_;
 		Buffer*		pMeshletCB_ = nullptr;
@@ -67,6 +82,7 @@ namespace sl12
 		SceneMesh(Device* pDevice, const ResourceItemMesh* pSrcMesh);
 		~SceneMesh();
 
+		void BeginNewFrame(CommandList* pCmdList) override;
 		void CreateRenderCommand(ConstantBufferCache* pCBCache, RenderCommandsList& outRenderCmds) override;
 
 		const ResourceItemMesh* GetParentResource() const
@@ -81,6 +97,19 @@ namespace sl12
 		SceneSubmesh* GetSubmesh(u32 index)
 		{
 			return sceneSubmeshes_[index].get();
+		}
+
+		Buffer* GetMaterialCB()
+		{
+			return pMaterialCB_;
+		}
+		std::vector<ConstantBufferView*>& GetMaterialCBVs()
+		{
+			return materialCBVs_;
+		}
+		ConstantBufferView* GetMaterialCBV(u32 index)
+		{
+			return (index < materialCBVs_.size()) ? materialCBVs_[index] : nullptr;
 		}
 
 		Buffer* GetIndirectArgBuffer()
@@ -129,11 +158,18 @@ namespace sl12
 			return mtxPrevLocalToWorld_;
 		}
 
+		void UpdateMaterial(u32 index, const MeshMaterialData& data);
+		void LoadUpdateMaterialCommand(CommandList* pCmdList);
+
 	private:
 		Device*	pParentDevice_ = nullptr;
 		const ResourceItemMesh*	pParentResource_ = nullptr;
 
 		std::vector<std::unique_ptr<SceneSubmesh>>	sceneSubmeshes_;
+
+		Buffer*								pMaterialCB_ = nullptr;
+		std::vector<ConstantBufferView*>	materialCBVs_;
+		std::map<u32, MeshMaterialData>		updateMaterials_;
 
 		Buffer*	pIndirectArgBuffer_ = nullptr;
 		Buffer*	pIndirectCountBuffer_ = nullptr;

@@ -9,44 +9,6 @@
 #endif
 
 
-
-// https://knarkowicz.wordpress.com/2014/04/16/octahedron-normal-vector-encoding/
-float2 UnitVectorToOctahedron(float3 n)
-{
-	n /= dot(1.0, abs(n));
-	if (n.z < 0.0)
-	{
-		n.xy = (1.0 - abs(n.yx)) * (n.xy >= 0.0 ? 1.0 : -1.0);
-	}
-	n.xy = n.xy * 0.5 + 0.5;
-	return n.xy;
-}
-float3 OctahedronToUnitVector(float2 f)
-{
-	f = f * 2.0 - 1.0;
-
-	// https://twitter.com/Stubbesaurus/status/937994790553227264
-	float3 n = float3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-	float t = saturate(-n.z);
-	n.xy += n.xy >= 0.0 ? -t : t;
-	return normalize(n);
-}
-
-uint MortonCode2(uint x)
-{
-	x &= 0x0000ffff;
-	x = (x ^ (x << 8)) & 0x00ff00ff;
-	x = (x ^ (x << 4)) & 0x0f0f0f0f;
-	x = (x ^ (x << 2)) & 0x33333333;
-	x = (x ^ (x << 1)) & 0x55555555;
-	return x;
-}
-
-uint MortonEncode2D(uint2 Pixel)
-{
-	return MortonCode2(Pixel.x) | (MortonCode2(Pixel.y) << 1);
-}
-
 uint RayDirectionToBin(float3 dir, uint2 TileSize)
 {
 	float2 oct = UnitVectorToOctahedron(dir);

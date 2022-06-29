@@ -19,6 +19,10 @@ namespace sl12
 		virtual ~SceneNode()
 		{}
 
+		// need to call when new frame begin.
+		virtual void BeginNewFrame(CommandList* pCmdList)
+		{}
+
 		// create unique render command.
 		virtual void CreateRenderCommand(ConstantBufferCache* pCBCache, RenderCommandsList& outRenderCmds)
 		{}
@@ -35,13 +39,23 @@ namespace sl12
 		~SceneRoot();
 
 		void AttachNode(SceneNodePtr node);
+		void DeleteNode(SceneNodePtr node);
+
+		void BeginNewFrame(CommandList* pCmdList);
 
 		void GatherRenderCommands(ConstantBufferCache* pCBCache, RenderCommandsList& outRenderCmds);
 
 		void GabageCollect();
 
+		bool IsDirty() const
+		{
+			return bDirty_;
+		}
+
 	private:
 		std::vector<SceneNodeWeakPtr>	nodes_;
+		bool							bDirty_;
+		bool							bDirty_PrevFrame_;
 	};	// class SceneRoot
 
 }	// namespace sl12

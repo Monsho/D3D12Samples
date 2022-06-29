@@ -77,10 +77,13 @@ namespace sl12
 		ddgiDesc.probeNumIrradianceTexels = descs->numIrradianceTexels;
 		ddgiDesc.probeNumDistanceTexels = descs->numDistanceTexels;
 		ddgiDesc.probeMaxRayDistance = descs->maxRayDistance;
+		ddgiDesc.probeDistanceExponent = descs->distanceExponent;
+		ddgiDesc.probeIrradianceThreshold = descs->irradianceThreshold;
+		ddgiDesc.probeBrightnessThreshold = descs->brightnessThreshold;
 
 		ddgiDesc.showProbes = true;
 
-		ddgiDesc.probeRayDataFormat = 0;
+		ddgiDesc.probeRayDataFormat = 1;
 		ddgiDesc.probeIrradianceFormat = 0;
 		ddgiDesc.probeDistanceFormat = 0;
 		ddgiDesc.probeDataFormat = 0;

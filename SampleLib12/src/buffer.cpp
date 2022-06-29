@@ -13,10 +13,7 @@ namespace sl12
 		auto initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
 		if (!isDynamic)
 		{
-			if (type != BufferUsage::ConstantBuffer)
-			{
-				initialState = D3D12_RESOURCE_STATE_COPY_DEST;
-			}
+			initialState = D3D12_RESOURCE_STATE_COPY_DEST;
 		}
 		if (type == BufferUsage::ReadBack)
 		{
@@ -31,10 +28,7 @@ namespace sl12
 		D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_UPLOAD;
 		if (!isDynamic)
 		{
-			if (type != BufferUsage::ConstantBuffer)
-			{
-				heapType = D3D12_HEAP_TYPE_DEFAULT;
-			}
+			heapType = D3D12_HEAP_TYPE_DEFAULT;
 		}
 		if (type == BufferUsage::ReadBack)
 		{
@@ -44,7 +38,7 @@ namespace sl12
 		size_t allocSize = size;
 		if (type == BufferUsage::ConstantBuffer)
 		{
-			allocSize = (allocSize + 255) / 256 * 256;
+			allocSize = GetAlignedSize(allocSize, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 		}
 
 		// ByteAddressBufferの場合はR32_TYPELESSに設定する
@@ -133,6 +127,10 @@ namespace sl12
 	//----
 	void* Buffer::Map(CommandList*)
 	{
+		return Map();
+	}
+	void* Buffer::Map()
+	{
 		if (!pResource_)
 		{
 			return nullptr;
@@ -146,6 +144,21 @@ namespace sl12
 		}
 		return pData;
 	}
+	void* Buffer::Map(const D3D12_RANGE& range)
+	{
+		if (!pResource_)
+		{
+			return nullptr;
+		}
+
+		void* pData{ nullptr };
+		auto hr = pResource_->Map(0, &range, &pData);
+		if (FAILED(hr))
+		{
+			return nullptr;
+		}
+		return (u8*)pData + range.Begin;
+	}
 
 	//----
 	void Buffer::Unmap()
@@ -156,6 +169,15 @@ namespace sl12
 		}
 
 		pResource_->Unmap(0, nullptr);
+	}
+	void Buffer::Unmap(const D3D12_RANGE& range)
+	{
+		if (!pResource_)
+		{
+			return;
+		}
+
+		pResource_->Unmap(0, &range);
 	}
 
 }	// namespace sl12

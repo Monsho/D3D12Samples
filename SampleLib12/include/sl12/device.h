@@ -20,6 +20,7 @@ namespace sl12
 	class CommandList;
 	class Texture;
 	class TextureView;
+	class CopyRingBuffer;
 
 	struct IRenderCommand
 	{
@@ -44,12 +45,8 @@ namespace sl12
 	class Device
 	{
 	public:
-		Device()
-		{}
-		~Device()
-		{
-			Destroy();
-		}
+		Device();
+		~Device();
 
 		bool Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs, ColorSpaceType csType = ColorSpaceType::Rec709);
 		void Destroy();
@@ -192,6 +189,8 @@ namespace sl12
 			return dummyTextureViews_[type].get();
 		}
 
+		void CopyToBuffer(CommandList* pCmdList, Buffer* pDstBuffer, u32 dstOffset, const void* pSrcData, u32 srcSize);
+
 	private:
 		IDXGIFactory7*	pFactory_{ nullptr };
 		IDXGIAdapter4*	pAdapter_{ nullptr };
@@ -235,6 +234,8 @@ namespace sl12
 
 		std::mutex									renderCommandMutex_;
 		std::list<std::unique_ptr<IRenderCommand>>	renderCommands_;
+
+		std::unique_ptr<CopyRingBuffer>				pRingBuffer_;
 	};	// class Device
 
 }	// namespace sl12

@@ -6,11 +6,22 @@
 #include <sl12/descriptor_heap.h>
 #include <sl12/texture.h>
 #include <sl12/command_list.h>
+#include <sl12/ring_buffer.h>
 #include <string>
 
 namespace sl12
 {
 	LARGE_INTEGER CpuTimer::frequency_;
+
+	//----
+	Device::Device()
+	{}
+
+	//----
+	Device::~Device()
+	{
+		Destroy();
+	}
 
 	//----
 	bool Device::Initialize(HWND hWnd, u32 screenWidth, u32 screenHeight, const std::array<u32, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES>& numDescs, ColorSpaceType csType)
@@ -287,14 +298,22 @@ namespace sl12
 			return false;
 		}
 
+		// create copy ring buffer.
+		pRingBuffer_ = std::make_unique<CopyRingBuffer>(this);
+
 		return true;
 	}
 
 	//----
 	void Device::Destroy()
 	{
+		// before clear death list.
+		pRingBuffer_.reset();
+
+		// clear death list.
 		SyncKillObjects(true);
 
+		// shutdown system.
 		dummyTextureViews_.clear();
 		dummyTextures_.clear();
 
@@ -353,6 +372,9 @@ namespace sl12
 				WaitForSingleObject(fenceEvent_, INFINITE);
 			}
 		}
+
+		// begin new frame.
+		pRingBuffer_->BeginNewFrame();
 	}
 
 	//----
@@ -469,6 +491,12 @@ namespace sl12
 		}
 
 		return true;
+	}
+
+	//----
+	void Device::CopyToBuffer(CommandList* pCmdList, Buffer* pDstBuffer, u32 dstOffset, const void* pSrcData, u32 srcSize)
+	{
+		pRingBuffer_->CopyToBuffer(pCmdList, pDstBuffer, dstOffset, pSrcData, srcSize);
 	}
 
 }	// namespace sl12

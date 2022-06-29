@@ -37,6 +37,10 @@ namespace sl12
 		int					numIrradianceTexels = 6;
 		int					numDistanceTexels = 14;
 		float				maxRayDistance = 20.0f;
+		float				distanceExponent = 50.0f;
+		float				hysteresis = 0.97f;
+		float				irradianceThreshold = 0.25f;
+		float				brightnessThreshold = 0.1f;
 		bool				enableRelocation = true;
 		bool				enableClassification = true;
 	};	// struct RtxgiVolumeDesc

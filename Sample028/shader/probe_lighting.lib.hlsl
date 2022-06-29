@@ -23,7 +23,8 @@ RWTexture2D<float4>							DDGIRayData				: register(u0);
 
 ConstantBuffer<SceneCB>						cbScene					: register(b0);
 ConstantBuffer<LightCB>						cbLight					: register(b1);
-ConstantBuffer<DDGIConstants>				cbDDGIConst				: register(b2);
+ConstantBuffer<MaterialCB>					cbMaterial				: register(b2);
+ConstantBuffer<DDGIConstants>				cbDDGIConst				: register(b3);
 
 SamplerState								BilinearWrapSampler		: register(s0);
 
@@ -82,7 +83,7 @@ float3 Lighting(MaterialParam matParam, float3 worldPos, float3 viewDirInWS)
 	}
 #endif
 
-	return finalColor;
+	return finalColor + matParam.emissive;
 }
 
 float2 CubemapDirToPanoramaUV(float3 dir)

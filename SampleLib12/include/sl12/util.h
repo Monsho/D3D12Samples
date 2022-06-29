@@ -96,6 +96,10 @@ namespace sl12
 	{
 		return ((size + align - 1) / align) * align;
 	}
+	constexpr size_t GetAlignedSize(const size_t size, const size_t align)
+	{
+		return ((size + align - 1) / align) * align;
+	}
 
 	class HashString
 	{
@@ -318,6 +322,90 @@ namespace sl12
 			: boxMin(pmin), boxMax(pmax)
 		{}
 	};	// struct BoundingBox
+
+	// inverse z perspective matrix.
+	inline DirectX::XMMATRIX MatrixPerspectiveInverseFovRH(float FovYRad, float Aspect, float Zn, float Zf)
+	{
+		float YScale = 1.0f / tanf(FovYRad * 0.5f);
+		float XScale = YScale / Aspect;
+		float DivZ = 1.0f / (Zf - Zn);
+		DirectX::XMFLOAT4X4 m(
+			XScale, 0.0f, 0.0f, 0.0f,
+			0.0f, YScale, 0.0f, 0.0f,
+			0.0f, 0.0f, Zn * DivZ, -1.0f,
+			0.0f, 0.0f, Zn * Zf * DivZ, 0.0f);
+		return DirectX::XMLoadFloat4x4(&m);
+	}
+	inline DirectX::XMMATRIX MatrixPerspectiveInverseFovLH(float FovYRad, float Aspect, float Zn, float Zf)
+	{
+		float YScale = 1.0f / tanf(FovYRad * 0.5f);
+		float XScale = YScale / Aspect;
+		float DivZ = 1.0f / (Zf - Zn);
+		DirectX::XMFLOAT4X4 m(
+			XScale, 0.0f, 0.0f, 0.0f,
+			0.0f, YScale, 0.0f, 0.0f,
+			0.0f, 0.0f, -Zn * DivZ, 1.0f,
+			0.0f, 0.0f, Zn * Zf * DivZ, 0.0f);
+		return DirectX::XMLoadFloat4x4(&m);
+	}
+
+	// infinite perspective matrix.
+	inline DirectX::XMMATRIX MatrixPerspectiveInfiniteFovRH(float FovYRad, float Aspect, float Zn)
+	{
+		float YScale = 1.0f / tanf(FovYRad * 0.5f);
+		float XScale = YScale / Aspect;
+		DirectX::XMFLOAT4X4 m(
+			XScale, 0.0f, 0.0f, 0.0f,
+			0.0f, YScale, 0.0f, 0.0f,
+			0.0f, 0.0f, -1.0f, -1.0f,
+			0.0f, 0.0f, -Zn, 0.0f);
+		return DirectX::XMLoadFloat4x4(&m);
+	}
+	inline DirectX::XMMATRIX MatrixPerspectiveInfiniteFovLH(float FovYRad, float Aspect, float Zn)
+	{
+		float YScale = 1.0f / tanf(FovYRad * 0.5f);
+		float XScale = YScale / Aspect;
+		DirectX::XMFLOAT4X4 m(
+			XScale, 0.0f, 0.0f, 0.0f,
+			0.0f, YScale, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 1.0f,
+			0.0f, 0.0f, -Zn, 0.0f);
+		return DirectX::XMLoadFloat4x4(&m);
+	}
+
+	// infinite inverse z perspective matrix.
+	inline DirectX::XMMATRIX MatrixPerspectiveInfiniteInverseFovRH(float FovYRad, float Aspect, float Zn)
+	{
+		float YScale = 1.0f / tanf(FovYRad * 0.5f);
+		float XScale = YScale / Aspect;
+		DirectX::XMFLOAT4X4 m(
+			XScale, 0.0f, 0.0f, 0.0f,
+			0.0f, YScale, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.0f, -1.0f,
+			0.0f, 0.0f, Zn, 0.0f);
+		return DirectX::XMLoadFloat4x4(&m);
+	}
+	inline DirectX::XMMATRIX MatrixPerspectiveInfiniteInverseFovLH(float FovYRad, float Aspect, float Zn)
+	{
+		float YScale = 1.0f / tanf(FovYRad * 0.5f);
+		float XScale = YScale / Aspect;
+		DirectX::XMFLOAT4X4 m(
+			XScale, 0.0f, 0.0f, 0.0f,
+			0.0f, YScale, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.0f, 1.0f,
+			0.0f, 0.0f, Zn, 0.0f);
+		return DirectX::XMLoadFloat4x4(&m);
+	}
+
+	// View Z from perspective matrix.
+	inline float ViewZFromPerspective(const DirectX::XMMATRIX& Persp, float DeviceZ)
+	{
+		float a = Persp.r[2].m128_f32[2];
+		float b = Persp.r[3].m128_f32[2];
+		float c = Persp.r[2].m128_f32[3];
+		return -b / (a - c * DeviceZ);
+	}
+
 
 	extern Random GlobalRandom;
 }	// namespace sl12

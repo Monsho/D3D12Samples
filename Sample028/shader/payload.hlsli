@@ -14,6 +14,8 @@ struct HitPayload
 
 struct MaterialPayload
 {
+	float3	emissive;
+	float	pad;
 	uint2	normalRoughnessMetallic;		// 16bit unorm normal.xyz + 8bit roughness + 8bit metallic
 	uint	baseColorUnorm;
 	float	hitT;
@@ -21,6 +23,7 @@ struct MaterialPayload
 
 struct MaterialParam
 {
+	float3	emissive;
 	float3	normal;
 	float	roughness;
 	float	metallic;
@@ -33,6 +36,7 @@ void EncodeMaterialPayload(
 	in MaterialParam param,
 	inout MaterialPayload payload)
 {
+	payload.emissive = param.emissive;
 	payload.hitT = param.hitT;
 
 	uint3 n = uint3(param.normal * 32767.0 + 32767.0);
@@ -52,6 +56,7 @@ void DecodeMaterialPayload(
 	in MaterialPayload payload,
 	inout MaterialParam param)
 {
+	param.emissive = payload.emissive;
 	param.hitT = payload.hitT;
 
 	uint3 n = uint3(

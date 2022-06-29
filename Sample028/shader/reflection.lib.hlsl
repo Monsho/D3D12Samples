@@ -11,6 +11,7 @@
 // global
 ConstantBuffer<SceneCB>				cbScene			: register(b0);
 ConstantBuffer<LightCB>				cbLight			: register(b1);
+ConstantBuffer<MaterialCB>			cbMaterial		: register(b2);
 
 RaytracingAccelerationStructure		TLAS			: register(t0, space0);
 Texture2D							texGBuffer0		: register(t1);
@@ -114,7 +115,7 @@ float3 Lighting(MaterialParam matParam, float3 worldPos, float3 viewDirInWS)
 	}
 #endif
 
-	return finalColor;
+	return finalColor + matParam.emissive;
 }
 
 [shader("raygeneration")]

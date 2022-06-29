@@ -80,7 +80,8 @@ bool IsFrustumCull(in MeshletBound meshlet, in float4 frustumPlanes[6], in float
 bool IsBackfaceCull(in MeshletBound meshlet, in float3 camPos, in float4x4 mtxLocalToWorld)
 {
 	float3 coneApex = mul(mtxLocalToWorld, float4(meshlet.coneApex, 1)).xyz;
-	return dot(normalize(coneApex - camPos), meshlet.coneAxis) >= meshlet.coneCutoff;
+	float3 coneAxis = normalize(mul((float3x3)mtxLocalToWorld, meshlet.coneAxis));
+	return dot(normalize(coneApex - camPos), coneAxis) >= meshlet.coneCutoff;
 }
 
 // to screen AABB.
@@ -102,23 +103,23 @@ bool ToScreenAABB(in MeshletBound meshlet, in float4x4 mtxLocalToProj, in float 
 	for (pointID = 0; pointID < 8; pointID++)
 	{
 		points[pointID] = mul(mtxLocalToProj, points[pointID]);
-		float iw = 1.0 / points[pointID].w;
-		points[pointID].xy = (points[pointID].xy * iw) * float2(0.5, -0.5) + 0.5;
+		points[pointID].xyz /= points[pointID].w;
+		points[pointID].xy = points[pointID].xy * float2(0.5, -0.5) + 0.5;
 	}
 
-	aabbMin = aabbMax = points[0].xyw;
+	aabbMin = aabbMax = points[0].xyz;
 	for (pointID = 1; pointID < 8; pointID++)
 	{
-		aabbMin = min(aabbMin, points[pointID].xyw);
-		aabbMax = max(aabbMax, points[pointID].xyw);
+		aabbMin = min(aabbMin, points[pointID].xyz);
+		aabbMax = max(aabbMax, points[pointID].xyz);
 	}
 	if (aabbMin.z <= nearZ)
 		return true;
 
 	aabbMin.xy = clamp(aabbMin.xy, 0.0, 1.0);
-	aabbMin.z = clamp(aabbMin.z, nearZ, farZ);
+	aabbMin.z = max(aabbMin.z, 0.0);
 	aabbMax.xy = clamp(aabbMax.xy, 0.0, 1.0);
-	aabbMax.z = clamp(aabbMax.z, nearZ, farZ);
+	aabbMax.z = max(aabbMax.z, 0.0);
 	return false;
 }
 
@@ -128,8 +129,8 @@ bool ToScreenAABB(in MeshletBound meshlet, in float4x4 mtxLocalToProj, in float 
 bool IsOcclusionCull(in float3 aabbMin, in float3 aabbMax, in float2 hizSize, in Texture2D<float2> texHiZ, in uint mipLevel, in float2 maskMinMax)
 {
 	float4 rect = float4(aabbMin.xy, aabbMax.xy) * hizSize.xyxy;
-	uint maxTexel = (uint)max(rect.z - rect.x, rect.w - rect.y) + 1;
-	uint desiredMip = min(firstbithigh(maxTexel), mipLevel);
+	uint numTexel = (uint)min(rect.z - rect.x, rect.w - rect.y) + 1;
+	uint desiredMip = min(firstbithigh(numTexel), mipLevel);
 	
 	float2 levelSize = hizSize / exp2(desiredMip);
 	float2 left_top = aabbMin.xy * levelSize;
@@ -149,7 +150,8 @@ bool IsOcclusionCull(in float3 aabbMin, in float3 aabbMax, in float2 hizSize, in
 			maxZ = max(maxZ, dot(texHiZ.Load(uvw), maskMinMax));
 		}
 	}
-	return rectZ > maxZ;
+	const float kEpsilon = 1e-3;
+	return maxZ > 0.0 && rectZ >= (maxZ + kEpsilon);
 }
 
 #endif // CULLING_HLSLI

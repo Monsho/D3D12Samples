@@ -12,14 +12,16 @@ struct PSInput
 
 struct PSOutput
 {
-	float4	worldQuat	: SV_TARGET0;
-	float4	baseColor	: SV_TARGET1;
-	float4	roughMetal	: SV_TARGET2;
-	float2	velocity	: SV_TARGET3;
+	float3	emission	: SV_TARGET0;
+	float4	worldQuat	: SV_TARGET1;
+	float4	baseColor	: SV_TARGET2;
+	float4	roughMetal	: SV_TARGET3;
+	float2	velocity	: SV_TARGET4;
 };
 
 ConstantBuffer<SceneCB>					cbScene			: register(b0);
 ConstantBuffer<MaterialCB>				cbMaterial		: register(b1);
+ConstantBuffer<MeshMaterialCB>			cbMeshMaterial	: register(b2);
 
 Texture2D			texColor		: register(t0);
 Texture2D			texNormal		: register(t1);
@@ -31,20 +33,11 @@ PSOutput main(PSInput In)
 	PSOutput Out = (PSOutput)0;
 
 	GBuffer gb;
-	gb.baseColor = texColor.Sample(texColor_s, In.uv);
+	gb.baseColor = texColor.Sample(texColor_s, In.uv) * cbMeshMaterial.baseColor;
 	float3 orm = texORM.Sample(texColor_s, In.uv).rgb;
-	gb.roughness = lerp(cbMaterial.roughnessRange.x, cbMaterial.roughnessRange.y, orm.g) + Epsilon;
-	gb.metallic = lerp(cbMaterial.metallicRange.x, cbMaterial.metallicRange.y, orm.b);
+	gb.roughness = lerp(cbMaterial.roughnessRange.x, cbMaterial.roughnessRange.y, orm.g * cbMeshMaterial.roughness) + Epsilon;
+	gb.metallic = lerp(cbMaterial.metallicRange.x, cbMaterial.metallicRange.y, orm.b * cbMeshMaterial.metallic);
 
-#if 0
-	float3 T, B, N;
-	GetTangentSpace(In.normal, In.tangent, T, B, N);
-	float3 normalInTS = texNormal.Sample(texColor_s, In.uv).xyz * 2 - 1;
-	float3 normalInWS = ConvertVectorTangetToWorld(normalInTS, T, B, N);
-	B = normalize(cross(normalInWS, T));
-	T = cross(B, normalInWS);
-	gb.worldQuat = TangentSpaceToQuat(T, B, normalInWS);
-#else
 	float3 T, B, N;
 	GetTangentSpace(In.normal, In.tangent, T, B, N);
 	float4 worldQuat = TangentSpaceToQuat(T, B * -sign(In.tangent.w), N);
@@ -54,12 +47,16 @@ PSOutput main(PSInput In)
 	B = normalize(cross(normalInWS, T));
 	T = cross(B, normalInWS);
 	gb.worldQuat = TangentSpaceToQuat(T, B, normalInWS);
-#endif
 
 	EncodeGBuffer(gb, Out.worldQuat, Out.baseColor, Out.roughMetal);
 
 	// output screen velocity.
-	Out.velocity = In.currPos.xy / In.currPos.w - In.prevPos.xy / In.prevPos.w;
+	float2 cp = In.currPos.xy / In.currPos.w;
+	float2 pp = In.prevPos.xy / In.prevPos.w;
+	Out.velocity = cp - pp;
+
+	// emission
+	Out.emission = cbMeshMaterial.emissiveColor * cbMaterial.emissiveIntensity;
 
 	return Out;
 }

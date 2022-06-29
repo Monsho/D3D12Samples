@@ -180,6 +180,12 @@
     <ClInclude Include="include\sl12\rtxgi_component.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="include\sl12\ring_buffer.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="include\sl12\mesh_manager.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\swapchain.cpp">
@@ -300,6 +306,12 @@
       <Filter>ソース ファイル\RTXGI\ddgi\gfx</Filter>
     </ClCompile>
     <ClCompile Include="src\rtxgi_component.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ring_buffer.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mesh_manager.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>

@@ -21,7 +21,7 @@ namespace sl12
 			Destroy();
 		}
 
-		bool Initialize(Device* pDev, Buffer* pBuffer);
+		bool Initialize(Device* pDev, Buffer* pBuffer, size_t offset = 0, size_t size = 0);
 		void Destroy();
 
 		// getter
@@ -45,6 +45,7 @@ namespace sl12
 		}
 
 		bool Initialize(Device* pDev, Buffer* pBuffer, size_t offset = 0, size_t size = 0);
+		bool Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size, size_t stride);
 		void Destroy();
 
 		// getter
@@ -69,6 +70,7 @@ namespace sl12
 		}
 
 		bool Initialize(Device* pDev, Buffer* pBuffer, size_t offset = 0, size_t size = 0);
+		bool Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size, size_t stride);
 		void Destroy();
 
 		// getter

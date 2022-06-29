@@ -1,8 +1,11 @@
 #include "common.hlsli"
 #include "payload.hlsli"
 
+// global
+ConstantBuffer<MaterialCB>			cbMaterial		: register(b2);
 
 // local
+ConstantBuffer<MeshMaterialCB>		cbMeshMaterial	: register(b4);
 ByteAddressBuffer					Indices			: register(t10);
 StructuredBuffer<float3>			VertexNormal	: register(t11);
 StructuredBuffer<float2>			VertexUV		: register(t12);
@@ -29,8 +32,10 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 
 	param.baseColor = texBaseColor.SampleLevel(texBaseColor_s, uv, 0.0);
 	float4 orm = texORM.SampleLevel(texBaseColor_s, uv, 0.0);
-	param.roughness = lerp(0.01, 1.0, orm.g);
-	param.metallic = orm.b;
+	param.roughness = max(0.01, lerp(cbMaterial.roughnessRange.x, cbMaterial.roughnessRange.y, orm.g));
+	param.metallic = lerp(cbMaterial.metallicRange.x, cbMaterial.metallicRange.y, orm.b);
+
+	param.emissive = cbMeshMaterial.emissiveColor * cbMaterial.emissiveIntensity;
 
 	float3 n0 = VertexNormal[indices.x];
 	param.normal = n0 +

@@ -14,6 +14,7 @@ namespace sl12
 {
 	class Device;
 	class ResourceItemBase;
+	class MeshManager;
 
 	constexpr u32 TYPE_FOURCC(const char* s)
 	{
@@ -115,6 +116,15 @@ namespace sl12
 			return pDevice_;
 		}
 
+		void SetMeshManager(MeshManager* p)
+		{
+			pMeshManager_ = p;
+		}
+		MeshManager* GetMeshManager()
+		{
+			return pMeshManager_;
+		}
+
 		bool IsLoading() const
 		{
 			return !requestList_.empty() || isLoading_;
@@ -132,6 +142,7 @@ namespace sl12
 		};	// struct RequestItem
 
 		Device*				pDevice_ = nullptr;
+		MeshManager*		pMeshManager_ = nullptr;
 		std::atomic<u64>	handleID_ = 0;
 
 		std::map<u64, std::unique_ptr<ResourceItemBase>>	resourceMap_;

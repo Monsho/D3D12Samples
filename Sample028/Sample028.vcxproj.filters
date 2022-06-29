@@ -12,6 +12,12 @@
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\scene_view.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\fsr2_renderer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -22,6 +28,12 @@
   <ItemGroup>
     <ClInclude Include="shader\constant.h">
       <Filter>shader</Filter>
+    </ClInclude>
+    <ClInclude Include="src\scene_view.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\fsr2_renderer.h">
+      <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

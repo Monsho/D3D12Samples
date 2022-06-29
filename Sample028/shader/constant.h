@@ -19,6 +19,7 @@ struct SceneCB
 	float4x4	mtxPrevProjToWorld;
 	float4		screenInfo;				// x: NearZ, y: FarZ, zw: ScreenSize
 	float4		camPos;
+	float3		viewDepthValue;			// x: m33, y: m43, z: m34
 	uint		isOcclusionCull;
 	uint		isMeshletColor;
 	uint		renderColorSpace;
@@ -32,10 +33,20 @@ struct LightCB
 	float		giIntensity;
 };
 
+struct MeshMaterialCB
+{
+	float4		baseColor;
+	float3		emissiveColor;
+	float		pad;
+	float		roughness;
+	float		metallic;
+};
+
 struct MaterialCB
 {
 	float2		roughnessRange;
 	float2		metallicRange;
+	float		emissiveIntensity;
 };
 
 struct FrustumCB
@@ -130,9 +141,9 @@ struct RayData
 #define CLUSTER_DIV_XY		16
 #define CLUSTER_DIV_Z		16
 
-#define HIZ_MIP_LEVEL		5
+#define HIZ_MIP_LEVEL		6
 
-#define ENABLE_POINT_LIGHTS		1
+#define ENABLE_POINT_LIGHTS		0
 
 #endif // CONSTANT_H
 //	EOF

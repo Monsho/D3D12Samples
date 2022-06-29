@@ -4,6 +4,7 @@
 #include "sl12/resource_loader.h"
 #include "sl12/buffer.h"
 #include "sl12/buffer_view.h"
+#include "sl12/mesh_manager.h"
 
 #include <DirectXMath.h>
 #include <cereal/cereal.hpp>
@@ -70,6 +71,22 @@ namespace sl12
 		{
 			return textureNames_;
 		}
+		DirectX::XMFLOAT4 GetBaseColor() const
+		{
+			return DirectX::XMFLOAT4(baseColorR_, baseColorG_, baseColorB_, baseColorA_);
+		}
+		DirectX::XMFLOAT3 GetEmissiveColor() const
+		{
+			return DirectX::XMFLOAT3(emissiveColorR_, emissiveColorG_, emissiveColorB_);
+		}
+		float GetRoughness() const
+		{
+			return roughness_;
+		}
+		float GetMetallic() const
+		{
+			return metallic_;
+		}
 		bool IsOpaque() const
 		{
 			return isOpaque_;
@@ -78,13 +95,20 @@ namespace sl12
 	private:
 		std::string					name_;
 		std::vector<std::string>	textureNames_;
+		float						baseColorR_, baseColorG_, baseColorB_, baseColorA_;
+		float						emissiveColorR_, emissiveColorG_, emissiveColorB_;
+		float						roughness_;
+		float						metallic_;
 		bool						isOpaque_;
 
 
 		template <class Archive>
 		void serialize(Archive& ar)
 		{
-			ar(CEREAL_NVP(name_), CEREAL_NVP(textureNames_), CEREAL_NVP(isOpaque_));
+			ar(CEREAL_NVP(name_), CEREAL_NVP(textureNames_),
+				CEREAL_NVP(baseColorR_), CEREAL_NVP(baseColorG_), CEREAL_NVP(baseColorB_), CEREAL_NVP(baseColorA_),
+				CEREAL_NVP(emissiveColorR_), CEREAL_NVP(emissiveColorG_), CEREAL_NVP(emissiveColorB_),
+				CEREAL_NVP(roughness_), CEREAL_NVP(metallic_), CEREAL_NVP(isOpaque_));
 		}
 	};	// class ResourceMeshMaterial
 
@@ -367,11 +391,15 @@ namespace sl12
 
 		struct Material
 		{
-			std::string		name;
-			ResourceHandle	baseColorTex;
-			ResourceHandle	normalTex;
-			ResourceHandle	ormTex;
-			bool			isOpaque;
+			std::string			name;
+			ResourceHandle		baseColorTex;
+			ResourceHandle		normalTex;
+			ResourceHandle		ormTex;
+			DirectX::XMFLOAT4	baseColor;
+			DirectX::XMFLOAT3	emissiveColor;
+			float				roughness;
+			float				metallic;
+			bool				isOpaque;
 		};	// struct Material
 
 		struct Meshlet
@@ -390,6 +418,16 @@ namespace sl12
 			int					materialIndex;
 			u32					vertexCount;
 			u32					indexCount;
+			size_t				positionSizeBytes;
+			size_t				normalSizeBytes;
+			size_t				tangentSizeBytes;
+			size_t				texcoordSizeBytes;
+			size_t				indexSizeBytes;
+			size_t				positionOffsetBytes;
+			size_t				normalOffsetBytes;
+			size_t				tangentOffsetBytes;
+			size_t				texcoordOffsetBytes;
+			size_t				indexOffsetBytes;
 			VertexBufferView	positionVBV;
 			VertexBufferView	normalVBV;
 			VertexBufferView	tangentVBV;
@@ -482,7 +520,49 @@ namespace sl12
 			return meshletVertexIndex_;
 		}
 
+		const MeshManager::Handle& GetPositionHandle() const
+		{
+			return hPosition_;
+		}
+		const MeshManager::Handle& GetNormalHandle() const
+		{
+			return hNormal_;
+		}
+		const MeshManager::Handle& GetTangentHandle() const
+		{
+			return hTangent_;
+		}
+		const MeshManager::Handle& GetTexcoordHandle() const
+		{
+			return hTexcoord_;
+		}
+		const MeshManager::Handle& GetIndexHandle() const
+		{
+			return hIndex_;
+		}
+
 		static ResourceItemBase* LoadFunction(ResourceLoader* pLoader, const std::string& filepath);
+
+		static size_t GetPositionStride()
+		{
+			return sizeof(DirectX::XMFLOAT3);
+		}
+		static size_t GetNormalStride()
+		{
+			return sizeof(DirectX::XMFLOAT3);
+		}
+		static size_t GetTangentStride()
+		{
+			return sizeof(DirectX::XMFLOAT4);
+		}
+		static size_t GetTexcoordStride()
+		{
+			return sizeof(DirectX::XMFLOAT2);
+		}
+		static size_t GetIndexStride()
+		{
+			return sizeof(u32);
+		}
 
 	private:
 		ResourceItemMesh()
@@ -501,6 +581,12 @@ namespace sl12
 		Buffer		indexBuffer_;
 		Buffer		meshletPackedPrimitive_;
 		Buffer		meshletVertexIndex_;
+
+		MeshManager::Handle	hPosition_;
+		MeshManager::Handle	hNormal_;
+		MeshManager::Handle	hTangent_;
+		MeshManager::Handle	hTexcoord_;
+		MeshManager::Handle	hIndex_;
 	};	// class ResourceItemMesh
 
 }	// namespace sl12

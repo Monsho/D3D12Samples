@@ -1,6 +1,7 @@
 ﻿#include "sl12/scene_mesh.h"
 
 #include "sl12/device.h"
+#include "sl12/command_list.h"
 
 
 namespace sl12
@@ -36,6 +37,8 @@ namespace sl12
 		pMeshletDrawInfoB_ = new sl12::Buffer();
 		pMeshletBoundsBV_ = new sl12::BufferView();
 		pMeshletDrawInfoBV_ = new sl12::BufferView();
+		pBoundsStaging_ = new sl12::Buffer();
+		pDrawInfoStaging_ = new sl12::Buffer();
 		pMeshletCB_ = new sl12::Buffer();
 		pMeshletCBV_ = new sl12::ConstantBufferView();
 
@@ -44,14 +47,26 @@ namespace sl12
 			sizeof(MeshletBound) * submesh.meshlets.size(),
 			sizeof(MeshletBound),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			false, false);
+		pBoundsStaging_->Initialize(
+			pDevice,
+			sizeof(MeshletBound) * submesh.meshlets.size(),
+			sizeof(MeshletBound),
+			sl12::BufferUsage::ShaderResource,
 			true, false);
 		pMeshletDrawInfoB_->Initialize(
 			pDevice,
 			sizeof(MeshletDrawInfo) * submesh.meshlets.size(),
 			sizeof(MeshletDrawInfo),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			false, false);
+		pDrawInfoStaging_->Initialize(
+			pDevice,
+			sizeof(MeshletDrawInfo) * submesh.meshlets.size(),
+			sizeof(MeshletDrawInfo),
+			sl12::BufferUsage::ShaderResource,
 			true, false);
 		pMeshletBoundsBV_->Initialize(pDevice, pMeshletBoundsB_, 0, 0, sizeof(MeshletBound));
 		pMeshletDrawInfoBV_->Initialize(pDevice, pMeshletDrawInfoB_, 0, 0, sizeof(MeshletDrawInfo));
@@ -66,8 +81,8 @@ namespace sl12
 		pMeshletCBV_->Initialize(pDevice, pMeshletCB_);
 
 		// upload meshlet data.
-		auto bound = (MeshletBound*)pMeshletBoundsB_->Map(nullptr);
-		auto draw_info = (MeshletDrawInfo*)pMeshletDrawInfoB_->Map(nullptr);
+		auto bound = (MeshletBound*)pBoundsStaging_->Map(nullptr);
+		auto draw_info = (MeshletDrawInfo*)pDrawInfoStaging_->Map(nullptr);
 		for (auto&& meshlet : submesh.meshlets)
 		{
 			bound->aabbMin = meshlet.boundingInfo.box.aabbMin;
@@ -82,8 +97,8 @@ namespace sl12
 			bound++;
 			draw_info++;
 		}
-		pMeshletBoundsB_->Unmap();
-		pMeshletDrawInfoB_->Unmap();
+		pBoundsStaging_->Unmap();
+		pDrawInfoStaging_->Unmap();
 	}
 
 	//----
@@ -97,6 +112,32 @@ namespace sl12
 			pParentDevice_->KillObject(pMeshletDrawInfoBV_);
 			pParentDevice_->KillObject(pMeshletBoundsB_);
 			pParentDevice_->KillObject(pMeshletDrawInfoB_);
+
+			if (pBoundsStaging_)
+			{
+				pParentDevice_->KillObject(pBoundsStaging_);
+			}
+			if (pDrawInfoStaging_)
+			{
+				pParentDevice_->KillObject(pDrawInfoStaging_);
+			}
+		}
+	}
+
+	//----
+	void SceneSubmesh::BeginNewFrame(CommandList* pCmdList)
+	{
+		if (pBoundsStaging_)
+		{
+			pCmdList->GetLatestCommandList()->CopyBufferRegion(pMeshletBoundsB_->GetResourceDep(), 0, pBoundsStaging_->GetResourceDep(), 0, pBoundsStaging_->GetSize());
+			pParentDevice_->KillObject(pBoundsStaging_);
+			pBoundsStaging_ = nullptr;
+		}
+		if (pDrawInfoStaging_)
+		{
+			pCmdList->GetLatestCommandList()->CopyBufferRegion(pMeshletDrawInfoB_->GetResourceDep(), 0, pDrawInfoStaging_->GetResourceDep(), 0, pDrawInfoStaging_->GetSize());
+			pParentDevice_->KillObject(pDrawInfoStaging_);
+			pDrawInfoStaging_ = nullptr;
 		}
 	}
 
@@ -114,8 +155,8 @@ namespace sl12
 	{
 		// count total meshlets.
 		auto&& submeshes = pSrcMesh->GetSubmeshes();
-		sl12::u32 submesh_count = (sl12::u32)submeshes.size();
-		sl12::u32 total_meshlets_count = 0;
+		u32 submesh_count = (u32)submeshes.size();
+		u32 total_meshlets_count = 0;
 		for (auto&& submesh : submeshes)
 		{
 			total_meshlets_count += (sl12::u32)submesh.meshlets.size();
@@ -131,7 +172,7 @@ namespace sl12
 		pFalseNegativeUAV_ = new sl12::UnorderedAccessView();
 		pFalseNegativeCountUAV_ = new sl12::UnorderedAccessView();
 
-		sl12::u32 argSize = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+		u32 argSize = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
 		pIndirectArgBuffer_->Initialize(
 			pDevice,
 			argSize * total_meshlets_count * 2,
@@ -141,22 +182,22 @@ namespace sl12
 			false, true);
 		pIndirectCountBuffer_->Initialize(
 			pDevice,
-			sizeof(sl12::u32) * submesh_count * 2,
-			sizeof(sl12::u32),
+			sizeof(u32) * submesh_count * 2,
+			sizeof(u32),
 			sl12::BufferUsage::ShaderResource,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			false, true);
 		pFalseNegativeBuffer_->Initialize(
 			pDevice,
-			sizeof(sl12::u32) * total_meshlets_count,
-			sizeof(sl12::u32),
+			sizeof(u32) * total_meshlets_count,
+			sizeof(u32),
 			sl12::BufferUsage::ShaderResource,
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			false, true);
 		pFalseNegativeCountBuffer_->Initialize(
 			pDevice,
-			sizeof(sl12::u32) * submesh_count,
-			sizeof(sl12::u32),
+			sizeof(u32) * submesh_count,
+			sizeof(u32),
 			sl12::BufferUsage::ShaderResource,
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			false, true);
@@ -219,7 +260,70 @@ namespace sl12
 			pParentDevice_->KillObject(pIndirectCountBuffer_);
 			pParentDevice_->KillObject(pFalseNegativeBuffer_);
 			pParentDevice_->KillObject(pFalseNegativeCountBuffer_);
+
+			for (auto&& v : materialCBVs_)
+				pParentDevice_->KillObject(v);
+			materialCBVs_.clear();
+			pParentDevice_->KillObject(pMaterialCB_);
 		}
+	}
+
+	//----
+	void SceneMesh::BeginNewFrame(CommandList* pCmdList)
+	{
+		for (auto&& v : sceneSubmeshes_)
+		{
+			v->BeginNewFrame(pCmdList);
+		}
+
+		if (!pMaterialCB_)
+		{
+			auto&& materials = pParentResource_->GetMaterials();
+			u32 matDataSize = GetAlignedSize(sizeof(MeshMaterialData), (size_t)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+			pMaterialCB_ = new Buffer();
+			pMaterialCB_->Initialize(
+				pParentDevice_,
+				matDataSize * materials.size(),
+				0,
+				BufferUsage::ConstantBuffer,
+				false, false);
+
+			Buffer* pCopySrc = new Buffer();
+			pCopySrc->Initialize(
+				pParentDevice_,
+				matDataSize * materials.size(),
+				0,
+				BufferUsage::ConstantBuffer,
+				true, false);
+
+			u8* pData = (u8*)pCopySrc->Map(nullptr);
+			materialCBVs_.resize(materials.size());
+			for (size_t i = 0; i < materials.size(); i++)
+			{
+				auto cbv = new ConstantBufferView();
+				cbv->Initialize(pParentDevice_, pMaterialCB_, i * matDataSize, matDataSize);
+				materialCBVs_[i] = cbv;
+
+				MeshMaterialData* md = (MeshMaterialData*)(pData + matDataSize * i);
+				md->baseColor = materials[i].baseColor;
+				md->emissiveColor = materials[i].emissiveColor;
+				md->roughness = materials[i].roughness;
+				md->metallic = materials[i].metallic;
+			}
+			pCopySrc->Unmap();
+
+			pCmdList->GetLatestCommandList()->CopyBufferRegion(
+				pMaterialCB_->GetResourceDep(),
+				0,
+				pCopySrc->GetResourceDep(),
+				0,
+				matDataSize * materials.size());
+			pCmdList->TransitionBarrier(pMaterialCB_, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+			pParentDevice_->KillObject(pCopySrc);
+		}
+
+		LoadUpdateMaterialCommand(pCmdList);
 	}
 
 	//----
@@ -228,6 +332,31 @@ namespace sl12
 		auto ret = std::make_unique<MeshRenderCommand>(this, pCBCache);
 		mtxPrevLocalToWorld_ = mtxLocalToWorld_;
 		outRenderCmds.push_back(std::move(ret));
+	}
+
+	//----
+	void SceneMesh::UpdateMaterial(u32 index, const MeshMaterialData& data)
+	{
+		if (index < materialCBVs_.size())
+		{
+			updateMaterials_[index] = data;
+		}
+	}
+
+	//----
+	void SceneMesh::LoadUpdateMaterialCommand(CommandList* pCmdList)
+	{
+		if (!updateMaterials_.empty())
+		{
+			pCmdList->TransitionBarrier(pMaterialCB_, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_DEST);
+			for (auto&& data : updateMaterials_)
+			{
+				u32 matDataSize = (sizeof(MeshMaterialData) + D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1) / D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT * D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+				pParentDevice_->CopyToBuffer(pCmdList, pMaterialCB_, data.first * matDataSize, &data.second, sizeof(data.second));
+			}
+			updateMaterials_.clear();
+			pCmdList->TransitionBarrier(pMaterialCB_, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+		}
 	}
 
 }	// namespace sl12

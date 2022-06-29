@@ -29,7 +29,7 @@ ClusterInfo GetCluster(float2 screenPos, float depth)
 {
 	float nearZ = cbScene.screenInfo.x;
 	float farZ = cbScene.screenInfo.y;
-	float viewDepth = ToViewDepth(depth, nearZ, farZ);
+	float viewDepth = ToViewDepth(depth, cbScene.viewDepthValue.x, cbScene.viewDepthValue.y, cbScene.viewDepthValue.z);
 	uint z = uint(max(-viewDepth - nearZ, 0) * (float)CLUSTER_DIV_Z / (farZ - nearZ));
 	uint2 xy = uint2(screenPos * (float)CLUSTER_DIV_XY);
 
@@ -171,7 +171,7 @@ float3 SampleHDRI(uint2 pixelPos)
 {
 	float2 screenPos = ((float2)pixelPos + 0.5) / cbScene.screenInfo.zw;
 	float2 clipSpacePos = screenPos * float2(2, -2) + float2(-1, 1);
-	float4 worldPos = mul(cbScene.mtxProjToWorld, float4(clipSpacePos, 1, 1));
+	float4 worldPos = mul(cbScene.mtxProjToWorld, float4(clipSpacePos, 0.5, 1));
 	worldPos.xyz /= worldPos.w;
 
 	float3 viewDirInWS = normalize(worldPos.xyz - cbScene.camPos.xyz);
@@ -198,11 +198,11 @@ void main(
 			{
 				hdri = Rec709ToRec2020(hdri);
 			}
-			rwOutput[pixelPos] = float4(hdri, 1);
+			rwOutput[pixelPos] += float4(hdri, 1);
 		}
 		else
 		{
-			rwOutput[pixelPos] = float4(Lighting(pixelPos, depth), 1);
+			rwOutput[pixelPos] += float4(Lighting(pixelPos, depth), 1);
 		}
 	}
 }

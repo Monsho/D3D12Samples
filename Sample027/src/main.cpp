@@ -57,8 +57,8 @@ namespace
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 100.0f;
 
-	static const float	kSponzaScale = 20.0f;
-	static const float	kSuzanneScale = 1.0f;
+	static const float	kSponzaScale = 0.0001f;
+	static const float	kSuzanneScale = 0.01f;
 
 	static const std::string	kShaderDir("../Sample027/shader/");
 

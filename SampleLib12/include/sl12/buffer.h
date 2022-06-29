@@ -42,7 +42,10 @@ namespace sl12
 		void UpdateBuffer(Device* pDev, CommandList* pCmdList, const void* pData, size_t size, size_t offset = 0);
 
 		void* Map(CommandList*);
+		void* Map();
+		void* Map(const D3D12_RANGE& range);
 		void Unmap();
+		void Unmap(const D3D12_RANGE& range);
 
 		// getter
 		ID3D12Resource* GetResourceDep() { return pResource_; }

@@ -29,12 +29,16 @@
 #include "sl12/resource_texture.h"
 #include "sl12/shader_manager.h"
 #include "sl12/constant_buffer_cache.h"
+#include "sl12/mesh_manager.h"
+#include "scene_view.h"
 
 #include "sl12/scene_root.h"
 #include "sl12/scene_mesh.h"
 #include "sl12/render_command.h"
 #include "sl12/bvh_manager.h"
 #include "sl12/rtxgi_component.h"
+
+#include "fsr2_renderer.h"
 
 #define A_CPU
 #include "../shader/AMD/ffx_a.h"
@@ -50,6 +54,8 @@
 
 #define LANE_COUNT_IN_WAVE	32
 
+#define ENABLE_INFINITE_PROJECTION 1
+
 namespace
 {
 	static const int	kScreenWidth = 2560;
@@ -57,9 +63,11 @@ namespace
 	static const int	MaxSample = 512;
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 100.0f;
+	static const float	kFovY = DirectX::XMConvertToRadians(60.0f);
 
 	static const float	kSponzaScale = 1.0f;
-	static const float	kSuzanneScale = 1.0f;
+	static const float	kSuzanneScale = 0.01f;
+	static const float	kEmissionScale = 1.0f;
 
 	static const std::string	kShaderDir("../Sample028/shader/");
 	static const std::string	kDDGIShaderDir("../External/RTXGI/rtxgi-sdk/shaders/ddgi/");
@@ -94,6 +102,8 @@ namespace
 		"tonemap.p.hlsl",
 		"reduce_depth_1st.p.hlsl",
 		"reduce_depth_2nd.p.hlsl",
+		"reduce_depth_1st.c.hlsl",
+		"reduce_depth_2nd.c.hlsl",
 		"fullscreen.vv.hlsl",
 		"occlusion.lib.hlsl",
 		"material.lib.hlsl",
@@ -117,6 +127,12 @@ namespace
 		"ray_gather.c.hlsl",
 		"composite_reflection.p.hlsl",
 		"probe_lighting.lib.hlsl",
+		"debug_probe.vv.hlsl",
+		"debug_probe.p.hlsl",
+		"cull_1dispatch.c.hlsl",
+		"cull_1dispatch.c.hlsl",
+		"cull_1dispatch.c.hlsl",
+		"cull_1dispatch.c.hlsl",
 	};
 
 	static const char* kShaderEntryPoints[] = 
@@ -146,6 +162,8 @@ namespace
 		"main",
 		"main",
 		"main",
+		"main",
+		"main",
 		"first",
 		"main",
 		"main",
@@ -157,6 +175,12 @@ namespace
 		"main",
 		"main",
 		"main",
+		"main",
+		"main",
+		"ClearCountCS",
+		"MakeFNDispatchCS",
+		"Cull1stPhaseCS",
+		"Cull2ndPhaseCS",
 	};
 
 	enum ShaderFileKind
@@ -174,6 +198,8 @@ namespace
 		SHADER_EOTF_ST2084_P,
 		SHADER_REDUCE_DEPTH_1ST_P,
 		SHADER_REDUCE_DEPTH_2ND_P,
+		SHADER_REDUCE_DEPTH_1ST_C,
+		SHADER_REDUCE_DEPTH_2ND_C,
 		SHADER_FULLSCREEN_VV,
 		SHADER_OCCLUSION_LIB,
 		SHADER_MATERIAL_LIB,
@@ -197,6 +223,12 @@ namespace
 		SHADER_RAY_GATHER_C,
 		SHADER_COMPOSITE_REFLECTION_P,
 		SHADER_PROBE_LIGHTING_LIB,
+		SHADER_DEBUG_PROBE_VV,
+		SHADER_DEBUG_PROBE_P,
+		SHADER_CULL_1DISP_CLEAR_COUNT_C,
+		SHADER_CULL_1DISP_MAKE_FN_C,
+		SHADER_CULL_1DISP_1ST_PHASE_C,
+		SHADER_CULL_1DISP_2ND_PHASE_C,
 
 		SHADER_MAX
 	};
@@ -261,17 +293,25 @@ public:
 	{
 		const auto kSwapchainFormat = device_.GetSwapchain().GetTexture(0)->GetTextureDesc().format;
 
+		// mesh manager for large vertex & index buffer.
+		static const size_t kVertexBufferSize = 500 * 1024 * 1024;
+		static const size_t kIndexBufferSize = 200 * 1024 * 1024;
+		meshManager_ = std::make_unique<sl12::MeshManager>(&device_, kVertexBufferSize, kIndexBufferSize);
+		sceneView_ = std::make_unique<sl12::SceneView>(&device_);
+
 		// リソースロード開始
 		if (!resLoader_.Initialize(&device_))
 		{
 			return false;
 		}
+		resLoader_.SetMeshManager(meshManager_.get());
 		hBlueNoiseRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/blue_noise.tga");
 		hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/IntelSponza/IntelSponza.rmesh");
 		hCurtainRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/IntelCurtain/IntelCurtain.rmesh");
 		hIvyRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/IntelIvy/IntelIvy.rmesh");
-		//hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 		hSuzanneRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/suzanne/suzanne.rmesh");
+		hEmissionRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/EmitSuzanne/EmitSuzanne.rmesh");
+		//hSponzaRes_ = resLoader_.LoadRequest<sl12::ResourceItemMesh>("data/sponza/sponza.rmesh");
 		hHDRIRes_ = resLoader_.LoadRequest<sl12::ResourceItemTexture>("data/jougasaki_03.exr");
 
 		// initialize const buffer cache.
@@ -401,10 +441,10 @@ public:
 
 			anisoSamplers_[0].Initialize(&device_, desc);
 
-			desc.MipLODBias = -log2f(1440.0f / 1080.0f);
+			desc.MipLODBias = log2f(1080.0f / 1440.0f) - 1.0f;
 			anisoSamplers_[1].Initialize(&device_, desc);
 			
-			desc.MipLODBias = -log2f(1440.0f / 720.0f);
+			desc.MipLODBias = log2f(720.0f / 1440.0f) - 1.0f;
 			anisoSamplers_[2].Initialize(&device_, desc);
 		}
 		{
@@ -497,6 +537,13 @@ public:
 		{
 			return false;
 		}
+		if (!DebugProbeRS_.Initialize(&device_,
+			hShaders_[SHADER_DEBUG_PROBE_VV].GetShader(),
+			hShaders_[SHADER_DEBUG_PROBE_P].GetShader(),
+			nullptr, nullptr, nullptr))
+		{
+			return false;
+		}
 		if (!ClusterCullRS_.Initialize(&device_,
 			hShaders_[SHADER_CLUSTER_CULL_C].GetShader()))
 		{
@@ -514,6 +561,16 @@ public:
 		}
 		if (!Cull2ndPhaseRS_.Initialize(&device_,
 			hShaders_[SHADER_CULL_2ND_PHASE_C].GetShader()))
+		{
+			return false;
+		}
+		if (!ReduceDepth1stCRS_.Initialize(&device_,
+			hShaders_[SHADER_REDUCE_DEPTH_1ST_C].GetShader()))
+		{
+			return false;
+		}
+		if (!ReduceDepth2ndCRS_.Initialize(&device_,
+			hShaders_[SHADER_REDUCE_DEPTH_2ND_C].GetShader()))
 		{
 			return false;
 		}
@@ -564,6 +621,11 @@ public:
 		}
 		if (!RayGatherRS_.Initialize(&device_,
 			hShaders_[SHADER_RAY_GATHER_C].GetShader()))
+		{
+			return false;
+		}
+		if (!Cull1DispRS_.Initialize(&device_,
+			hShaders_[SHADER_CULL_1DISP_CLEAR_COUNT_C].GetShader()))
 		{
 			return false;
 		}
@@ -635,6 +697,7 @@ public:
 
 			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 			desc.numRTVs = 0;
+			desc.rtvFormats[desc.numRTVs++] = accumRTs_[0].tex->GetTextureDesc().format;
 			for (int i = 0; i < GBuffers::kMax; i++)
 			{
 				desc.rtvFormats[desc.numRTVs++] = gbuffers_.rts[i].tex->GetTextureDesc().format;
@@ -801,6 +864,42 @@ public:
 			}
 		}
 		{
+			sl12::GraphicsPipelineStateDesc desc;
+			desc.pRootSignature = &DebugProbeRS_;
+			desc.pVS = hShaders_[SHADER_DEBUG_PROBE_VV].GetShader();
+			desc.pPS = hShaders_[SHADER_DEBUG_PROBE_P].GetShader();
+
+			desc.blend.sampleMask = UINT_MAX;
+			desc.blend.rtDesc[0].isBlendEnable = false;
+			desc.blend.rtDesc[0].writeMask = 0xf;
+
+			desc.rasterizer.cullMode = D3D12_CULL_MODE_NONE;
+			desc.rasterizer.fillMode = D3D12_FILL_MODE_SOLID;
+			desc.rasterizer.isDepthClipEnable = true;
+			desc.rasterizer.isFrontCCW = false;
+
+			desc.depthStencil.isDepthEnable = true;
+			desc.depthStencil.isDepthWriteEnable = true;
+			desc.depthStencil.depthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+			D3D12_INPUT_ELEMENT_DESC input_elems[] = {
+				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			};
+			desc.inputLayout.numElements = ARRAYSIZE(input_elems);
+			desc.inputLayout.pElements = input_elems;
+
+			desc.primTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+			desc.numRTVs = 0;
+			desc.rtvFormats[desc.numRTVs++] = DXGI_FORMAT_R11G11B10_FLOAT;
+			desc.dsvFormat = DXGI_FORMAT_D32_FLOAT;
+			desc.multisampleCount = 1;
+
+			if (!DebugProbePSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
 			sl12::ComputePipelineStateDesc desc;
 			desc.pRootSignature = &ClusterCullRS_;
 			desc.pCS = hShaders_[SHADER_CLUSTER_CULL_C].GetShader();
@@ -836,6 +935,26 @@ public:
 			desc.pCS = hShaders_[SHADER_CULL_2ND_PHASE_C].GetShader();
 
 			if (!Cull2ndPhasePSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &ReduceDepth1stCRS_;
+			desc.pCS = hShaders_[SHADER_REDUCE_DEPTH_1ST_C].GetShader();
+
+			if (!ReduceDepth1stCPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
+		{
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &ReduceDepth2ndCRS_;
+			desc.pCS = hShaders_[SHADER_REDUCE_DEPTH_2ND_C].GetShader();
+
+			if (!ReduceDepth2ndCPSO_.Initialize(&device_, desc))
 			{
 				return false;
 			}
@@ -947,6 +1066,33 @@ public:
 				return false;
 			}
 		}
+		{
+			sl12::ComputePipelineStateDesc desc;
+			desc.pRootSignature = &Cull1DispRS_;
+			desc.pCS = hShaders_[SHADER_CULL_1DISP_CLEAR_COUNT_C].GetShader();
+			if (!Cull1DispClearCountPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pCS = hShaders_[SHADER_CULL_1DISP_MAKE_FN_C].GetShader();
+			if (!Cull1DispMakeFNPSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pCS = hShaders_[SHADER_CULL_1DISP_1ST_PHASE_C].GetShader();
+			if (!Cull1Disp1stPhasePSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+
+			desc.pCS = hShaders_[SHADER_CULL_1DISP_2ND_PHASE_C].GetShader();
+			if (!Cull1Disp2ndPhasePSO_.Initialize(&device_, desc))
+			{
+				return false;
+			}
+		}
 
 		// ポイントライト
 		if (!CreatePointLights(DirectX::XMFLOAT3(-20.0f, 0.0f, -20.0f), DirectX::XMFLOAT3(20.0f, 20.0f, 20.0f), 3.0f, 5.0f, 10.0f, 40.0f))
@@ -963,15 +1109,20 @@ public:
 			}
 		}
 
+		CreateSphere();
+
 		// RTXGI
 		{
 			rtxgiComponent_ = std::make_unique<sl12::RtxgiComponent>(&device_, kDDGIShaderDir);
 
 			sl12::RtxgiVolumeDesc desc{};
 			desc.name = "main volume";
-			desc.origin = DirectX::XMFLOAT3(0.0f, 16.0f, 0.0f);
-			desc.probeSpacing = DirectX::XMFLOAT3(2.0f, 2.0f, 2.0f);
+			desc.origin = DirectX::XMFLOAT3(0.0f, 10.0f, 0.0f);
+			desc.probeSpacing = DirectX::XMFLOAT3(1.5f, 1.5f, 1.5f);
 			desc.probeCount = DirectX::XMINT3(20, 16, 20);
+			desc.numRays = 288;
+			desc.irradianceThreshold = rtxgiIrradianceThreshold_;
+			desc.brightnessThreshold = rtxgiBrightnessThreshold_;
 			if (!rtxgiComponent_->Initialize(&shaderManager_, &desc, 1))
 			{
 				return false;
@@ -980,6 +1131,9 @@ public:
 			rtxgiComponent_->SetDescHysteresis(0.99f);
 			rtxgiComponent_->SetDescIrradianceThreshold(0.4f);
 		}
+
+		// FSR2
+		fsr2Renderer_ = std::make_unique<FSR2Renderer>();
 
 		utilCmdList_.Reset();
 
@@ -1063,6 +1217,7 @@ public:
 		}
 
 		device_.LoadRenderCommands(pCmdList);
+		meshManager_->BeginNewFrame(pCmdList);
 
 		// clear swapchain.
 		auto&& swapchain = device_.GetSwapchain();
@@ -1131,6 +1286,7 @@ public:
 			curtainMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hCurtainRes_.GetItem<sl12::ResourceItemMesh>());
 			ivyMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hIvyRes_.GetItem<sl12::ResourceItemMesh>());
 			suzanneMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hSuzanneRes_.GetItem<sl12::ResourceItemMesh>());
+			emissionMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hEmissionRes_.GetItem<sl12::ResourceItemMesh>());
 
 			DirectX::XMMATRIX m = DirectX::XMMatrixScaling(kSponzaScale, kSponzaScale, kSponzaScale);
 			DirectX::XMFLOAT4X4 mf;
@@ -1143,10 +1299,15 @@ public:
 			DirectX::XMStoreFloat4x4(&mf, m);
 			suzanneMesh_->SetMtxLocalToWorld(mf);
 
+			m = DirectX::XMMatrixMultiply(DirectX::XMMatrixScaling(kEmissionScale, kEmissionScale, kEmissionScale), DirectX::XMMatrixTranslation(4.0f, 2.0f, 0.0f));
+			DirectX::XMStoreFloat4x4(&mf, m);
+			emissionMesh_->SetMtxLocalToWorld(mf);
+
 			sceneRoot_->AttachNode(sponzaMesh_);
 			sceneRoot_->AttachNode(curtainMesh_);
 			sceneRoot_->AttachNode(ivyMesh_);
 			sceneRoot_->AttachNode(suzanneMesh_);
+			sceneRoot_->AttachNode(emissionMesh_);
 
 			InitializeRaytracingResource();
 
@@ -1219,6 +1380,7 @@ public:
 		// GUI
 		{
 			OPTICK_EVENT("ImGui::Setup");
+			bool bUpdateFSR2 = false;
 			gui_.BeginNewFrame(&litCmdList, kScreenWidth, kScreenHeight, inputData_);
 			{
 				if (ImGui::SliderFloat("Sky Intensity", &skyPower_, 0.0f, 10.0f))
@@ -1239,6 +1401,36 @@ public:
 				if (ImGui::SliderFloat2("Metallic Range", (float*)&metallicRange_, 0.0f, 1.0f))
 				{
 				}
+				if (ImGui::SliderFloat("Emissive Intensity", &emissiveIntensity_, 0.0f, 100.0f))
+				{
+				}
+				if (ImGui::ColorEdit3("Emissive Color", emissiveColor_))
+				{
+					sl12::MeshMaterialData data;
+					data.baseColor = DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+					data.metallic = 0.0f;
+					data.roughness = 1.0f;
+					data.emissiveColor = DirectX::XMFLOAT3(emissiveColor_);
+					emissionMesh_->UpdateMaterial(0, data);
+				}
+				if (ImGui::SliderFloat("Probe Hysteresis", &rtxgiHysteresis_, 0.0f, 1.0f))
+				{
+					rtxgiComponent_->SetDescHysteresis(rtxgiHysteresis_);
+				}
+				if (ImGui::SliderFloat("Irradiance Threshold", &rtxgiIrradianceThreshold_, 0.0f, 1.0f))
+				{
+					rtxgiComponent_->SetDescIrradianceThreshold(rtxgiIrradianceThreshold_);
+				}
+				if (ImGui::SliderFloat("Brightness Threshold", &rtxgiBrightnessThreshold_, 0.0f, 1.0f))
+				{
+					rtxgiComponent_->SetDescBrightnessThreshold(rtxgiBrightnessThreshold_);
+				}
+				if (ImGui::Checkbox("Relocate Probe", &isReallocateProbe_))
+				{
+				}
+				if (ImGui::Checkbox("Display Probe", &isDebugProbe_))
+				{
+				}
 				if (ImGui::Checkbox("Occlusion Cull", &isOcclusionCulling_))
 				{
 					isOcclusionReset_ = true;
@@ -1246,6 +1438,23 @@ public:
 				if (ImGui::Checkbox("Freeze Cull", &isFreezeCull_))
 				{
 					isOcclusionReset_ = true;
+				}
+				if (ImGui::Checkbox("1Dispatch Cull", &use1DispatchCull_))
+				{
+					isOcclusionReset_ = true;
+				}
+				const char* kUpscaleItems[] = {
+					"Bilinear",
+					"FSR",
+					"NIS",
+					"FSR2",
+				};
+				if (ImGui::Combo("Upscaler", &currUpscaler_, kUpscaleItems, ARRAYSIZE(kUpscaleItems)))
+				{
+					if (currUpscaler_ == 3)
+					{
+						bUpdateFSR2 = true;
+					}
 				}
 				const char* kRenderResItems[] = {
 					"2560 x 1440",
@@ -1317,14 +1526,10 @@ public:
 							assert(!"Error: Recreate Reflection Result");
 						}
 					}
-				}
-				const char* kUpscaleItems[] = {
-					"Bilinear",
-					"FSR",
-					"NIS",
-				};
-				if (ImGui::Combo("Upscaler", &currUpscaler_, kUpscaleItems, ARRAYSIZE(kUpscaleItems)))
-				{
+					if (currUpscaler_ == 3)
+					{
+						bUpdateFSR2 = true;
+					}
 				}
 				if (currUpscaler_ != 0)
 				{
@@ -1391,6 +1596,12 @@ public:
 
 				ImGui::Text("All GPU: %f (ms)", all_ms);
 			}
+
+			if (bUpdateFSR2)
+			{
+				// for FSR2
+				fsr2Renderer_->Initialize(&device_, renderWidth_, renderHeight_, kScreenWidth, kScreenHeight, ENABLE_INFINITE_PROJECTION, false);
+			}
 		}
 
 		pCmdList->PushMarker(0, "Frame");
@@ -1399,8 +1610,15 @@ public:
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
 		device_.LoadRenderCommands(pCmdList);
+		meshManager_->BeginNewFrame(pCmdList);
+		sceneRoot_->BeginNewFrame(pCmdList);
+		sceneView_->BeginNewFrame(pCmdList, sceneRoot_.get(), meshRenderCmds);
 
 		CreateSH(pCmdList);
+
+		int upscalerType = (currRenderRes_ == 0) ? 0 : currUpscaler_;
+		bool bEnableTAA = useTAA_ && (upscalerType != 3);
+		bool bEnableJitter = useTAA_ || (upscalerType == 3);
 
 		// determine rendering sampler.
 		auto&& anisoSampler = (currUpscaler_ == 0) || !enableLodBias_
@@ -1408,7 +1626,7 @@ public:
 			: anisoSamplers_[currRenderRes_];
 
 		// update scene constant buffer.
-		UpdateSceneCB(frameIndex, useTAA_);
+		UpdateSceneCB(frameIndex, bEnableJitter);
 		sl12::ConstantBufferCache::Handle hDDGICB = rtxgiComponent_->CreateConstantBuffer(&cbvCache_, 0);
 
 		sl12::BvhScene* pBvhScene = nullptr;
@@ -1432,7 +1650,13 @@ public:
 			float color[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 			d3dCmdList->ClearRenderTargetView(swapchain.GetCurrentRenderTargetView(kSwapchainBufferOffset)->GetDescInfo().cpuHandle, color, 0, nullptr);
 		}
+		{
+			auto&& target = bEnableTAA ? accumTemp_ : currAccum;
+			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
+			float color[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			d3dCmdList->ClearRenderTargetView(target.rtv->GetDescInfo().cpuHandle, color, 0, nullptr);
+		}
 		d3dCmdList->ClearDepthStencilView(gbuffers_.depthDSV->GetDescInfo().cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 		pCmdList->TransitionBarrier(gbuffers_.rts[0].tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -1462,7 +1686,8 @@ public:
 			rtGlobalDescSet_.Reset();
 			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			rtGlobalDescSet_.SetCsCbv(2, hDDGICB.GetCBV()->GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(2, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(3, hDDGICB.GetCBV()->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(1, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(2, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(3, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
@@ -1505,12 +1730,8 @@ public:
 			if (isReallocateProbe_)
 			{
 				rtxgiComponent_->RelocateProbes(pCmdList, 1.0f);
-			}
-			if (!isReallocateProbe_)
-			{
 				rtxgiComponent_->ClassifyProbes(pCmdList);
 			}
-			isReallocateProbe_ = false;
 
 			pCmdList->SetDescriptorHeapDirty();
 		}
@@ -1536,61 +1757,108 @@ public:
 		if (!isFreezeCull_)
 		{
 			OPTICK_EVENT("GPU::1stPhaseCulling");
-			GPU_MARKER(pCmdList, 1, "1stPhaseCulling");
 
-			descSet_.Reset();
-			descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetCsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
-			descSet_.SetCsSrv(2, HiZ_.srv->GetDescInfo().cpuHandle);
-
-			for (auto&& cmd : meshRenderCmds)
+			if (use1DispatchCull_)
 			{
-				if (cmd->GetType() != sl12::RenderCommandType::Mesh)
-				{
-					continue;
-				}
-				sl12::MeshRenderCommand* mcmd = static_cast<sl12::MeshRenderCommand*>(cmd.get());
-				sl12::SceneMesh* mesh = mcmd->GetParentMesh();
+				GPU_MARKER(pCmdList, 1, "1DispatchCull_1st");
 
-				sl12::u32 submeshCount = mesh->GetSubmeshCount();
-				pCmdList->TransitionBarrier(mesh->GetIndirectArgBuffer(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-				pCmdList->TransitionBarrier(mesh->GetIndirectCountBuffer(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(sceneView_->GetIndirectArg(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(sceneView_->GetDrawCount(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-				// reset count buffer.
-				descSet_.SetCsUav(0, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
-				descSet_.SetCsUav(1, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
-				descSet_.SetCsUav(2, DrawCountUAV_.GetDescInfo().cpuHandle);
-				d3dCmdList->SetPipelineState(ResetCullDataPSO_.GetPSO());
-				pCmdList->SetComputeRootSignatureAndDescriptorSet(&ResetCullDataRS_, &descSet_);
-				d3dCmdList->Dispatch((submeshCount + 31) / 32, 1, 1);
-				pCmdList->UAVBarrier(mesh->GetIndirectCountBuffer());
-				pCmdList->UAVBarrier(mesh->GetFalseNegativeCountBuffer());
-				pCmdList->UAVBarrier(&DrawCountBuffer_);
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(2, sceneView_->GetConstantCBV()->GetDescInfo().cpuHandle);
 
-				// cull frustum, backface and prev depth occlusion.
-				descSet_.SetCsCbv(2, mcmd->GetCBView()->GetDescInfo().cpuHandle);
-				descSet_.SetCsUav(0, mesh->GetIndirectArgUAV()->GetDescInfo().cpuHandle);
-				descSet_.SetCsUav(1, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
-				descSet_.SetCsUav(2, mesh->GetFalseNegativeUAV()->GetDescInfo().cpuHandle);
-				descSet_.SetCsUav(3, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, sceneView_->GetCullUnitBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(1, sceneView_->GetInstanceDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(2, sceneView_->GetBatchDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(3, sceneView_->GetMeshletBoundDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(4, sceneView_->GetMeshletDrawDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(5, HiZ_.srv->GetDescInfo().cpuHandle);
+
+				descSet_.SetCsUav(0, sceneView_->GetIndirectArgUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(1, sceneView_->GetDrawCountUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(2, sceneView_->GetFalseNegativeIndexUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(3, sceneView_->GetFalseNegativeIndirectUAV()->GetDescInfo().cpuHandle);
 				descSet_.SetCsUav(4, DrawCountUAV_.GetDescInfo().cpuHandle);
 
-				for (auto&& sub_cmd : mcmd->GetSubmeshCommands())
+				// clear count.
+				d3dCmdList->SetPipelineState(Cull1DispClearCountPSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&Cull1DispRS_, &descSet_);
+				sl12::u32 x = (sceneView_->GetBatchCount() * 2 + 1 + 31) / 32;
+				d3dCmdList->Dispatch(x, 1, 1);
+
+				pCmdList->UAVBarrier(sceneView_->GetDrawCount());
+				pCmdList->UAVBarrier(&DrawCountBuffer_);
+
+				// cull 1st phase.
+				d3dCmdList->SetPipelineState(Cull1Disp1stPhasePSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&Cull1DispRS_, &descSet_);
+				x = (sceneView_->GetCullUnitCount() + 31) / 32;
+				d3dCmdList->Dispatch(x, 1, 1);
+
+				pCmdList->TransitionBarrier(sceneView_->GetIndirectArg(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+				pCmdList->TransitionBarrier(sceneView_->GetDrawCount(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+			}
+			else
+			{
+				GPU_MARKER(pCmdList, 1, "1stPhaseCulling");
+
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(2, HiZ_.srv->GetDescInfo().cpuHandle);
+
+				for (auto&& cmd : meshRenderCmds)
 				{
-					sl12::SceneSubmesh* submesh = sub_cmd->GetParentSubmesh();
-					descSet_.SetCsCbv(3, submesh->GetMeshletCBV()->GetDescInfo().cpuHandle);
-					descSet_.SetCsSrv(0, submesh->GetMeshletBoundsBV()->GetDescInfo().cpuHandle);
-					descSet_.SetCsSrv(1, submesh->GetMeshletDrawInfoBV()->GetDescInfo().cpuHandle);
+					if (cmd->GetType() != sl12::RenderCommandType::Mesh)
+					{
+						continue;
+					}
+					sl12::MeshRenderCommand* mcmd = static_cast<sl12::MeshRenderCommand*>(cmd.get());
+					sl12::SceneMesh* mesh = mcmd->GetParentMesh();
 
-					UINT dispatchCount = (submesh->GetMeshletData().meshletCount + 31) / 32;
+					sl12::u32 submeshCount = mesh->GetSubmeshCount();
+					pCmdList->TransitionBarrier(mesh->GetIndirectArgBuffer(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+					pCmdList->TransitionBarrier(mesh->GetIndirectCountBuffer(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-					d3dCmdList->SetPipelineState(Cull1stPhasePSO_.GetPSO());
-					pCmdList->SetComputeRootSignatureAndDescriptorSet(&Cull1stPhaseRS_, &descSet_);
-					d3dCmdList->Dispatch(dispatchCount, 1, 1);
+					// reset count buffer.
+					descSet_.SetCsUav(0, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(1, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(2, DrawCountUAV_.GetDescInfo().cpuHandle);
+					d3dCmdList->SetPipelineState(ResetCullDataPSO_.GetPSO());
+					pCmdList->SetComputeRootSignatureAndDescriptorSet(&ResetCullDataRS_, &descSet_);
+					d3dCmdList->Dispatch((submeshCount + 31) / 32, 1, 1);
+					pCmdList->UAVBarrier(mesh->GetIndirectCountBuffer());
+					pCmdList->UAVBarrier(mesh->GetFalseNegativeCountBuffer());
+					pCmdList->UAVBarrier(&DrawCountBuffer_);
+
+					// cull frustum, backface and prev depth occlusion.
+					descSet_.SetCsCbv(2, mcmd->GetCBView()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(0, mesh->GetIndirectArgUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(1, mesh->GetIndirectCountUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(2, mesh->GetFalseNegativeUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(3, mesh->GetFalseNegativeCountUAV()->GetDescInfo().cpuHandle);
+					descSet_.SetCsUav(4, DrawCountUAV_.GetDescInfo().cpuHandle);
+
+					for (auto&& sub_cmd : mcmd->GetSubmeshCommands())
+					{
+						sl12::SceneSubmesh* submesh = sub_cmd->GetParentSubmesh();
+						descSet_.SetCsCbv(3, submesh->GetMeshletCBV()->GetDescInfo().cpuHandle);
+						descSet_.SetCsSrv(0, submesh->GetMeshletBoundsBV()->GetDescInfo().cpuHandle);
+						descSet_.SetCsSrv(1, submesh->GetMeshletDrawInfoBV()->GetDescInfo().cpuHandle);
+
+						UINT dispatchCount = (submesh->GetMeshletData().meshletCount + 31) / 32;
+
+						d3dCmdList->SetPipelineState(Cull1stPhasePSO_.GetPSO());
+						pCmdList->SetComputeRootSignatureAndDescriptorSet(&Cull1stPhaseRS_, &descSet_);
+						d3dCmdList->Dispatch(dispatchCount, 1, 1);
+					}
+
+					pCmdList->TransitionBarrier(mesh->GetIndirectArgBuffer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+					pCmdList->TransitionBarrier(mesh->GetIndirectCountBuffer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 				}
-
-				pCmdList->TransitionBarrier(mesh->GetIndirectArgBuffer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
-				pCmdList->TransitionBarrier(mesh->GetIndirectCountBuffer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 			}
 		}
 
@@ -1631,28 +1899,20 @@ public:
 
 			// DrawCall
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			for (auto&& cmd : meshRenderCmds)
+			if (use1DispatchCull_)
 			{
-				if (cmd->GetType() != sl12::RenderCommandType::Mesh)
+				auto pIndirectArg = sceneView_->GetIndirectArg();
+				auto pDrawCount = sceneView_->GetDrawCount();
+				for (auto&& batch : sceneView_->GetBatchInfos())
 				{
-					continue;
-				}
+					sl12::MeshRenderCommand* pCmd = sceneView_->GetDrawMeshCmds()[batch.instanceIndex];
+					sl12::SceneMesh* pSceneMesh = pCmd->GetParentMesh();
+					const sl12::ResourceItemMesh* pResMesh = pSceneMesh->GetParentResource();
 
-				sl12::MeshRenderCommand* mcmd = static_cast<sl12::MeshRenderCommand*>(cmd.get());
-				sl12::SceneMesh* pSceneMesh = mcmd->GetParentMesh();
-				const sl12::ResourceItemMesh* pResMesh = pSceneMesh->GetParentResource();
+					descSet_.SetVsCbv(1, pCmd->GetCBView()->GetDescInfo().cpuHandle);
 
-				descSet_.SetVsCbv(1, mcmd->GetCBView()->GetDescInfo().cpuHandle);
-
-				auto&& submeshes = pResMesh->GetSubmeshes();
-				auto&& subCmds = mcmd->GetSubmeshCommands();
-				auto submesh_count = submeshes.size();
-
-				for (int i = 0; i < submesh_count; i++)
-				{
-					auto&& submesh = submeshes[i];
-					auto sceneSubmesh = subCmds[i]->GetParentSubmesh();
-
+					auto&& submesh = pResMesh->GetSubmeshes()[batch.submeshIndex];
+					auto sceneSubmesh = pCmd->GetSubmeshCommands()[batch.submeshIndex]->GetParentSubmesh();
 					auto&& material = pResMesh->GetMaterials()[submesh.materialIndex];
 					auto base_color_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
 					if (material.baseColorTex.IsValid())
@@ -1665,34 +1925,104 @@ public:
 					pCmdList->SetGraphicsRootSignatureAndDescriptorSet(myRS, &descSet_);
 
 					const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
-						submesh.positionVBV.GetView(),
-						submesh.texcoordVBV.GetView(),
+						sl12::MeshManager::CreateVertexView(pResMesh->GetPositionHandle(), submesh.positionOffsetBytes, submesh.positionSizeBytes, sl12::ResourceItemMesh::GetPositionStride()),
+						sl12::MeshManager::CreateVertexView(pResMesh->GetTexcoordHandle(), submesh.texcoordOffsetBytes, submesh.texcoordSizeBytes, sl12::ResourceItemMesh::GetTexcoordStride()),
 					};
 					d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
 
-					auto&& ibv = submesh.indexBV.GetView();
+					auto ibv = sl12::MeshManager::CreateIndexView(pResMesh->GetIndexHandle(), submesh.indexOffsetBytes, submesh.indexSizeBytes, sl12::ResourceItemMesh::GetIndexStride());
 					d3dCmdList->IASetIndexBuffer(&ibv);
 
 					auto&& meshletData = sceneSubmesh->GetMeshletData();
 					if (phaseIndex == 1)
 					{
 						d3dCmdList->ExecuteIndirect(
-							commandSig_,																	// command signature
-							meshletData.meshletCount,														// Meshlet最大数
-							pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
-							kDrawArgSize * meshletData.indirectArg1stIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
-							pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
-							meshletData.indirectCount1stByteOffset);										// カウントバッファの先頭オフセット
+							commandSig_,						// command signature
+							meshletData.meshletCount,			// Meshlet最大数
+							pIndirectArg->GetResourceDep(),		// indirectコマンドの変数バッファ
+							batch.indirectArgByteOffset,		// indirectコマンドの変数バッファの先頭オフセット
+							pDrawCount->GetResourceDep(),		// 実際の発行回数を収めたカウントバッファ
+							batch.drawCountByteOffset);			// カウントバッファの先頭オフセット
 					}
 					else if (phaseIndex == 2)
 					{
+						sl12::u32 argOffset = sceneView_->GetCullUnitCount() * kDrawArgSize + batch.indirectArgByteOffset;
+						sl12::u32 countOffset = sceneView_->GetBatchCount() * sizeof(sl12::u32) + batch.drawCountByteOffset;
 						d3dCmdList->ExecuteIndirect(
-							commandSig_,																	// command signature
-							meshletData.meshletCount,														// Meshlet最大数
-							pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
-							kDrawArgSize * meshletData.indirectArg2ndIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
-							pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
-							meshletData.indirectCount2ndByteOffset);										// カウントバッファの先頭オフセット
+							commandSig_,						// command signature
+							meshletData.meshletCount,			// Meshlet最大数
+							pIndirectArg->GetResourceDep(),		// indirectコマンドの変数バッファ
+							argOffset,							// indirectコマンドの変数バッファの先頭オフセット
+							pDrawCount->GetResourceDep(),		// 実際の発行回数を収めたカウントバッファ
+							countOffset);						// カウントバッファの先頭オフセット
+					}
+				}
+			}
+			else
+			{
+				for (auto&& cmd : meshRenderCmds)
+				{
+					if (cmd->GetType() != sl12::RenderCommandType::Mesh)
+					{
+						continue;
+					}
+
+					sl12::MeshRenderCommand* mcmd = static_cast<sl12::MeshRenderCommand*>(cmd.get());
+					sl12::SceneMesh* pSceneMesh = mcmd->GetParentMesh();
+					const sl12::ResourceItemMesh* pResMesh = pSceneMesh->GetParentResource();
+
+					descSet_.SetVsCbv(1, mcmd->GetCBView()->GetDescInfo().cpuHandle);
+
+					auto&& submeshes = pResMesh->GetSubmeshes();
+					auto&& subCmds = mcmd->GetSubmeshCommands();
+					auto submesh_count = submeshes.size();
+
+					for (int i = 0; i < submesh_count; i++)
+					{
+						auto&& submesh = submeshes[i];
+						auto sceneSubmesh = subCmds[i]->GetParentSubmesh();
+
+						auto&& material = pResMesh->GetMaterials()[submesh.materialIndex];
+						auto base_color_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+						if (material.baseColorTex.IsValid())
+						{
+							auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+							base_color_srv = &bc_tex_res->GetTextureView();
+						}
+
+						descSet_.SetPsSrv(0, base_color_srv->GetDescInfo().cpuHandle);
+						pCmdList->SetGraphicsRootSignatureAndDescriptorSet(myRS, &descSet_);
+
+						const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
+							submesh.positionVBV.GetView(),
+							submesh.texcoordVBV.GetView(),
+						};
+						d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
+
+						auto&& ibv = submesh.indexBV.GetView();
+						d3dCmdList->IASetIndexBuffer(&ibv);
+
+						auto&& meshletData = sceneSubmesh->GetMeshletData();
+						if (phaseIndex == 1)
+						{
+							d3dCmdList->ExecuteIndirect(
+								commandSig_,																	// command signature
+								meshletData.meshletCount,														// Meshlet最大数
+								pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
+								kDrawArgSize * meshletData.indirectArg1stIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
+								pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
+								meshletData.indirectCount1stByteOffset);										// カウントバッファの先頭オフセット
+						}
+						else if (phaseIndex == 2)
+						{
+							d3dCmdList->ExecuteIndirect(
+								commandSig_,																	// command signature
+								meshletData.meshletCount,														// Meshlet最大数
+								pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
+								kDrawArgSize * meshletData.indirectArg2ndIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
+								pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
+								meshletData.indirectCount2ndByteOffset);										// カウントバッファの先頭オフセット
+						}
 					}
 				}
 			}
@@ -1753,6 +2083,65 @@ public:
 				myRS = &ReduceDepth2ndRS_;
 			}
 		};
+		auto RenderHiZC = [&]()
+		{
+			sl12::TextureView* pSrcDepth = gbuffers_.depthSRV;
+			auto myPso = &ReduceDepth1stCPSO_;
+			auto myRS = &ReduceDepth1stCRS_;
+			int width = renderWidth_ / 2;
+			int height = renderHeight_ / 2;
+			{
+				pCmdList->TransitionBarrier(HiZ_.tex, 0, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(HiZ_.tex, 1, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(HiZ_.tex, 2, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, gbuffers_.depthSRV->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(0, HiZ_.subUavs[0]->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(1, HiZ_.subUavs[1]->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(2, HiZ_.subUavs[2]->GetDescInfo().cpuHandle);
+
+				UINT X = (width + 7) / 8;
+				UINT Y = (height + 3) / 4;
+
+				d3dCmdList->SetPipelineState(ReduceDepth1stCPSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&ReduceDepth1stCRS_, &descSet_);
+				d3dCmdList->Dispatch(X, Y, 1);
+
+				width /= 8;
+				height /= 8;
+
+				pCmdList->TransitionBarrier(HiZ_.tex, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+				pCmdList->TransitionBarrier(HiZ_.tex, 1, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+				pCmdList->TransitionBarrier(HiZ_.tex, 2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+			}
+			{
+				pCmdList->TransitionBarrier(HiZ_.tex, 3, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(HiZ_.tex, 4, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(HiZ_.tex, 5, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(0, HiZ_.subSrvs[2]->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(0, HiZ_.subUavs[3]->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(1, HiZ_.subUavs[4]->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(2, HiZ_.subUavs[5]->GetDescInfo().cpuHandle);
+
+				UINT X = (width + 7) / 8;
+				UINT Y = (height + 3) / 4;
+
+				d3dCmdList->SetPipelineState(ReduceDepth2ndCPSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&ReduceDepth2ndCRS_, &descSet_);
+				d3dCmdList->Dispatch(X, Y, 1);
+
+				pCmdList->TransitionBarrier(HiZ_.tex, 3, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+				pCmdList->TransitionBarrier(HiZ_.tex, 4, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+				pCmdList->TransitionBarrier(HiZ_.tex, 5, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+			}
+		};
+
+		static const int HiZRenderType = 0;
 
 		// if occlusion culling enabled, execute 2nd phase culling.
 		if (isOcclusionCulling_ && !isOcclusionReset_ && !isFreezeCull_)
@@ -1764,11 +2153,64 @@ public:
 			{
 				GPU_MARKER(pCmdList, 2, "RenderHiZ");
 				pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
-				RenderHiZ();
+				if (HiZRenderType == 0)
+					RenderHiZ();
+				else
+					RenderHiZC();
 				pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 			}
 
 			// 2nd phase culling.
+			if (use1DispatchCull_)
+			{
+				GPU_MARKER(pCmdList, 2, "1DispatchCull_2nd");
+
+				auto pFNIndirectArg = sceneView_->GetFalseNegativeIndirect();
+
+				pCmdList->TransitionBarrier(sceneView_->GetIndirectArg(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(sceneView_->GetDrawCount(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+				pCmdList->TransitionBarrier(pFNIndirectArg, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+				descSet_.Reset();
+				descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(1, frustumCBVs_[frameIndex].GetDescInfo().cpuHandle);
+				descSet_.SetCsCbv(2, sceneView_->GetConstantCBV()->GetDescInfo().cpuHandle);
+
+				descSet_.SetCsSrv(0, sceneView_->GetCullUnitBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(1, sceneView_->GetInstanceDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(2, sceneView_->GetBatchDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(3, sceneView_->GetMeshletBoundDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(4, sceneView_->GetMeshletDrawDataBV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(5, HiZ_.srv->GetDescInfo().cpuHandle);
+
+				descSet_.SetCsUav(0, sceneView_->GetIndirectArgUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(1, sceneView_->GetDrawCountUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(2, sceneView_->GetFalseNegativeIndexUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(3, sceneView_->GetFalseNegativeIndirectUAV()->GetDescInfo().cpuHandle);
+				descSet_.SetCsUav(4, DrawCountUAV_.GetDescInfo().cpuHandle);
+
+				// make false-negative dispatch arg.
+				d3dCmdList->SetPipelineState(Cull1DispMakeFNPSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&Cull1DispRS_, &descSet_);
+				d3dCmdList->Dispatch(1, 1, 1);
+
+				pCmdList->TransitionBarrier(pFNIndirectArg, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+
+				// cull 2nd phase.
+				d3dCmdList->SetPipelineState(Cull1Disp2ndPhasePSO_.GetPSO());
+				pCmdList->SetComputeRootSignatureAndDescriptorSet(&Cull1DispRS_, &descSet_);
+				d3dCmdList->ExecuteIndirect(
+					computeSig_,						// command signature
+					1,									// Dispatch最大数
+					pFNIndirectArg->GetResourceDep(),	// indirectコマンドの変数バッファ
+					0,									// indirectコマンドの変数バッファの先頭オフセット
+					nullptr,							// 実際の発行回数を収めたカウントバッファ
+					0);									// カウントバッファの先頭オフセット
+
+				pCmdList->TransitionBarrier(sceneView_->GetIndirectArg(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+				pCmdList->TransitionBarrier(sceneView_->GetDrawCount(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+			}
+			else
 			{
 				GPU_MARKER(pCmdList, 2, "2ndPhaseCulling");
 
@@ -1853,7 +2295,10 @@ public:
 
 		// set render target.
 		{
+			auto&& target = bEnableTAA ? accumTemp_ : currAccum;
+
 			D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
+				target.rtv->GetDescInfo().cpuHandle,
 				gbuffers_.rts[GBuffers::kWorldQuat].rtv->GetDescInfo().cpuHandle,
 				gbuffers_.rts[GBuffers::kBaseColor].rtv->GetDescInfo().cpuHandle,
 				gbuffers_.rts[GBuffers::kMetalRough].rtv->GetDescInfo().cpuHandle,
@@ -1897,26 +2342,20 @@ public:
 
 			// DrawCall
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			for (auto&& cmd : meshRenderCmds)
+			if (use1DispatchCull_)
 			{
-				if (cmd->GetType() != sl12::RenderCommandType::Mesh)
+				auto pIndirectArg = sceneView_->GetIndirectArg();
+				auto pDrawCount = sceneView_->GetDrawCount();
+				for (auto&& batch : sceneView_->GetBatchInfos())
 				{
-					continue;
-				}
+					sl12::MeshRenderCommand* pCmd = sceneView_->GetDrawMeshCmds()[batch.instanceIndex];
+					sl12::SceneMesh* pSceneMesh = pCmd->GetParentMesh();
+					const sl12::ResourceItemMesh* pResMesh = pSceneMesh->GetParentResource();
 
-				sl12::MeshRenderCommand* mcmd = static_cast<sl12::MeshRenderCommand*>(cmd.get());
-				sl12::SceneMesh* pSceneMesh = mcmd->GetParentMesh();
-				const sl12::ResourceItemMesh* pResMesh = pSceneMesh->GetParentResource();
+					descSet_.SetVsCbv(1, pCmd->GetCBView()->GetDescInfo().cpuHandle);
 
-				descSet_.SetVsCbv(1, mcmd->GetCBView()->GetDescInfo().cpuHandle);
-
-				auto&& submeshes = pResMesh->GetSubmeshes();
-				auto&& subCmds = mcmd->GetSubmeshCommands();
-				auto submesh_count = submeshes.size();
-				for (int i = 0; i < submesh_count; i++)
-				{
-					auto&& submesh = submeshes[i];
-					auto sceneSubmesh = subCmds[i]->GetParentSubmesh();
+					auto&& submesh = pResMesh->GetSubmeshes()[batch.submeshIndex];
+					auto sceneSubmesh = pCmd->GetSubmeshCommands()[batch.submeshIndex]->GetParentSubmesh();
 
 					auto&& material = pResMesh->GetMaterials()[submesh.materialIndex];
 					auto base_color_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
@@ -1938,30 +2377,120 @@ public:
 						orm_srv = &orm_tex_res->GetTextureView();
 					}
 
+					descSet_.SetPsCbv(2, pSceneMesh->GetMaterialCBV(submesh.materialIndex)->GetDescInfo().cpuHandle);
 					descSet_.SetPsSrv(0, base_color_srv->GetDescInfo().cpuHandle);
 					descSet_.SetPsSrv(1, normal_srv->GetDescInfo().cpuHandle);
 					descSet_.SetPsSrv(2, orm_srv->GetDescInfo().cpuHandle);
 					pCmdList->SetGraphicsRootSignatureAndDescriptorSet(myRS, &descSet_);
 
-					const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
-						submesh.positionVBV.GetView(),
-						submesh.normalVBV.GetView(),
-						submesh.tangentVBV.GetView(),
-						submesh.texcoordVBV.GetView(),
-					};
-					d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
+					if (use1DispatchCull_)
+					{
+						const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
+							sl12::MeshManager::CreateVertexView(pResMesh->GetPositionHandle(), submesh.positionOffsetBytes, submesh.positionSizeBytes, sl12::ResourceItemMesh::GetPositionStride()),
+							sl12::MeshManager::CreateVertexView(pResMesh->GetNormalHandle(), submesh.normalOffsetBytes, submesh.normalSizeBytes, sl12::ResourceItemMesh::GetNormalStride()),
+							sl12::MeshManager::CreateVertexView(pResMesh->GetTangentHandle(), submesh.tangentOffsetBytes, submesh.tangentSizeBytes, sl12::ResourceItemMesh::GetTangentStride()),
+							sl12::MeshManager::CreateVertexView(pResMesh->GetTexcoordHandle(), submesh.texcoordOffsetBytes, submesh.texcoordSizeBytes, sl12::ResourceItemMesh::GetTexcoordStride()),
+						};
+						d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
 
-					auto&& ibv = submesh.indexBV.GetView();
-					d3dCmdList->IASetIndexBuffer(&ibv);
+						auto ibv = sl12::MeshManager::CreateIndexView(pResMesh->GetIndexHandle(), submesh.indexOffsetBytes, submesh.indexSizeBytes, sl12::ResourceItemMesh::GetIndexStride());
+						d3dCmdList->IASetIndexBuffer(&ibv);
+					}
+					else
+					{
+						const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
+							submesh.positionVBV.GetView(),
+							submesh.normalVBV.GetView(),
+							submesh.tangentVBV.GetView(),
+							submesh.texcoordVBV.GetView(),
+						};
+						d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
+
+						auto&& ibv = submesh.indexBV.GetView();
+						d3dCmdList->IASetIndexBuffer(&ibv);
+					}
 
 					auto&& meshletData = sceneSubmesh->GetMeshletData();
+					sl12::u32 argOffset = sceneView_->GetCullUnitCount() * kDrawArgSize + batch.indirectArgByteOffset;
+					sl12::u32 countOffset = sceneView_->GetBatchCount() * sizeof(sl12::u32) + batch.drawCountByteOffset;
 					d3dCmdList->ExecuteIndirect(
-						commandSig_,																	// command signature
-						meshletData.meshletCount,														// Meshlet最大数
-						pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
-						kDrawArgSize * meshletData.indirectArg1stIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
-						pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
-						meshletData.indirectCount1stByteOffset);										// カウントバッファの先頭オフセット
+						commandSig_,						// command signature
+						meshletData.meshletCount,			// Meshlet最大数
+						pIndirectArg->GetResourceDep(),		// indirectコマンドの変数バッファ
+						batch.indirectArgByteOffset,		// indirectコマンドの変数バッファの先頭オフセット
+						pDrawCount->GetResourceDep(),		// 実際の発行回数を収めたカウントバッファ
+						batch.drawCountByteOffset);			// カウントバッファの先頭オフセット
+				}
+			}
+			else
+			{
+				for (auto&& cmd : meshRenderCmds)
+				{
+					if (cmd->GetType() != sl12::RenderCommandType::Mesh)
+					{
+						continue;
+					}
+
+					sl12::MeshRenderCommand* mcmd = static_cast<sl12::MeshRenderCommand*>(cmd.get());
+					sl12::SceneMesh* pSceneMesh = mcmd->GetParentMesh();
+					const sl12::ResourceItemMesh* pResMesh = pSceneMesh->GetParentResource();
+
+					descSet_.SetVsCbv(1, mcmd->GetCBView()->GetDescInfo().cpuHandle);
+
+					auto&& submeshes = pResMesh->GetSubmeshes();
+					auto&& subCmds = mcmd->GetSubmeshCommands();
+					auto submesh_count = submeshes.size();
+					for (int i = 0; i < submesh_count; i++)
+					{
+						auto&& submesh = submeshes[i];
+						auto sceneSubmesh = subCmds[i]->GetParentSubmesh();
+
+						auto&& material = pResMesh->GetMaterials()[submesh.materialIndex];
+						auto base_color_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+						auto normal_srv = device_.GetDummyTextureView(sl12::DummyTex::FlatNormal);
+						auto orm_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+						if (material.baseColorTex.IsValid())
+						{
+							auto bc_tex_res = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+							base_color_srv = &bc_tex_res->GetTextureView();
+						}
+						if (material.normalTex.IsValid())
+						{
+							auto n_tex_res = const_cast<sl12::ResourceItemTexture*>(material.normalTex.GetItem<sl12::ResourceItemTexture>());
+							normal_srv = &n_tex_res->GetTextureView();
+						}
+						if (material.ormTex.IsValid())
+						{
+							auto orm_tex_res = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
+							orm_srv = &orm_tex_res->GetTextureView();
+						}
+
+						descSet_.SetPsCbv(2, pSceneMesh->GetMaterialCBV(submesh.materialIndex)->GetDescInfo().cpuHandle);
+						descSet_.SetPsSrv(0, base_color_srv->GetDescInfo().cpuHandle);
+						descSet_.SetPsSrv(1, normal_srv->GetDescInfo().cpuHandle);
+						descSet_.SetPsSrv(2, orm_srv->GetDescInfo().cpuHandle);
+						pCmdList->SetGraphicsRootSignatureAndDescriptorSet(myRS, &descSet_);
+
+						const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
+							submesh.positionVBV.GetView(),
+							submesh.normalVBV.GetView(),
+							submesh.tangentVBV.GetView(),
+							submesh.texcoordVBV.GetView(),
+						};
+						d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
+
+						auto&& ibv = submesh.indexBV.GetView();
+						d3dCmdList->IASetIndexBuffer(&ibv);
+
+						auto&& meshletData = sceneSubmesh->GetMeshletData();
+						d3dCmdList->ExecuteIndirect(
+							commandSig_,																	// command signature
+							meshletData.meshletCount,														// Meshlet最大数
+							pSceneMesh->GetIndirectArgBuffer()->GetResourceDep(),							// indirectコマンドの変数バッファ
+							kDrawArgSize * meshletData.indirectArg1stIndexOffset,							// indirectコマンドの変数バッファの先頭オフセット
+							pSceneMesh->GetIndirectCountBuffer()->GetResourceDep(),							// 実際の発行回数を収めたカウントバッファ
+							meshletData.indirectCount1stByteOffset);										// カウントバッファの先頭オフセット
+					}
 				}
 			}
 		}
@@ -1977,7 +2506,10 @@ public:
 		{
 			OPTICK_EVENT("GPU::RenderHiZ");
 			GPU_MARKER(pCmdList, 1, "RenderHiZ");
-			RenderHiZ();
+			if (HiZRenderType == 0)
+				RenderHiZ();
+			else
+				RenderHiZC();
 		}
 
 		// raytrace shadow.
@@ -1991,6 +2523,7 @@ public:
 			rtGlobalDescSet_.Reset();
 			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(2, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(1, gbuffers_.rts[GBuffers::kWorldQuat].srv->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(2, gbuffers_.depthSRV->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsUav(0, rtShadowResult_.uav->GetDescInfo().cpuHandle);
@@ -2031,10 +2564,10 @@ public:
 			OPTICK_EVENT("GPU::Lighting");
 			GPU_MARKER(pCmdList, 1, "Lighting");
 
-			auto&& target = useTAA_ ? accumTemp_ : currAccum;
+			auto&& target = bEnableTAA ? accumTemp_ : currAccum;
 
 			pCmdList->TransitionBarrier(&clusterInfoBuffer_, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
-			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
 			descSet_.Reset();
 			descSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
@@ -2124,6 +2657,7 @@ public:
 			rtGlobalDescSet_.Reset();
 			rtGlobalDescSet_.SetCsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			rtGlobalDescSet_.SetCsCbv(2, materialCBVs_[frameIndex].GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(1, gbuffers_.rts[GBuffers::kWorldQuat].srv->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(2, gbuffers_.rts[GBuffers::kBaseColor].srv->GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsSrv(3, gbuffers_.rts[GBuffers::kMetalRough].srv->GetDescInfo().cpuHandle);
@@ -2181,9 +2715,8 @@ public:
 			OPTICK_EVENT("GPU::CompositeReflection");
 			GPU_MARKER(pCmdList, 1, "CompositeReflection");
 
-			auto&& target = useTAA_ ? accumTemp_ : currAccum;
+			auto&& target = bEnableTAA ? accumTemp_ : currAccum;
 			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
 			D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
 				target.rtv->GetDescInfo().cpuHandle,
 			};
@@ -2227,8 +2760,72 @@ public:
 			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		}
 
+		// display probe.
+		if (isDebugProbe_)
+		{
+			OPTICK_EVENT("GPU::DebugProbe");
+			GPU_MARKER(pCmdList, 1, "DebugProbe");
+
+			auto&& target = bEnableTAA ? accumTemp_ : currAccum;
+			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+			D3D12_CPU_DESCRIPTOR_HANDLE rtv[] = {
+				target.rtv->GetDescInfo().cpuHandle,
+			};
+			auto&& dsv = gbuffers_.depthDSV->GetDescInfo().cpuHandle;
+			d3dCmdList->OMSetRenderTargets(ARRAYSIZE(rtv), rtv, false, &dsv);
+
+			D3D12_VIEWPORT vp;
+			vp.TopLeftX = vp.TopLeftY = 0.0f;
+			vp.Width = (float)renderWidth_;
+			vp.Height = (float)renderHeight_;
+			vp.MinDepth = 0.0f;
+			vp.MaxDepth = 1.0f;
+			d3dCmdList->RSSetViewports(1, &vp);
+
+			D3D12_RECT rect;
+			rect.left = rect.top = 0;
+			rect.right = renderWidth_;
+			rect.bottom = renderHeight_;
+			d3dCmdList->RSSetScissorRects(1, &rect);
+
+			// PSO設定
+			d3dCmdList->SetPipelineState(DebugProbePSO_.GetPSO());
+
+			// 基本Descriptor設定
+			descSet_.Reset();
+			descSet_.SetVsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetVsSrv(0, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			descSet_.SetVsSrv(1, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
+
+			descSet_.SetPsCbv(0, sceneCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsCbv(1, lightCBVs_[frameIndex].GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(0, rtxgiComponent_->GetConstantSTBView()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(1, rtxgiComponent_->GetIrradianceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(2, rtxgiComponent_->GetDistanceSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSrv(3, rtxgiComponent_->GetProbeDataSRV()->GetDescInfo().cpuHandle);
+			descSet_.SetPsSampler(0, hdriSampler_.GetDescInfo().cpuHandle);
+
+			pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&DebugProbeRS_, &descSet_);
+
+			const D3D12_VERTEX_BUFFER_VIEW vbvs[] = {
+				sphereVBV_.GetView(),
+			};
+			d3dCmdList->IASetVertexBuffers(0, ARRAYSIZE(vbvs), vbvs);
+
+			auto&& ibv = sphereIBV_.GetView();
+			d3dCmdList->IASetIndexBuffer(&ibv);
+
+			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			d3dCmdList->DrawIndexedInstanced(sphereIndexCount_, rtxgiComponent_->GetNumProbes(), 0, 0, 0);
+
+			pCmdList->TransitionBarrier(target.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+			pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		}
+
 		// TAA
-		if (useTAA_)
+		if (bEnableTAA)
 		{
 			OPTICK_EVENT("GPU::TAA");
 			GPU_MARKER(pCmdList, 1, "TAA");
@@ -2262,8 +2859,6 @@ public:
 			UINT dy = (renderHeight_ + 15) / 16;
 			d3dCmdList->Dispatch(dx, dy, 1);
 		}
-
-		pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 		// set render target.
 		{
@@ -2318,8 +2913,6 @@ public:
 			d3dCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			d3dCmdList->DrawInstanced(3, 1, 0, 0);
 		}
-
-		auto upscalerType = (currRenderRes_ == 0) ? 0 : currUpscaler_;
 
 		// FSR
 		if (upscalerType == 1)
@@ -2434,10 +3027,39 @@ public:
 
 			pCmdList->TransitionBarrier(fsrTargets_[1].tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
 		}
+		// FSR2
+		else if (upscalerType == 3)
+		{
+			OPTICK_EVENT("GPU::FSR2");
+			GPU_MARKER(pCmdList, 1, "FSR2");
+
+			pCmdList->TransitionBarrier(ldrTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+			pCmdList->TransitionBarrier(fsrTargets_[1].tex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+			FSR2Renderer::Description fsr2Desc;
+			fsr2Desc.pColor = ldrTarget_.tex;
+			fsr2Desc.pDepth = gbuffers_.depthTex;
+			fsr2Desc.pMotionVector = gbuffers_.rts[GBuffers::kVelocity].tex;
+			fsr2Desc.pOutput = fsrTargets_[1].tex;
+			fsr2Desc.renderWidth = renderWidth_;
+			fsr2Desc.renderHeight = renderHeight_;
+			fsr2Desc.cameraNear = kNearZ;
+			fsr2Desc.cameraFar = kFarZ;
+			fsr2Desc.cameraFovY = kFovY;
+			fsr2Desc.bSharpning = true;
+			fsr2Desc.sharpness = upscalerSharpness_;
+
+			fsr2Renderer_->Dispatch(pCmdList, &fsr2Desc, false);
+
+			pCmdList->SetDescriptorHeapDirty();
+			pCmdList->TransitionBarrier(fsrTargets_[1].tex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+		}
 		else
 		{
 			pCmdList->TransitionBarrier(ldrTarget_.tex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
 		}
+
+		pCmdList->TransitionBarrier(gbuffers_.depthTex, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 		// select after OETF target.
 		auto FinalTarget = &ldrTarget_;
@@ -2566,6 +3188,9 @@ public:
 		sceneRoot_.reset();
 		shaderManager_.Destroy();
 		cbvCache_.Destroy();
+
+		meshManager_.reset(nullptr);
+		sceneView_.reset(nullptr);
 	}
 
 	int Input(UINT message, WPARAM wParam, LPARAM lParam)
@@ -2606,7 +3231,11 @@ private:
 			DirectX::XMLoadFloat4(&camPos_),
 			DirectX::XMLoadFloat4(&tgtPos_),
 			DirectX::XMLoadFloat4(&upVec_));
-		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovRH(DirectX::XMConvertToRadians(60.0f), (float)renderWidth_ / (float)renderHeight_, kNearZ, kFarZ);
+#if ENABLE_INFINITE_PROJECTION
+		auto mtxViewToClip = sl12::MatrixPerspectiveInfiniteFovRH(kFovY, (float)renderWidth_ / (float)renderHeight_, kNearZ);
+#else
+		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovRH(kFovY, (float)renderWidth_ / (float)renderHeight_, kNearZ, kFarZ);
+#endif
 		auto mtxWorldToClip = mtxWorldToView * mtxViewToClip;
 		auto mtxClipToWorld = DirectX::XMMatrixInverse(nullptr, mtxWorldToClip);
 
@@ -2684,6 +3313,13 @@ private:
 		jitterX /= (float)screenWidth;
 		jitterY /= (float)screenHeight;
 
+		if (currUpscaler_ == 3)
+		{
+			auto jitter = fsr2Renderer_->BeginNewFrame(screenWidth, screenHeight, kScreenWidth, kScreenHeight);
+			jitterX = jitter.x;
+			jitterY = jitter.y;
+		}
+
 		DirectX::XMFLOAT4X4 temp;
 		DirectX::XMStoreFloat4x4(&temp, mtxViewToClip);
 		temp._31 = jitterX;
@@ -2696,7 +3332,11 @@ private:
 		auto cp = DirectX::XMLoadFloat4(&camPos_);
 		auto mtxWorldToView = DirectX::XMLoadFloat4x4(&mtxWorldToView_);
 		auto mtxPrevWorldToView = DirectX::XMLoadFloat4x4(&mtxPrevWorldToView_);
-		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovRH(DirectX::XMConvertToRadians(60.0f), (float)renderWidth_ / (float)renderHeight_, kNearZ, kFarZ);
+#if ENABLE_INFINITE_PROJECTION
+		auto mtxViewToClip = sl12::MatrixPerspectiveInfiniteFovRH(kFovY, (float)renderWidth_ / (float)renderHeight_, kNearZ);
+#else
+		auto mtxViewToClip = DirectX::XMMatrixPerspectiveFovRH(kFovY, (float)renderWidth_ / (float)renderHeight_, kNearZ, kFarZ);
+#endif
 
 		if (useTAA)
 		{
@@ -2727,6 +3367,7 @@ private:
 			cb->screenInfo.z = (float)renderWidth_;
 			cb->screenInfo.w = (float)renderHeight_;
 			DirectX::XMStoreFloat4(&cb->camPos, cp);
+			cb->viewDepthValue = DirectX::XMFLOAT3(mtxViewToClip.r[2].m128_f32[2], mtxViewToClip.r[3].m128_f32[2], mtxViewToClip.r[2].m128_f32[3]);
 			cb->isOcclusionCull = isOcclusionCulling_;
 			cb->renderColorSpace = renderColorSpace_;
 			sceneCBs_[frameIndex].Unmap();
@@ -2745,6 +3386,7 @@ private:
 			auto cb = reinterpret_cast<MaterialCB*>(materialCBs_[frameIndex].Map(nullptr));
 			cb->roughnessRange = roughnessRange_;
 			cb->metallicRange = metallicRange_;
+			cb->emissiveIntensity = emissiveIntensity_;
 			materialCBs_[frameIndex].Unmap();
 		}
 
@@ -2854,6 +3496,20 @@ private:
 				return false;
 			}
 		}
+		{
+			D3D12_INDIRECT_ARGUMENT_DESC args[1]{};
+			args[0].Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
+			D3D12_COMMAND_SIGNATURE_DESC desc{};
+			desc.ByteStride = sizeof(sl12::u32) * 3;
+			desc.NumArgumentDescs = ARRAYSIZE(args);
+			desc.pArgumentDescs = args;
+			desc.NodeMask = 1;
+			auto hr = device_.GetDeviceDep()->CreateCommandSignature(&desc, nullptr, IID_PPV_ARGS(&computeSig_));
+			if (FAILED(hr))
+			{
+				return false;
+			}
+		}
 
 		// 定数バッファを生成する
 		for (int i = 0; i < ARRAYSIZE(frustumCBs_); i++)
@@ -2875,6 +3531,7 @@ private:
 	void DestroyIndirectDrawParams()
 	{
 		sl12::SafeRelease(commandSig_);
+		sl12::SafeRelease(computeSig_);
 
 		for (auto&& v : frustumCBs_) v.Destroy();
 		for (auto&& v : frustumCBVs_) v.Destroy();
@@ -2882,8 +3539,56 @@ private:
 
 	void UpdateFrustumPlane(int frameIndex, const DirectX::XMFLOAT4X4& mtxViewProj)
 	{
+#if ENABLE_INFINITE_PROJECTION
+		const float kNearDeviceZ = 0.0f;
+		const float kFarDeviceZ = 0.5f;
+#else
+		const float kNearDeviceZ = 0.0f;
+		const float kFarDeviceZ = 1.0f;
+#endif
+		DirectX::XMMATRIX mtxProjView = DirectX::XMMatrixInverse(nullptr, DirectX::XMLoadFloat4x4(&mtxViewProj));
+		DirectX::XMFLOAT4 BasePoints[8] = {
+			DirectX::XMFLOAT4(-1.0f,  1.0f, kNearDeviceZ, 1.0f),
+			DirectX::XMFLOAT4( 1.0f,  1.0f, kNearDeviceZ, 1.0f),
+			DirectX::XMFLOAT4(-1.0f, -1.0f, kNearDeviceZ, 1.0f),
+			DirectX::XMFLOAT4( 1.0f, -1.0f, kNearDeviceZ, 1.0f),
+			DirectX::XMFLOAT4(-1.0f,  1.0f, kFarDeviceZ, 1.0f),
+			DirectX::XMFLOAT4( 1.0f,  1.0f, kFarDeviceZ, 1.0f),
+			DirectX::XMFLOAT4(-1.0f, -1.0f, kFarDeviceZ, 1.0f),
+			DirectX::XMFLOAT4( 1.0f, -1.0f, kFarDeviceZ, 1.0f),
+		};
+		DirectX::XMVECTOR FrustumPoints[8];
+		for (int i = 0; i < 8; i++)
+		{
+			FrustumPoints[i] = DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat4(&BasePoints[i]), mtxProjView);
+		}
+
+		auto CalcPlane = [FrustumPoints](int v0, int v1, int v2)
+		{
+			auto ab = DirectX::XMVectorSubtract(FrustumPoints[v1], FrustumPoints[v0]);
+			auto ac = DirectX::XMVectorSubtract(FrustumPoints[v2], FrustumPoints[v0]);
+			auto normal = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(ab, ac));
+			auto d = DirectX::XMVector3Dot(normal, FrustumPoints[v0]);
+			DirectX::XMFLOAT4 r;
+			DirectX::XMStoreFloat4(&r, normal);
+			r.w = -d.m128_f32[0];
+			return r;
+		};
+
 		DirectX::XMFLOAT4 tmp_planes[6];
 
+#if 1
+		tmp_planes[0] = CalcPlane(0, 2, 4);
+		tmp_planes[1] = CalcPlane(1, 5, 3);
+		tmp_planes[2] = CalcPlane(0, 4, 1);
+		tmp_planes[3] = CalcPlane(2, 3, 6);
+		tmp_planes[4] = CalcPlane(0, 1, 2);
+#if ENABLE_INFINITE_PROJECTION
+		tmp_planes[5] = CalcPlane(0, 1, 2);
+#else
+		tmp_planes[5] = CalcPlane(4, 6, 5);
+#endif
+#else
 		// Left Frustum Plane
 		// Add first column of the matrix to the fourth column
 		tmp_planes[0].x = mtxViewProj._14 + mtxViewProj._11;
@@ -2937,6 +3642,7 @@ private:
 			tmp_planes[i].z /= length;
 			tmp_planes[i].w /= length;
 		}
+#endif
 
 		auto p = reinterpret_cast<FrustumCB*>(frustumCBs_[frameIndex].Map(nullptr));
 		memcpy(p->frustumPlanes, tmp_planes, sizeof(p->frustumPlanes));
@@ -3037,6 +3743,8 @@ private:
 
 	bool InitializeRaytracingPipeline()
 	{
+		static const int kPayloadSize = 32;
+
 		// create root signature.
 		// only one fixed root signature.
 		if (!sl12::CreateRaytracingRootSignature(&device_,
@@ -3065,7 +3773,7 @@ private:
 			dxrDesc.AddHitGroup(kOcclusionMaskedHG, true, kOcclusionAHS, kOcclusionCHS, nullptr);
 
 			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -3099,7 +3807,7 @@ private:
 			dxrDesc.AddHitGroup(kMaterialMaskedHG, true, kMaterialAHS, kMaterialCHS, nullptr);
 
 			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -3133,7 +3841,7 @@ private:
 			dxrDesc.AddDxilLibrary(shader->GetData(), shader->GetSize(), libExport, ARRAYSIZE(libExport));
 
 			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -3165,7 +3873,7 @@ private:
 			dxrDesc.AddDxilLibrary(shaderBinning->GetData(), shaderBinning->GetSize(), libBinningExport, ARRAYSIZE(libBinningExport));
 
 			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -3191,7 +3899,7 @@ private:
 			dxrDesc.AddDxilLibrary(shader->GetData(), shader->GetSize(), libExport, ARRAYSIZE(libExport));
 
 			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -3209,7 +3917,7 @@ private:
 			sl12::DxrPipelineStateDesc dxrDesc;
 
 			// payload size and intersection attr size.
-			dxrDesc.AddShaderConfig(16, sizeof(float) * 2);
+			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
 			// global root signature.
 			dxrDesc.AddGlobalRootSignature(rtGlobalRootSig_);
@@ -3323,7 +4031,8 @@ private:
 		auto local_handle_start = bvhDescMan_->IncrementLocalHandleStart();
 		auto FillMeshTable = [&](sl12::MeshRenderCommand* cmd)
 		{
-			auto pMeshItem = cmd->GetParentMesh()->GetParentResource();
+			auto pSceneMesh = cmd->GetParentMesh();
+			auto pMeshItem = pSceneMesh->GetParentResource();
 			auto&& submeshes = pMeshItem->GetSubmeshes();
 			for (int i = 0; i < submeshes.size(); i++)
 			{
@@ -3347,7 +4056,16 @@ private:
 				LocalTable table;
 
 				// CBV
+				D3D12_CPU_DESCRIPTOR_HANDLE cbv[] = {
+					pSceneMesh->GetMaterialCBV(submesh.materialIndex)->GetDescInfo().cpuHandle,
+				};
+				sl12::u32 cbv_cnt = ARRAYSIZE(cbv);
+				device_.GetDeviceDep()->CopyDescriptors(
+					1, &local_handle_start.viewCpuHandle, &cbv_cnt,
+					cbv_cnt, cbv, nullptr, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				table.cbv = local_handle_start.viewGpuHandle;
+				local_handle_start.viewCpuHandle.ptr += view_desc_size * cbv_cnt;
+				local_handle_start.viewGpuHandle.ptr += view_desc_size * cbv_cnt;
 
 				// SRV
 				D3D12_CPU_DESCRIPTOR_HANDLE srv[] = {
@@ -3742,6 +4460,84 @@ private:
 		}
 	}
 
+	bool CreateSphere()
+	{
+		const int kLongitudeCount = 16;
+		const int kLatitudeCount = 8;
+
+		const int kVertexCount = kLongitudeCount * (kLatitudeCount - 1) + 2;
+		if (!sphereVB_.Initialize(&device_, sizeof(DirectX::XMFLOAT3) * kVertexCount, sizeof(DirectX::XMFLOAT3), sl12::BufferUsage::VertexBuffer, true, false))
+		{
+			return false;
+		}
+		if (!sphereVBV_.Initialize(&device_, &sphereVB_))
+		{
+			return false;
+		}
+		{
+			auto p = (DirectX::XMFLOAT3*)sphereVB_.Map(nullptr);
+			*p = DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f); p++;
+			for (int y = 1; y < kLatitudeCount; y++)
+			{
+				float ay = DirectX::XM_PI * (float)y / (float)kLatitudeCount;
+				float py = cos(ay);
+				for (int x = 0; x < kLongitudeCount; x++)
+				{
+					float ax = DirectX::XM_2PI * (float)x / (float)kLongitudeCount;
+					float px = cos(ax) * sin(ay);
+					float pz = sin(ax) * sin(ay);
+					*p = DirectX::XMFLOAT3(px, py, pz); p++;
+				}
+			}
+			*p = DirectX::XMFLOAT3(0.0f, -1.0f, 0.0f); p++;
+			sphereVB_.Unmap();
+		}
+
+		sphereIndexCount_ = (kLongitudeCount * 2 + kLongitudeCount * 2 * (kLatitudeCount - 2)) * 3;
+		if (!sphereIB_.Initialize(&device_, sizeof(sl12::u32) * sphereIndexCount_, sizeof(sl12::u32), sl12::BufferUsage::IndexBuffer, true, false))
+		{
+			return false;
+		}
+		if (!sphereIBV_.Initialize(&device_, &sphereIB_))
+		{
+			return false;
+		}
+		{
+			auto p = (sl12::u32*)sphereIB_.Map(nullptr);
+			sl12::u32 startIndex = 0;
+			for (int i = 0; i < kLongitudeCount; i++)
+			{
+				*p = startIndex; p++;
+				*p = startIndex + i + 1; p++;
+				*p = startIndex + ((i + 1) % kLongitudeCount) + 1; p++;
+			}
+			startIndex += 1;
+			for (int y = 1; y < kLatitudeCount - 1; y++)
+			{
+				for (int x = 0; x < kLongitudeCount; x++)
+				{
+					*p = startIndex + x; p++;
+					*p = startIndex + x + kLongitudeCount; p++;
+					*p = startIndex + ((x + 1) % kLongitudeCount); p++;
+
+					*p = startIndex + ((x + 1) % kLongitudeCount); p++;
+					*p = startIndex + x + kLongitudeCount; p++;
+					*p = startIndex + ((x + 1) % kLongitudeCount) + kLongitudeCount; p++;
+				}
+				startIndex += kLongitudeCount;
+			}
+			for (int i = 0; i < kLongitudeCount; i++)
+			{
+				*p = startIndex + i; p++;
+				*p = startIndex + kLongitudeCount; p++;
+				*p = startIndex + ((i + 1) % kLongitudeCount); p++;
+			}
+			sphereIB_.Unmap();
+		}
+
+		return true;
+	}
+
 private:
 	struct RaytracingResult
 	{
@@ -3990,6 +4786,7 @@ private:
 		sl12::TextureView*			srv = nullptr;
 		sl12::TextureView*			subSrvs[HIZ_MIP_LEVEL] = {};
 		sl12::RenderTargetView*		subRtvs[HIZ_MIP_LEVEL] = {};
+		sl12::UnorderedAccessView*	subUavs[HIZ_MIP_LEVEL] = {};
 
 		~HiZBuffers()
 		{
@@ -4010,7 +4807,7 @@ private:
 			desc.mipLevels = HIZ_MIP_LEVEL;
 			desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
 			desc.isRenderTarget = true;
-			desc.isUav = false;
+			desc.isUav = true;
 
 			if (!tex->Initialize(pDev, desc))
 			{
@@ -4026,12 +4823,17 @@ private:
 			{
 				subSrvs[i] = new sl12::TextureView();
 				subRtvs[i] = new sl12::RenderTargetView();
+				subUavs[i] = new sl12::UnorderedAccessView();
 
 				if (!subSrvs[i]->Initialize(pDev, tex, i, 1))
 				{
 					return false;
 				}
 				if (!subRtvs[i]->Initialize(pDev, tex, i))
+				{
+					return false;
+				}
+				if (!subUavs[i]->Initialize(pDev, tex, i))
 				{
 					return false;
 				}
@@ -4048,6 +4850,8 @@ private:
 					if (v) dev->KillObject(v);
 				for (auto&& v : subRtvs)
 					if (v) dev->KillObject(v);
+				for (auto&& v : subUavs)
+					if (v) dev->KillObject(v);
 				if (srv) dev->KillObject(srv);
 				if (tex) dev->KillObject(tex);
 			}
@@ -4056,6 +4860,7 @@ private:
 			srv = nullptr;
 			memset(subSrvs, 0, sizeof(subSrvs));
 			memset(subRtvs, 0, sizeof(subRtvs));
+			memset(subUavs, 0, sizeof(subUavs));
 		}
 	};
 
@@ -4163,6 +4968,12 @@ private:
 	RenderTargetSet				eotfTarget_;
 	RenderTargetSet				uiTarget_;
 
+	sl12::Buffer				sphereVB_;
+	sl12::VertexBufferView		sphereVBV_;
+	sl12::Buffer				sphereIB_;
+	sl12::IndexBufferView		sphereIBV_;
+	sl12::u32					sphereIndexCount_;
+
 	sl12::Texture				nisCoeffScaler_, nisCoeffUsm_;
 	sl12::TextureView			nisCoeffScalerSRV_, nisCoeffUsmSRV_;
 
@@ -4179,11 +4990,16 @@ private:
 	sl12::UnorderedAccessView	sh9UAV_;
 
 	ID3D12CommandSignature*		commandSig_ = nullptr;
+	ID3D12CommandSignature*		computeSig_ = nullptr;
 
-	sl12::RootSignature			PrePassRS_, GBufferRS_, TonemapRS_, OetfRS_, EotfRS_, ReduceDepth1stRS_, ReduceDepth2ndRS_, TargetCopyRS_, CompositeReflectionRS_;
-	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_, ComputeSHRS_, RayBinningRS_, RayGatherRS_;
-	sl12::GraphicsPipelineState	PrePassPSO_, GBufferPSO_, TonemapPSO_, OetfPSO_, EotfPSO_, ReduceDepth1stPSO_, ReduceDepth2ndPSO_, TargetCopyPSO_, CompositeReflectionPSO_;
-	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, LightingPSO_, TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_, ComputeSHPerFacePSO_, ComputeSHAllPSO_, RayBinningPSO_, RayGatherPSO_;
+	sl12::RootSignature			PrePassRS_, GBufferRS_, TonemapRS_, OetfRS_, EotfRS_, ReduceDepth1stRS_, ReduceDepth2ndRS_, TargetCopyRS_, CompositeReflectionRS_, DebugProbeRS_;
+	sl12::RootSignature			ClusterCullRS_, ResetCullDataRS_, Cull1stPhaseRS_, Cull2ndPhaseRS_, ReduceDepth1stCRS_, ReduceDepth2ndCRS_, LightingRS_, TaaRS_, TaaFirstRS_, FsrEasuRS_, FsrRcasRS_, NisScalerRS_, NisScalerHDRRS_, ComputeSHRS_, RayBinningRS_, RayGatherRS_;
+	sl12::GraphicsPipelineState	PrePassPSO_, GBufferPSO_, TonemapPSO_, OetfPSO_, EotfPSO_, ReduceDepth1stPSO_, ReduceDepth2ndPSO_, TargetCopyPSO_, CompositeReflectionPSO_, DebugProbePSO_;
+	sl12::ComputePipelineState	ClusterCullPSO_, ResetCullDataPSO_, Cull1stPhasePSO_, Cull2ndPhasePSO_, ReduceDepth1stCPSO_, ReduceDepth2ndCPSO_, LightingPSO_,
+								TaaPSO_, TaaFirstPSO_, FsrEasuPSO_, FsrRcasPSO_, NisScalerPSO_, NisScalerHDRPSO_, ComputeSHPerFacePSO_, ComputeSHAllPSO_, RayBinningPSO_, RayGatherPSO_;
+
+	sl12::RootSignature			Cull1DispRS_;
+	sl12::ComputePipelineState	Cull1DispClearCountPSO_, Cull1DispMakeFNPSO_, Cull1Disp1stPhasePSO_, Cull1Disp2ndPhasePSO_;
 
 	sl12::DescriptorSet			descSet_;
 
@@ -4200,6 +5016,8 @@ private:
 	float					lightPower_ = 10.0f;
 	DirectX::XMFLOAT2		roughnessRange_ = { 0.0f, 1.0f };
 	DirectX::XMFLOAT2		metallicRange_ = { 0.0f, 1.0f };
+	float					emissiveColor_[3] = { 1.0f, 1.0f, 1.0f };
+	float					emissiveIntensity_ = 10.0f;
 	uint32_t				loopCount_ = 0;
 	bool					isClearTarget_ = true;
 	float					giIntensity_ = 1.0f;
@@ -4218,6 +5036,7 @@ private:
 	bool					isOcclusionCulling_ = true;
 	bool					isOcclusionReset_ = true;
 	bool					isFreezeCull_ = false;
+	bool					use1DispatchCull_ = false;
 	int						currRenderRes_ = 0;
 	int						currUpscaler_ = 0;
 	float					upscalerSharpness_ = 0.5f;
@@ -4234,6 +5053,10 @@ private:
 	DirectX::XMFLOAT4X4		mtxFrustumViewProj_;
 	DirectX::XMFLOAT4		frustumCamPos_;
 
+	float					rtxgiHysteresis_ = 0.97f;
+	float					rtxgiIrradianceThreshold_ = 0.25f;
+	float					rtxgiBrightnessThreshold_ = 0.1f;
+	bool					isDebugProbe_ = false;
 	bool					isClearProbe_ = true;
 	bool					isReallocateProbe_ = true;
 
@@ -4244,14 +5067,18 @@ private:
 	sl12::ResourceHandle	hCurtainRes_;
 	sl12::ResourceHandle	hIvyRes_;
 	sl12::ResourceHandle	hSuzanneRes_;
+	sl12::ResourceHandle	hEmissionRes_;
 	sl12::ResourceHandle	hBlueNoiseRes_;
 	sl12::ResourceHandle	hHDRIRes_;
+
+	std::unique_ptr<sl12::MeshManager>	meshManager_;
+	std::unique_ptr<sl12::SceneView>	sceneView_;
 
 	sl12::ConstantBufferCache	cbvCache_;
 	sl12::ShaderManager			shaderManager_;
 	sl12::ShaderHandle			hShaders_[SHADER_MAX];
 	std::unique_ptr<sl12::SceneRoot>	sceneRoot_;
-	std::shared_ptr<sl12::SceneMesh>	sponzaMesh_, curtainMesh_, ivyMesh_, suzanneMesh_;
+	std::shared_ptr<sl12::SceneMesh>	sponzaMesh_, curtainMesh_, ivyMesh_, suzanneMesh_, emissionMesh_;
 
 	// BVH Manager
 	std::unique_ptr<sl12::BvhManager>					bvhManager_;
@@ -4268,6 +5095,8 @@ private:
 
 	// RTXGI
 	std::unique_ptr<sl12::RtxgiComponent>				rtxgiComponent_;
+
+	std::unique_ptr<FSR2Renderer>						fsr2Renderer_;
 
 	sl12::ColorSpaceType	colorSpaceType_;
 

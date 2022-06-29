@@ -9,8 +9,14 @@
 namespace sl12
 {
 	//----
-	bool ConstantBufferView::Initialize(Device* pDev, Buffer* pBuffer)
+	bool ConstantBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size)
 	{
+		auto AlignOk = [](size_t s)
+		{
+			size_t a = s - (s / D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT * D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+			return a == 0;
+		};
+
 		if (!pDev)
 		{
 			return false;
@@ -23,6 +29,14 @@ namespace sl12
 		{
 			return false;
 		}
+		if (!AlignOk(offset) || !AlignOk(size))
+		{
+			return false;
+		}
+		if ((offset + size) > pBuffer->GetResourceDesc().Width)
+		{
+			return false;
+		}
 
 		descInfo_ = pDev->GetViewDescriptorHeap().Allocate();
 		if (!descInfo_.IsValid())
@@ -31,8 +45,8 @@ namespace sl12
 		}
 
 		D3D12_CONSTANT_BUFFER_VIEW_DESC viewDesc{};
-		viewDesc.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress();
-		viewDesc.SizeInBytes = static_cast<u32>(pBuffer->GetResourceDesc().Width);
+		viewDesc.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
+		viewDesc.SizeInBytes = static_cast<u32>(size > 0 ? size : (pBuffer->GetResourceDesc().Width - offset));
 		pDev->GetDeviceDep()->CreateConstantBufferView(&viewDesc, descInfo_.cpuHandle);
 
 		return true;
@@ -64,6 +78,24 @@ namespace sl12
 
 		return true;
 	}
+	bool VertexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size, size_t stride)
+	{
+		if (!pBuffer)
+		{
+			return false;
+		}
+		if (pBuffer->GetBufferUsage() != BufferUsage::VertexBuffer)
+		{
+			return false;
+		}
+
+		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
+		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
+		view_.StrideInBytes = static_cast<u32>(stride);
+		bufferOffset_ = offset;
+
+		return true;
+	}
 
 	//----
 	void VertexBufferView::Destroy()
@@ -81,10 +113,36 @@ namespace sl12
 		{
 			return false;
 		}
+		if (pBuffer->GetStride() != 4 && pBuffer->GetStride() != 2)
+		{
+			return false;
+		}
 
 		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
 		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
 		view_.Format = (pBuffer->GetStride() == 4) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+		bufferOffset_ = offset;
+
+		return true;
+	}
+	bool IndexBufferView::Initialize(Device* pDev, Buffer* pBuffer, size_t offset, size_t size, size_t stride)
+	{
+		if (!pBuffer)
+		{
+			return false;
+		}
+		if (pBuffer->GetBufferUsage() != BufferUsage::IndexBuffer)
+		{
+			return false;
+		}
+		if (stride != 4 && stride != 2)
+		{
+			return false;
+		}
+
+		view_.BufferLocation = pBuffer->GetResourceDep()->GetGPUVirtualAddress() + offset;
+		view_.SizeInBytes = (size == 0) ? static_cast<u32>(pBuffer->GetSize() - offset) : static_cast<u32>(size);
+		view_.Format = (stride == 4) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
 		bufferOffset_ = offset;
 
 		return true;
