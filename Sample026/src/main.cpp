@@ -44,8 +44,8 @@ namespace
 	static const float	kNearZ = 0.01f;
 	static const float	kFarZ = 100.0f;
 
-	static const float	kSponzaScale = 20.0f;
-	static const float	kSuzanneScale = 1.0f;
+	static const float	kSponzaScale = 0.0001f;
+	static const float	kSuzanneScale = 0.01f;
 
 	static const std::string	kShaderDir("../Sample026/shader/");
 
@@ -409,13 +409,16 @@ public:
 		// メッシュインスタンス初期化
 		cbvCache_.Initialize(&device_);
 		meshInstances_[0].meshResIndex = MESH_SPONZA;
+		meshInstances_[0].position = DirectX::XMFLOAT3(0.0f, -7.0f, 0.0f);
 		meshInstances_[0].scale = DirectX::XMFLOAT3(kSponzaScale, kSponzaScale, kSponzaScale);
 		meshInstances_[0].resMeshASRef = &resMeshASs_[MESH_SPONZA];
 		meshInstances_[1].meshResIndex = MESH_SUZANNE;
 		meshInstances_[1].position = DirectX::XMFLOAT3(-2.0f, -5.0f, 0.0f);
+		meshInstances_[1].scale = DirectX::XMFLOAT3(kSuzanneScale, kSuzanneScale, kSuzanneScale);
 		meshInstances_[1].resMeshASRef = &resMeshASs_[MESH_SUZANNE];
 		meshInstances_[2].meshResIndex = MESH_SUZANNE;
 		meshInstances_[2].position = DirectX::XMFLOAT3(6.0f, -5.0f, 0.0f);
+		meshInstances_[2].scale = DirectX::XMFLOAT3(kSuzanneScale, kSuzanneScale, kSuzanneScale);
 		meshInstances_[2].resMeshASRef = &resMeshASs_[MESH_SUZANNE];
 		meshInstances_[0].Update();
 		meshInstances_[1].Update();
@@ -423,6 +426,7 @@ public:
 
 		plateInstance_.position = DirectX::XMFLOAT3(-6.0f, -5.0f, 0.0f);
 		plateInstance_.rotate = DirectX::XMFLOAT3(0.0f, DirectX::XMConvertToRadians(20.0f), DirectX::XMConvertToRadians(90.0f));
+		plateInstance_.scale = DirectX::XMFLOAT3(kSuzanneScale, kSuzanneScale, kSuzanneScale);
 		plateInstance_.Update();
 
 		// shader compile.

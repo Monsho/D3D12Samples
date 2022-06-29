@@ -1123,7 +1123,9 @@ public:
 			suzanneMesh_ = std::make_shared<sl12::SceneMesh>(&device_, hSuzanneRes_.GetItem<sl12::ResourceItemMesh>());
 
 			DirectX::XMMATRIX m = DirectX::XMMatrixScaling(kSponzaScale, kSponzaScale, kSponzaScale);
+			DirectX::XMMATRIX mt = DirectX::XMMatrixTranslation(0.0f, -7.0f, 0.0f);
 			DirectX::XMFLOAT4X4 mf;
+			m = DirectX::XMMatrixMultiply(m, mt);
 			DirectX::XMStoreFloat4x4(&mf, m);
 			sponzaMesh_->SetMtxLocalToWorld(mf);
 
@@ -1381,6 +1383,7 @@ public:
 		gpuTimestamp_[frameIndex].Query(pCmdList);
 
 		device_.LoadRenderCommands(pCmdList);
+		sceneRoot_->BeginNewFrame(pCmdList);
 
 		CreateSH(pCmdList);
 

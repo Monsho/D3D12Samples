@@ -260,11 +260,17 @@ namespace sl12
 			return false;
 
 		bool isCompaction = desc.inputDesc.Flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+		bool isUpdate = desc.inputDesc.Flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
 
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc{};
 		buildDesc.DestAccelerationStructureData = pDxrBuffer_->GetResourceDep()->GetGPUVirtualAddress();
 		buildDesc.Inputs = desc.inputDesc;
 		buildDesc.ScratchAccelerationStructureData = pScratchBuffer_->GetResourceDep()->GetGPUVirtualAddress();
+
+		if (isUpdate)
+		{
+			buildDesc.SourceAccelerationStructureData = pDxrBuffer_->GetResourceDep()->GetGPUVirtualAddress();
+		}
 
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC InfoDesc;
 		InfoDesc.InfoType = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_COMPACTED_SIZE;
