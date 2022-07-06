@@ -2,6 +2,7 @@
 #include "payload.hlsli"
 #include "colorspace.hlsli"
 #include "sh.hlsli"
+#include "reflection_ray.hlsli"
 
 #define TMax			10000.0
 #ifndef ENABLE_RAY_BINNING
@@ -24,6 +25,8 @@ Texture2D							texHDRI			: register(t7);
 StructuredBuffer<SH9Color>			rSH				: register(t8);
 #if ENABLE_RAY_BINNING
 StructuredBuffer<RayData>			rRayData		: register(t9);
+#else
+Texture2D<float2>					texBlueNoise	: register(t9);
 #endif
 
 SamplerState						samHDRI			: register(s0);
@@ -162,9 +165,15 @@ void ReflectionRGS()
 	// TODO: implement rough surface reflection ray.
 	float3 normalInWS = ConvertVectorTangentToWorld(float3(0, 0, 1), gb.worldQuat);
 	float3 viewDir = normalize(worldPos.xyz - cbScene.camPos.xyz);
+#if 0
+	float3 reflectDir = reflect(viewDir, normalInWS);
+#else
+	float2 noiseU = frac(texBlueNoise[PixelPos % 128] + (cbScene.frameIndex & 0xff) * kGoldenRatio);
+	float3 reflectDir = SampleReflectionRay(viewDir, gb.worldQuat, gb.roughness, noiseU);
+#endif
 	RayData Ray = (RayData)0;
 	Ray.origin = worldPos + normalInWS * 0.01;
-	Ray.direction = reflect(viewDir, normalInWS);
+	Ray.direction = reflectDir;
 #endif
 
 	uint rayFlags = RAY_FLAG_CULL_NON_OPAQUE;

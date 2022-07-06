@@ -18,6 +18,9 @@
     <ClCompile Include="src\fsr2_renderer.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\blue_noise_texture.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -255,6 +255,8 @@ namespace
 
 }
 
+extern bool GenerateBlueNoiseTexture2D(sl12::Device* pDev, sl12::CommandList* pCmdList, sl12::Texture** ppTex);
+
 class SampleApplication
 	: public sl12::Application
 {
@@ -1164,6 +1166,22 @@ public:
 		if (!CreateNisCoeffTex(&device_, &utilCmdList_))
 		{
 			return false;
+		}
+
+		// create blue noise texture.
+		{
+			sl12::Texture* tex;
+			if (!GenerateBlueNoiseTexture2D(&device_, &utilCmdList_, &tex))
+			{
+				return false;
+			}
+			blueNoiseTex_.reset(tex);
+
+			blueNoiseSRV_ = std::make_unique<sl12::TextureView>();
+			if (!blueNoiseSRV_->Initialize(&device_, blueNoiseTex_.get()))
+			{
+				return false;
+			}
 		}
 
 		utilCmdList_.Close();
@@ -2641,6 +2659,7 @@ public:
 				descSet_.SetCsSrv(1, gbuffers_.rts[GBuffers::kBaseColor].srv->GetDescInfo().cpuHandle);
 				descSet_.SetCsSrv(2, gbuffers_.rts[GBuffers::kMetalRough].srv->GetDescInfo().cpuHandle);
 				descSet_.SetCsSrv(3, gbuffers_.depthSRV->GetDescInfo().cpuHandle);
+				descSet_.SetCsSrv(4, blueNoiseSRV_->GetDescInfo().cpuHandle);
 				descSet_.SetCsUav(0, pRayDataUAV_->GetDescInfo().cpuHandle);
 
 				d3dCmdList->SetPipelineState(PSO->GetPSO());
@@ -2669,6 +2688,10 @@ public:
 			if (enablePreRayGen_)
 			{
 				rtGlobalDescSet_.SetCsSrv(9, pRayDataBV_->GetDescInfo().cpuHandle);
+			}
+			else
+			{
+				rtGlobalDescSet_.SetCsSrv(9, blueNoiseSRV_->GetDescInfo().cpuHandle);
 			}
 			rtGlobalDescSet_.SetCsSampler(0, hdriSampler_.GetDescInfo().cpuHandle);
 			rtGlobalDescSet_.SetCsUav(0, rtReflectionResult_.uav->GetDescInfo().cpuHandle);
@@ -3144,6 +3167,9 @@ public:
 
 		DestroyRaytracing();
 
+		blueNoiseTex_.reset();
+		blueNoiseSRV_.reset();
+
 		if (pRayDataUAV_) device_.KillObject(pRayDataUAV_);
 		if (pRayDataBV_) device_.KillObject(pRayDataBV_);
 		if (pRayDataBuffer_) device_.KillObject(pRayDataBuffer_);
@@ -3370,6 +3396,7 @@ private:
 			cb->viewDepthValue = DirectX::XMFLOAT3(mtxViewToClip.r[2].m128_f32[2], mtxViewToClip.r[3].m128_f32[2], mtxViewToClip.r[2].m128_f32[3]);
 			cb->isOcclusionCull = isOcclusionCulling_;
 			cb->renderColorSpace = renderColorSpace_;
+			cb->frameIndex = frameIndex_;
 			sceneCBs_[frameIndex].Unmap();
 		}
 
@@ -4928,6 +4955,9 @@ private:
 	sl12::DxrPipelineState				rtReflectionPSO_;
 	sl12::DxrPipelineState				rtProbeLightingPSO_;
 	sl12::DxrPipelineState				rtRayTracingPSO_;
+
+	std::unique_ptr<sl12::Texture>		blueNoiseTex_;
+	std::unique_ptr<sl12::TextureView>	blueNoiseSRV_;
 
 	sl12::Sampler			imageSampler_;
 	sl12::Sampler			anisoSamplers_[3];

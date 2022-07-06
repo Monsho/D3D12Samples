@@ -1,5 +1,6 @@
 #include "common.hlsli"
 #include "constant.h"
+#include "reflection_ray.hlsli"
 
 #define BINNING_TILE_SIZE		32
 #define THREAD_SIZE				BINNING_TILE_SIZE * BINNING_TILE_SIZE
@@ -23,6 +24,7 @@ Texture2D						texGBuffer0		: register(t0);
 Texture2D						texGBuffer1		: register(t1);
 Texture2D						texGBuffer2		: register(t2);
 Texture2D<float>				texDepth		: register(t3);
+Texture2D<float2>				texBlueNoise	: register(t4);
 
 RWStructuredBuffer<RayData>		rwRayData		: register(u0);
 
@@ -76,8 +78,14 @@ void main(
 		// TODO: implement rough surface reflection ray.
 		float3 normalInWS = ConvertVectorTangentToWorld(float3(0, 0, 1), gb.worldQuat);
 		float3 viewDir = normalize(worldPos.xyz - cbScene.camPos.xyz);
+#if 0
+		float3 reflectDir = reflect(viewDir, normalInWS);
+#else
+		float2 noiseU = frac(texBlueNoise[PixelPos % 128] + (cbScene.frameIndex & 0xff) * kGoldenRatio);
+		float3 reflectDir = SampleReflectionRay(viewDir, gb.worldQuat, gb.roughness, noiseU);
+#endif
 		Ray.origin = worldPos + normalInWS * 0.01;
-		Ray.direction = reflect(viewDir, normalInWS);
+		Ray.direction = reflectDir;
 		Ray.flag = 0x1;
 
 		Bin = RayDirectionToBin(Ray.direction, TileSize);

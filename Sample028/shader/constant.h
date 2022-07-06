@@ -23,6 +23,7 @@ struct SceneCB
 	uint		isOcclusionCull;
 	uint		isMeshletColor;
 	uint		renderColorSpace;
+	uint		frameIndex;
 };
 
 struct LightCB
@@ -135,8 +136,9 @@ struct RayData
 };
 
 
-#define PI			3.1415926
-#define Epsilon		1e-5
+#define PI				3.1415926
+#define Epsilon			1e-5
+#define kGoldenRatio	1.61803398875
 
 #define CLUSTER_DIV_XY		16
 #define CLUSTER_DIV_Z		16

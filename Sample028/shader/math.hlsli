@@ -1,6 +1,7 @@
 #ifndef MATH_HLSLI
 #define MATH_HLSLI
 
+
 float ToLinearDepth(float perspDepth, float n, float f)
 {
 	return -n / ((n - f) * perspDepth + f);
@@ -84,6 +85,12 @@ float3 ConvertVectorTangentToWorld(in float3 v, in float4 quat)
 {
 	float3 t = 2 * cross(quat.xyz, v);
 	return v + quat.w * t + cross(quat.xyz, t);
+}
+float3 ConvertVectorWorldToTangent(in float3 v, in float4 quat)
+{
+	float3 u = -quat.xyz;
+	float3 t = 2 * cross(u, v);
+	return v + quat.w * t + cross(u, t);
 }
 
 float4 PackQuat(in float4 quat)

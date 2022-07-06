@@ -78,6 +78,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\blue_noise_texture.cpp" />
     <ClCompile Include="src\fsr2_renderer.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\scene_view.cpp" />
