@@ -5,11 +5,11 @@
   <PropertyGroup />
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;d3dcompiler.lib;dxcompiler.lib;UVAtlas.lib;DirectXMesh.lib;shlwapi.lib;WinPixEventRuntime.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;$(ProjectDir)..\External\UVAtlas\UVAtlas\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(ProjectDir)..\External\DirectXMesh\DirectXMesh\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(ProjectDir)..\External\WinPixEventRuntime\bin\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;SampleLib12.lib;DirectXTex.lib;dxcompiler.lib;UVAtlas.lib;DirectXMesh.lib;shlwapi.lib;WinPixEventRuntime.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\External\dxc\lib\x64\;$(ProjectDir)..\External\DirectXTex\DirectXTex\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(SolutionDir)$(Platform)\$(Configuration)\;$(ProjectDir)..\External\UVAtlas\UVAtlas\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(ProjectDir)..\External\DirectXMesh\DirectXMesh\Bin\Desktop_2017_Win10\$(Platform)\$(Configuration)\;$(ProjectDir)..\External\WinPixEventRuntime\bin\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\External\RTXGI\rtxgi-sdk\include;$(ProjectDir)..\External\DirectXTex\DirectXTex;$(ProjectDir)..\External\imgui;$(ProjectDir)..\SampleLib12\include;$(ProjectDir)..\External\UVAtlas\UVAtlas\inc;$(ProjectDir)..\External\DirectXMesh\DirectXMesh;$(ProjectDir)..\External\cereal\include;$(ProjectDir)..\External\WinPixEventRuntime\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\External\dxc\inc;$(ProjectDir)..\External\RTXGI\rtxgi-sdk\include;$(ProjectDir)..\External\DirectXTex\DirectXTex;$(ProjectDir)..\External\imgui;$(ProjectDir)..\SampleLib12\include;$(ProjectDir)..\External\UVAtlas\UVAtlas\inc;$(ProjectDir)..\External\DirectXMesh\DirectXMesh;$(ProjectDir)..\External\cereal\include;$(ProjectDir)..\External\WinPixEventRuntime\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>RTXGI_COORDINATE_SYSTEM=2;RTXGI_GFX_NAME_OBJECTS;RTXGI_DDGI_RESOURCE_MANAGEMENT=0;RTXGI_DDGI_USE_SHADER_CONFIG_FILE=0;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>

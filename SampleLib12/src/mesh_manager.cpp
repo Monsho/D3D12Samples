@@ -14,7 +14,7 @@ namespace sl12
 		, alignment_(align)
 	{
 		pBuffer_ = new Buffer();
-		bool bSuccess = pBuffer_->Initialize(pDev, initSize, 0, usage, D3D12_RESOURCE_STATE_GENERIC_READ, false, false);
+		bool bSuccess = pBuffer_->Initialize(pDev, initSize, 0, usage, D3D12_RESOURCE_STATE_COMMON, false, false);
 		assert(bSuccess);
 
 		Block block;

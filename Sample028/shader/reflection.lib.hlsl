@@ -4,9 +4,18 @@
 #include "sh.hlsli"
 #include "reflection_ray.hlsli"
 
-#define TMax			10000.0
+#define RayTMax			10000.0
 #ifndef ENABLE_RAY_BINNING
 #	define	ENABLE_RAY_BINNING		0
+#endif
+#ifndef ENABLE_SER
+#	define	ENABLE_SER				0
+#endif
+
+#if ENABLE_SER
+#	define NV_SHADER_EXTN_SLOT u7
+#	define NV_HITOBJECT_USE_MACRO_API
+#	include "../../External/NVAPI/nvHLSLExtns.h"
 #endif
 
 // global
@@ -81,7 +90,7 @@ float3 Lighting(MaterialParam matParam, float3 worldPos, float3 viewDirInWS)
 	float3 direction = -cbLight.lightDir.xyz;
 	float3 origin = worldPos.xyz + normalInWS * 1e-2;
 	uint rayFlags = RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
-	RayDesc rayDesc = { origin, 0.0, direction, TMax };
+	RayDesc rayDesc = { origin, 0.0, direction, RayTMax };
 	HitPayload payload;
 	payload.hitT = -1;
 	TraceRay(TLAS, rayFlags, ~0, kShadowContribution, kGeometricContributionMult, 0, rayDesc, payload);
@@ -178,10 +187,22 @@ void ReflectionRGS()
 
 	uint rayFlags = RAY_FLAG_CULL_NON_OPAQUE;
 	//uint rayFlags = RAY_FLAG_NONE;
-	RayDesc rayDesc = { Ray.origin, 0.0, Ray.direction, TMax };
+	RayDesc rayDesc = { Ray.origin, 0.0, Ray.direction, RayTMax };
 	MaterialPayload payload;
 	payload.hitT = -1;
+#if !ENABLE_SER
 	TraceRay(TLAS, rayFlags, ~0, kMaterialContribution, kGeometricContributionMult, 0, rayDesc, payload);
+#else
+	// trace ray and get hit object.
+	NvHitObject nvHitObj;
+	NvTraceRayHitObject(TLAS, rayFlags, ~0, kMaterialContribution, kGeometricContributionMult, 0, rayDesc, payload, nvHitObj);
+
+	// reorder thread according to hit object.
+	NvReorderThread(nvHitObj);
+
+	// invoke hit object.
+	NvInvokeHitObject(TLAS, nvHitObj, payload);
+#endif
 
 	if (payload.hitT >= 0)
 	{

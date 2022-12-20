@@ -10,15 +10,15 @@ namespace sl12
 	//----
 	bool Buffer::Initialize(Device* pDev, size_t size, size_t stride, BufferUsage::Type type, bool isDynamic, bool isUAV)
 	{
-		auto initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
-		if (!isDynamic)
-		{
-			initialState = D3D12_RESOURCE_STATE_COPY_DEST;
-		}
-		if (type == BufferUsage::ReadBack)
-		{
-			initialState = D3D12_RESOURCE_STATE_COPY_DEST;
-		}
+		auto initialState = D3D12_RESOURCE_STATE_COMMON;
+		//if (!isDynamic)
+		//{
+		//	initialState = D3D12_RESOURCE_STATE_COPY_DEST;
+		//}
+		//if (type == BufferUsage::ReadBack)
+		//{
+		//	initialState = D3D12_RESOURCE_STATE_COPY_DEST;
+		//}
 		return Initialize(pDev, size, stride, type, initialState, isDynamic, isUAV);
 	}
 

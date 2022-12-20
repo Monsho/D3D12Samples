@@ -29,6 +29,13 @@ namespace sl12
 		prop.CreationNodeMask = 1;
 		prop.VisibleNodeMask = 1;
 
+		if (desc.forceSysRam)
+		{
+			prop.Type = D3D12_HEAP_TYPE_CUSTOM;
+			prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
+			prop.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+		}
+
 		D3D12_HEAP_FLAGS flags = D3D12_HEAP_FLAG_NONE;
 
 		resourceDesc_.Dimension = kDimensionTable[desc.dimension];
@@ -99,7 +106,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromDXImage(Device* pDev, const DirectX::ScratchImage& image, bool isForceSRGB)
+	bool Texture::InitializeFromDXImage(Device* pDev, const DirectX::ScratchImage& image, bool isForceSRGB, bool forceSysRam)
 	{
 		if (!pDev)
 		{
@@ -152,6 +159,13 @@ namespace sl12
 		heapProp.CreationNodeMask = 1;
 		heapProp.VisibleNodeMask = 1;
 
+		if (forceSysRam)
+		{
+			heapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+			heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
+			heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+		}
+
 		auto hr = pDev->GetDeviceDep()->CreateCommittedResource(
 			&heapProp,
 			D3D12_HEAP_FLAG_NONE,
@@ -186,7 +200,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromDDS(Device* pDev, CommandList* pCmdList, const void* pDdsBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
+	bool Texture::InitializeFromDDS(Device* pDev, CommandList* pCmdList, const void* pDdsBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB, bool forceSysRam)
 	{
 		auto image = InitializeFromDDSwoLoad(pDev, pDdsBin, size, mipLevels);
 		if (image.get() == nullptr)
@@ -195,7 +209,7 @@ namespace sl12
 		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *image, isForceSRGB))
+		if (!InitializeFromDXImage(pDev, *image, isForceSRGB, forceSysRam))
 		{
 			return false;
 		}
@@ -244,7 +258,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
+	bool Texture::InitializeFromTGA(Device* pDev, CommandList* pCmdList, const void* pTgaBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB, bool forceSysRam)
 	{
 		auto image = InitializeFromTGAwoLoad(pDev, pTgaBin, size, mipLevels);
 		if (image.get() == nullptr)
@@ -253,7 +267,7 @@ namespace sl12
 		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *image, isForceSRGB))
+		if (!InitializeFromDXImage(pDev, *image, isForceSRGB, forceSysRam))
 		{
 			return false;
 		}
@@ -301,7 +315,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB)
+	bool Texture::InitializeFromPNG(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool isForceSRGB, bool forceSysRam)
 	{
 		auto image = InitializeFromPNGwoLoad(pDev, pPngBin, size, mipLevels);
 		if (image.get() == nullptr)
@@ -310,7 +324,7 @@ namespace sl12
 		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *image, isForceSRGB))
+		if (!InitializeFromDXImage(pDev, *image, isForceSRGB, forceSysRam))
 		{
 			return false;
 		}
@@ -391,7 +405,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromEXR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels)
+	bool Texture::InitializeFromEXR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool forceSysRam)
 	{
 		auto image = InitializeFromEXRwoLoad(pDev, pPngBin, size, mipLevels);
 		if (image.get() == nullptr)
@@ -400,7 +414,7 @@ namespace sl12
 		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *image, false))
+		if (!InitializeFromDXImage(pDev, *image, false, forceSysRam))
 		{
 			return false;
 		}
@@ -570,7 +584,7 @@ namespace sl12
 	}
 
 	//----
-	bool Texture::InitializeFromHDR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels)
+	bool Texture::InitializeFromHDR(Device* pDev, CommandList* pCmdList, const void* pPngBin, size_t size, sl12::u32 mipLevels, bool forceSysRam)
 	{
 		auto image = InitializeFromHDRwoLoad(pDev, pPngBin, size, mipLevels);
 		if (image.get() == nullptr)
@@ -579,7 +593,7 @@ namespace sl12
 		}
 
 		// D3D12リソースを作成
-		if (!InitializeFromDXImage(pDev, *image, false))
+		if (!InitializeFromDXImage(pDev, *image, false, forceSysRam))
 		{
 			return false;
 		}

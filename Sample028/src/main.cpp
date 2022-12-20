@@ -46,6 +46,9 @@
 
 #include "../shader/NVIDIA/NIS_Config.h"
 
+#include "nvapi.h"
+#include "nvShaderExtnEnums.h"
+
 #define USE_IN_CPP
 #include "../shader/constant.h"
 #undef USE_IN_CPP
@@ -77,7 +80,7 @@ namespace
 	static const sl12::RaytracingDescriptorCount kRTDescriptorCountGlobal = {
 		4,	// cbv
 		9,	// srv
-		4,	// uav
+		8,	// uav
 		4,	// sampler
 	};
 	static const sl12::RaytracingDescriptorCount kRTDescriptorCountLocal = {
@@ -89,98 +92,52 @@ namespace
 
 	static const char* kShaderFiles[] =
 	{
-		"prepass.vv.hlsl",
-		"prepass.p.hlsl",
-		"gbuffer.vv.hlsl",
-		"gbuffer.p.hlsl",
-		"lighting.c.hlsl",
-		"tonemap.p.hlsl",
-		"tonemap.p.hlsl",
-		"tonemap.p.hlsl",
-		"tonemap.p.hlsl",
-		"tonemap.p.hlsl",
-		"tonemap.p.hlsl",
-		"reduce_depth_1st.p.hlsl",
-		"reduce_depth_2nd.p.hlsl",
-		"reduce_depth_1st.c.hlsl",
-		"reduce_depth_2nd.c.hlsl",
-		"fullscreen.vv.hlsl",
-		"occlusion.lib.hlsl",
-		"material.lib.hlsl",
-		"direct_shadow.lib.hlsl",
-		"reflection_standard.lib.hlsl",
-		"reflection_binning.lib.hlsl",
-		"cluster_cull.c.hlsl",
-		"reset_cull_data.c.hlsl",
-		"cull_1st_phase.c.hlsl",
-		"cull_2nd_phase.c.hlsl",
-		"target_copy.p.hlsl",
-		"AMD/taa.c.hlsl",
-		"AMD/taa.c.hlsl",
-		"AMD/fsr_easu.c.hlsl",
-		"AMD/fsr_rcas.c.hlsl",
-		"NVIDIA/nis_scaler.c.hlsl",
-		"NVIDIA/nis_scaler_hdr.c.hlsl",
-		"compute_sh.c.hlsl",
-		"compute_sh.c.hlsl",
-		"ray_binning.c.hlsl",
-		"ray_gather.c.hlsl",
-		"composite_reflection.p.hlsl",
-		"probe_lighting.lib.hlsl",
-		"debug_probe.vv.hlsl",
-		"debug_probe.p.hlsl",
-		"cull_1dispatch.c.hlsl",
-		"cull_1dispatch.c.hlsl",
-		"cull_1dispatch.c.hlsl",
-		"cull_1dispatch.c.hlsl",
-	};
-
-	static const char* kShaderEntryPoints[] = 
-	{
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"TonemapRec709",
-		"TonemapRec2020",
-		"OetfSRGB",
-		"OetfST2084",
-		"EotfSRGB",
-		"EotfST2084",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"first",
-		"main",
-		"main",
-		"main",
-		"main",
-		"ComputePerFace",
-		"ComputeAll",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"main",
-		"ClearCountCS",
-		"MakeFNDispatchCS",
-		"Cull1stPhaseCS",
-		"Cull2ndPhaseCS",
+		"prepass.vv.hlsl", "main",
+		"prepass.p.hlsl", "main",
+		"gbuffer.vv.hlsl", "main",
+		"gbuffer.p.hlsl", "main",
+		"lighting.c.hlsl", "main",
+		"tonemap.p.hlsl", "TonemapRec709",
+		"tonemap.p.hlsl", "TonemapRec2020",
+		"tonemap.p.hlsl", "OetfSRGB",
+		"tonemap.p.hlsl", "OetfST2084",
+		"tonemap.p.hlsl", "EotfSRGB",
+		"tonemap.p.hlsl", "EotfST2084",
+		"reduce_depth_1st.p.hlsl", "main",
+		"reduce_depth_2nd.p.hlsl", "main",
+		"reduce_depth_1st.c.hlsl", "main",
+		"reduce_depth_2nd.c.hlsl", "main",
+		"fullscreen.vv.hlsl", "main",
+		"occlusion.lib.hlsl", "main",
+		"material.lib.hlsl", "main",
+		"direct_shadow.lib.hlsl", "main",
+		"reflection_standard.lib.hlsl", "main",
+		"reflection_binning.lib.hlsl", "main",
+		"reflection_standard_ser.lib.hlsl", "main",
+		"reflection_binning_ser.lib.hlsl", "main",
+		"cluster_cull.c.hlsl", "main",
+		"reset_cull_data.c.hlsl", "main",
+		"cull_1st_phase.c.hlsl", "main",
+		"cull_2nd_phase.c.hlsl", "main",
+		"target_copy.p.hlsl", "main",
+		"AMD/taa.c.hlsl", "main",
+		"AMD/taa.c.hlsl", "first",
+		"AMD/fsr_easu.c.hlsl", "main",
+		"AMD/fsr_rcas.c.hlsl", "main",
+		"NVIDIA/nis_scaler.c.hlsl", "main",
+		"NVIDIA/nis_scaler_hdr.c.hlsl", "main",
+		"compute_sh.c.hlsl", "ComputePerFace",
+		"compute_sh.c.hlsl", "ComputeAll",
+		"ray_binning.c.hlsl", "main",
+		"ray_gather.c.hlsl", "main",
+		"composite_reflection.p.hlsl", "main",
+		"probe_lighting.lib.hlsl", "main",
+		"debug_probe.vv.hlsl", "main",
+		"debug_probe.p.hlsl", "main",
+		"cull_1dispatch.c.hlsl", "ClearCountCS",
+		"cull_1dispatch.c.hlsl", "MakeFNDispatchCS",
+		"cull_1dispatch.c.hlsl", "Cull1stPhaseCS",
+		"cull_1dispatch.c.hlsl", "Cull2ndPhaseCS",
 	};
 
 	enum ShaderFileKind
@@ -206,6 +163,8 @@ namespace
 		SHADER_DIRECT_SHADOW_LIB,
 		SHADER_REFLECTION_STANDARD_LIB,
 		SHADER_REFLECTION_BINNING_LIB,
+		SHADER_REFLECTION_STANDARD_SER_LIB,
+		SHADER_REFLECTION_BINNING_SER_LIB,
 		SHADER_CLUSTER_CULL_C,
 		SHADER_RESET_CULL_DATA_C,
 		SHADER_CULL_1ST_PHASE_C,
@@ -248,6 +207,8 @@ namespace
 	static LPCWSTR kReflectionMS = L"ReflectionMS";
 	static LPCWSTR kReflectionStandardRGS = L"ReflectionStandardRGS";
 	static LPCWSTR kReflectionBinningRGS = L"ReflectionBinningRGS";
+	static LPCWSTR kReflectionStandardSERRGS = L"ReflectionStandardSERRGS";
+	static LPCWSTR kReflectionBinningSERRGS = L"ReflectionBinningSERRGS";
 	static LPCWSTR kProbeLightingRGS = L"ProbeLightingRGS";
 	static LPCWSTR kProbeLightingMS = L"ProbeLightingMS";
 
@@ -293,6 +254,35 @@ public:
 
 	bool Initialize() override
 	{
+		// check SER support.
+		bSupportSER_ = false;
+		NvAPI_Status nvStatus = NvAPI_Initialize();
+		if (nvStatus == NVAPI_OK)
+		{
+			NvAPI_Status nvStatusSER = NvAPI_D3D12_IsNvShaderExtnOpCodeSupported(device_.GetDeviceDep(), NV_EXTN_OP_HIT_OBJECT_REORDER_THREAD, &bSupportSER_);
+			if (nvStatusSER == NVAPI_OK && bSupportSER_)
+			{
+				NVAPI_D3D12_RAYTRACING_THREAD_REORDERING_CAPS ReorderCaps = NVAPI_D3D12_RAYTRACING_THREAD_REORDERING_CAP_NONE;
+				nvStatusSER = NvAPI_D3D12_GetRaytracingCaps(
+					device_.GetDeviceDep(),
+					NVAPI_D3D12_RAYTRACING_CAPS_TYPE_THREAD_REORDERING,
+					&ReorderCaps,
+					sizeof(ReorderCaps));
+
+				if (nvStatusSER != NVAPI_OK || ReorderCaps == NVAPI_D3D12_RAYTRACING_THREAD_REORDERING_CAP_NONE)
+				{
+					// not support SER.
+					bSupportSER_ = false;
+					sl12::ConsolePrint("Shader Execution Reordering NOT supported.");
+				}
+				else
+				{
+					// set NVIDIA extension.
+					NvAPI_Status nvStatus = NvAPI_D3D12_SetNvShaderExtnSlotSpaceLocalThread(device_.GetDeviceDep(), 7, 0);
+				}
+			}
+		}
+		
 		const auto kSwapchainFormat = device_.GetSwapchain().GetTexture(0)->GetTextureDesc().format;
 
 		// mesh manager for large vertex & index buffer.
@@ -320,17 +310,20 @@ public:
 		cbvCache_.Initialize(&device_);
 
 		// shader compile.
-		if (!shaderManager_.Initialize(&device_, nullptr))
+		const std::string kPDBDir = "E:/Projects/D3D12Samples/Sample028/shader_pdb/";
+		if (!shaderManager_.Initialize(&device_, nullptr, sl12::ShaderPDB::Full, &kPDBDir))
 		{
 			return false;
 		}
 		{
 			for (int i = 0; i < SHADER_MAX; i++)
 			{
+				const auto filename = kShaderFiles[i * 2 + 0];
+				const auto entry = kShaderFiles[i * 2 + 1];
 				hShaders_[i] = shaderManager_.CompileFromFile(
-					kShaderDir + kShaderFiles[i],
-					kShaderEntryPoints[i],
-					sl12::GetShaderTypeFromFileName(kShaderFiles[i]), 6, 5, nullptr, nullptr);
+					kShaderDir + filename,
+					entry,
+					sl12::GetShaderTypeFromFileName(filename), 6, 5, nullptr, nullptr);
 			}
 			while (shaderManager_.IsCompiling())
 			{
@@ -406,7 +399,7 @@ public:
 
 		// create draw count buffer.
 		{
-			if (!DrawCountBuffer_.Initialize(&device_, sizeof(sl12::u32), 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			if (!DrawCountBuffer_.Initialize(&device_, sizeof(sl12::u32), 0, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true))
 			{
 				return false;
 			}
@@ -416,7 +409,7 @@ public:
 			}
 			for (int i = 0; i < kBufferCount; ++i)
 			{
-				if (!DrawCountReadbacks_[i].Initialize(&device_, sizeof(sl12::u32), 0, sl12::BufferUsage::ReadBack, D3D12_RESOURCE_STATE_COPY_DEST, false, false))
+				if (!DrawCountReadbacks_[i].Initialize(&device_, sizeof(sl12::u32), 0, sl12::BufferUsage::ReadBack, D3D12_RESOURCE_STATE_COMMON, false, false))
 				{
 					return false;
 				}
@@ -1324,8 +1317,8 @@ public:
 			sceneRoot_->AttachNode(sponzaMesh_);
 			sceneRoot_->AttachNode(curtainMesh_);
 			sceneRoot_->AttachNode(ivyMesh_);
-			sceneRoot_->AttachNode(suzanneMesh_);
-			sceneRoot_->AttachNode(emissionMesh_);
+			//sceneRoot_->AttachNode(suzanneMesh_);
+			//sceneRoot_->AttachNode(emissionMesh_);
 
 			InitializeRaytracingResource();
 
@@ -1597,6 +1590,12 @@ public:
 				};
 				if (ImGui::Combo("Reflection Display", &reflectionDisplay_, kReflectionDisplays, ARRAYSIZE(kReflectionDisplays)))
 				{
+				}
+				if (bSupportSER_)
+				{
+					if (ImGui::Checkbox("Use SER", &useSER_))
+					{
+					}
 				}
 
 				// draw count.
@@ -2646,7 +2645,7 @@ public:
 					pRayDataBV_ = new sl12::BufferView();
 					pRayDataUAV_ = new sl12::UnorderedAccessView();
 
-					pRayDataBuffer_->Initialize(&device_, kBufferSize, sizeof(RayData), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, false, true);
+					pRayDataBuffer_->Initialize(&device_, kBufferSize, sizeof(RayData), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true);
 					pRayDataBV_->Initialize(&device_, pRayDataBuffer_, 0, kBufferSize / sizeof(RayData), sizeof(RayData));
 					pRayDataUAV_->Initialize(&device_, pRayDataBuffer_, 0, kBufferSize / sizeof(RayData), sizeof(RayData), 0);
 				}
@@ -2712,16 +2711,32 @@ public:
 			desc.MissShaderTable.StrideInBytes = bvhShaderRecordSize_;
 			if (enablePreRayGen_)
 			{
-				desc.RayGenerationShaderRecord.StartAddress = ReflectionBinningRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
-				desc.RayGenerationShaderRecord.SizeInBytes = ReflectionBinningRGSTable_->GetSize();
+				if (useSER_)
+				{
+					desc.RayGenerationShaderRecord.StartAddress = ReflectionBinningSERRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
+					desc.RayGenerationShaderRecord.SizeInBytes = ReflectionBinningSERRGSTable_->GetSize();
+				}
+				else
+				{
+					desc.RayGenerationShaderRecord.StartAddress = ReflectionBinningRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
+					desc.RayGenerationShaderRecord.SizeInBytes = ReflectionBinningRGSTable_->GetSize();
+				}
 				desc.Width = kTileCount * kBinningTileSize * kBinningTileSize;
 				desc.Height = 1;
 				desc.Depth = 1;
 			}
 			else
 			{
-				desc.RayGenerationShaderRecord.StartAddress = ReflectionStandardRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
-				desc.RayGenerationShaderRecord.SizeInBytes = ReflectionStandardRGSTable_->GetSize();
+				if (useSER_)
+				{
+					desc.RayGenerationShaderRecord.StartAddress = ReflectionStandardSERRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
+					desc.RayGenerationShaderRecord.SizeInBytes = ReflectionStandardSERRGSTable_->GetSize();
+				}
+				else
+				{
+					desc.RayGenerationShaderRecord.StartAddress = ReflectionStandardRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
+					desc.RayGenerationShaderRecord.SizeInBytes = ReflectionStandardRGSTable_->GetSize();
+				}
 				desc.Width = renderWidth_;
 				desc.Height = renderHeight_;
 				desc.Depth = 1;
@@ -3899,6 +3914,21 @@ private:
 			};
 			dxrDesc.AddDxilLibrary(shaderBinning->GetData(), shaderBinning->GetSize(), libBinningExport, ARRAYSIZE(libBinningExport));
 
+			if (bSupportSER_)
+			{
+				auto shaderStandardSER = hShaders_[SHADER_REFLECTION_STANDARD_SER_LIB].GetShader();
+				D3D12_EXPORT_DESC libStandardSERExport[] = {
+					{ kReflectionStandardSERRGS,	kReflectionRGSFunc,	D3D12_EXPORT_FLAG_NONE },
+				};
+				dxrDesc.AddDxilLibrary(shaderStandardSER->GetData(), shaderStandardSER->GetSize(), libStandardSERExport, ARRAYSIZE(libStandardSERExport));
+
+				auto shaderBinningSER = hShaders_[SHADER_REFLECTION_BINNING_SER_LIB].GetShader();
+				D3D12_EXPORT_DESC libBinningSERExport[] = {
+					{ kReflectionBinningSERRGS,	kReflectionRGSFunc,	D3D12_EXPORT_FLAG_NONE },
+				};
+				dxrDesc.AddDxilLibrary(shaderBinningSER->GetData(), shaderBinningSER->GetSize(), libBinningSERExport, ARRAYSIZE(libBinningSERExport));
+			}
+
 			// payload size and intersection attr size.
 			dxrDesc.AddShaderConfig(kPayloadSize, sizeof(float) * 2);
 
@@ -4232,13 +4262,18 @@ private:
 		}
 		// for Reflection.
 		{
-			void* rgs_identifier[2];
+			void* rgs_identifier[4];
 			void* ms_identifier;
 			{
 				ID3D12StateObjectProperties* prop;
 				rtRayTracingPSO_.GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
 				rgs_identifier[0] = prop->GetShaderIdentifier(kReflectionStandardRGS);
 				rgs_identifier[1] = prop->GetShaderIdentifier(kReflectionBinningRGS);
+				if (bSupportSER_)
+				{
+					rgs_identifier[2] = prop->GetShaderIdentifier(kReflectionStandardSERRGS);
+					rgs_identifier[3] = prop->GetShaderIdentifier(kReflectionBinningSERRGS);
+				}
 				ms_identifier = prop->GetShaderIdentifier(kReflectionMS);
 				prop->Release();
 			}
@@ -4249,6 +4284,17 @@ private:
 			if (!GenShaderTable(&rgs_identifier[1], 1, ReflectionBinningRGSTable_, 1))
 			{
 				return false;
+			}
+			if (bSupportSER_)
+			{
+				if (!GenShaderTable(&rgs_identifier[2], 1, ReflectionStandardSERRGSTable_, 1))
+				{
+					return false;
+				}
+				if (!GenShaderTable(&rgs_identifier[3], 1, ReflectionBinningSERRGSTable_, 1))
+				{
+					return false;
+				}
 			}
 			if (!GenShaderTable(&ms_identifier, 1, ReflectionMSTable_, 1))
 			{
@@ -4294,6 +4340,8 @@ private:
 		DirectShadowMSTable_.reset();
 		ReflectionStandardRGSTable_.reset();
 		ReflectionBinningRGSTable_.reset();
+		ReflectionStandardSERRGSTable_.reset();
+		ReflectionBinningSERRGSTable_.reset();
 		ReflectionMSTable_.reset();
 		MaterialHGTable_.reset();
 		bvhDescMan_.reset();
@@ -4314,7 +4362,7 @@ private:
 		{
 			return false;
 		}
-		if (!clusterInfoBuffer_.Initialize(&device_, sizeof(ClusterInfo) * CLUSTER_DIV_XY * CLUSTER_DIV_XY * CLUSTER_DIV_Z, sizeof(ClusterInfo), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_GENERIC_READ, false, true))
+		if (!clusterInfoBuffer_.Initialize(&device_, sizeof(ClusterInfo) * CLUSTER_DIV_XY * CLUSTER_DIV_XY * CLUSTER_DIV_Z, sizeof(ClusterInfo), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true))
 		{
 			return false;
 		}
@@ -4419,7 +4467,7 @@ private:
 		if (sh9Buffer_.GetResourceDep() == nullptr)
 		{
 			// create buffer.
-			if (!sh9Buffer_.Initialize(&device_, sizeof(DirectX::XMFLOAT3) * 9, sizeof(DirectX::XMFLOAT3) * 9, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			if (!sh9Buffer_.Initialize(&device_, sizeof(DirectX::XMFLOAT3) * 9, sizeof(DirectX::XMFLOAT3) * 9, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true))
 			{
 				assert(!"Do NOT create SH buffers.");
 			}
@@ -4440,11 +4488,11 @@ private:
 			size_t workSize0 = sizeof(DirectX::XMFLOAT3) * 9 * 6;
 			size_t workSize1 = sizeof(float) * 6;
 
-			if (!pWork0->Initialize(&device_, workSize0, sizeof(DirectX::XMFLOAT3) * 9, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			if (!pWork0->Initialize(&device_, workSize0, sizeof(DirectX::XMFLOAT3) * 9, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true))
 			{
 				assert(!"Do NOT create SH work buffers.");
 			}
-			if (!pWork1->Initialize(&device_, workSize1, sizeof(float), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			if (!pWork1->Initialize(&device_, workSize1, sizeof(float), sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true))
 			{
 				assert(!"Do NOT create SH work buffers.");
 			}
@@ -5089,6 +5137,7 @@ private:
 	bool					isDebugProbe_ = false;
 	bool					isClearProbe_ = true;
 	bool					isReallocateProbe_ = true;
+	bool					useSER_ = false;
 
 	int		frameIndex_ = 0;
 
@@ -5118,6 +5167,8 @@ private:
 	std::unique_ptr<sl12::Buffer>						DirectShadowMSTable_;
 	std::unique_ptr<sl12::Buffer>						ReflectionStandardRGSTable_;
 	std::unique_ptr<sl12::Buffer>						ReflectionBinningRGSTable_;
+	std::unique_ptr<sl12::Buffer>						ReflectionStandardSERRGSTable_;
+	std::unique_ptr<sl12::Buffer>						ReflectionBinningSERRGSTable_;
 	std::unique_ptr<sl12::Buffer>						ReflectionMSTable_;
 	std::unique_ptr<sl12::Buffer>						ProbeLightingRGSTable_;
 	std::unique_ptr<sl12::Buffer>						ProbeLightingMSTable_;
@@ -5129,6 +5180,9 @@ private:
 	std::unique_ptr<FSR2Renderer>						fsr2Renderer_;
 
 	sl12::ColorSpaceType	colorSpaceType_;
+
+	// NVAPI
+	bool					bSupportSER_;
 
 	int						sceneState_ = 0;		// 0:loading scene, 1:main scene
 };	// class SampleApplication

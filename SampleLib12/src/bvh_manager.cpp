@@ -340,7 +340,7 @@ namespace sl12
 			sizeof(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_COMPACTED_SIZE_DESC) * maxCount,
 			0,
 			BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, true))
 		{
 			SafeDelete(pCompactionInfoBuffer_);
@@ -395,7 +395,7 @@ namespace sl12
 				pDevice_->KillObject(pScratchBuffer_);
 			}
 			pScratchBuffer_ = new Buffer();
-			if (!pScratchBuffer_->Initialize(pDevice_, size, 0, BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false, true))
+			if (!pScratchBuffer_->Initialize(pDevice_, size, 0, BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, true))
 			{
 				return false;
 			}

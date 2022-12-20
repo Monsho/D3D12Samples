@@ -47,7 +47,7 @@ namespace sl12
 			sizeof(MeshletBound) * submesh.meshlets.size(),
 			sizeof(MeshletBound),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, false);
 		pBoundsStaging_->Initialize(
 			pDevice,
@@ -60,7 +60,7 @@ namespace sl12
 			sizeof(MeshletDrawInfo) * submesh.meshlets.size(),
 			sizeof(MeshletDrawInfo),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, false);
 		pDrawInfoStaging_->Initialize(
 			pDevice,
@@ -178,28 +178,28 @@ namespace sl12
 			argSize * total_meshlets_count * 2,
 			argSize,
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, true);
 		pIndirectCountBuffer_->Initialize(
 			pDevice,
 			sizeof(u32) * submesh_count * 2,
 			sizeof(u32),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, true);
 		pFalseNegativeBuffer_->Initialize(
 			pDevice,
 			sizeof(u32) * total_meshlets_count,
 			sizeof(u32),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, true);
 		pFalseNegativeCountBuffer_->Initialize(
 			pDevice,
 			sizeof(u32) * submesh_count,
 			sizeof(u32),
 			sl12::BufferUsage::ShaderResource,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_COMMON,
 			false, true);
 
 		pIndirectArgUAV_->Initialize(

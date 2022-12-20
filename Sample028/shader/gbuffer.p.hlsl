@@ -38,6 +38,29 @@ PSOutput main(PSInput In)
 	gb.roughness = lerp(cbMaterial.roughnessRange.x, cbMaterial.roughnessRange.y, orm.g * cbMeshMaterial.roughness) + Epsilon;
 	gb.metallic = lerp(cbMaterial.metallicRange.x, cbMaterial.metallicRange.y, orm.b * cbMeshMaterial.metallic);
 
+	// TEST
+	//float2 uv_in_size = In.uv * 4096.0;
+	//float2 derivX = ddx(uv_in_size);
+	//float2 derivY = ddy(uv_in_size);
+	//float delta_max_sqr = max(dot(derivX, derivX), dot(derivY, derivY));
+	//float mip = max(0, 0.5 * log2(delta_max_sqr));
+	//const float3 kMipColors[12] = {
+	//	float3(1, 0, 0),
+	//	float3(1, 1, 0),
+	//	float3(0, 1, 0),
+	//	float3(0, 1, 1),
+	//	float3(0, 0, 1),
+	//	float3(0.25, 0, 1),
+	//	float3(0.25, 0, 0),
+	//	float3(0.25, 0.25, 0),
+	//	float3(0, 0.25, 0),
+	//	float3(0, 0.25, 0.25),
+	//	float3(0, 0, 0.25),
+	//	float3(0, 0, 0),
+	//};
+	//gb.baseColor.rgb = kMipColors[int(mip)];
+	// TEST
+
 	float3 T, B, N;
 	GetTangentSpace(In.normal, In.tangent, T, B, N);
 	float4 worldQuat = TangentSpaceToQuat(T, B * -sign(In.tangent.w), N);

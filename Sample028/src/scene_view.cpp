@@ -190,7 +190,7 @@ namespace sl12
 
 			auto CreateBuffer = [&](const void* pData, size_t size, size_t stride, D3D12_RESOURCE_STATES initState, bool isUAV)
 			{
-				D3D12_RESOURCE_STATES state = (pData != nullptr) ? D3D12_RESOURCE_STATE_COPY_DEST : initState;
+				D3D12_RESOURCE_STATES state = (pData != nullptr) ? D3D12_RESOURCE_STATE_COMMON : initState;
 				Buffer* ret = new Buffer();
 				ret->Initialize(pParentDevice_, size, stride, BufferUsage::ShaderResource, state, false, isUAV);
 
@@ -221,15 +221,15 @@ namespace sl12
 			pConstantCBV_->Initialize(pParentDevice_, pConstant_);
 
 			// create buffers.
-			pCullUnit_ = CreateBuffer(cullUnits.data(), cullUnits.size() * sizeof(CullUnitData), sizeof(CullUnitData), D3D12_RESOURCE_STATE_GENERIC_READ, false);
-			pIndirectArg_ = CreateBuffer(nullptr, cullUnits.size() * 2 * sizeof(IndirectArgData), sizeof(u32), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-			pDrawCount_ = CreateBuffer(nullptr, (batches.size() * 2 + 1) * sizeof(u32), sizeof(u32), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-			pFalseNegativeIndex_ = CreateBuffer(nullptr, cullUnits.size() * sizeof(u32), sizeof(u32), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, true);
-			pFalseNegativeIndirect_ = CreateBuffer(nullptr, 3 * sizeof(u32), sizeof(u32), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-			pInstanceData_ = CreateBuffer(nullptr, drawMeshCmds_.size() * sizeof(InstanceData), sizeof(InstanceData), D3D12_RESOURCE_STATE_GENERIC_READ, false);
-			pBatchData_ = CreateBuffer(batches.data(), batches.size() * sizeof(BatchData), sizeof(BatchData), D3D12_RESOURCE_STATE_GENERIC_READ, false);
-			pMeshletBoundData_ = CreateBuffer(meshletBounds.data(), meshletBounds.size() * sizeof(MeshletBoundData), sizeof(MeshletBoundData), D3D12_RESOURCE_STATE_GENERIC_READ, false);
-			pMeshletDrawData_ = CreateBuffer(meshletDraws.data(), meshletDraws.size() * sizeof(MeshletDrawData), sizeof(MeshletDrawData), D3D12_RESOURCE_STATE_GENERIC_READ, false);
+			pCullUnit_ = CreateBuffer(cullUnits.data(), cullUnits.size() * sizeof(CullUnitData), sizeof(CullUnitData), D3D12_RESOURCE_STATE_COMMON, false);
+			pIndirectArg_ = CreateBuffer(nullptr, cullUnits.size() * 2 * sizeof(IndirectArgData), sizeof(u32), D3D12_RESOURCE_STATE_COMMON, true);
+			pDrawCount_ = CreateBuffer(nullptr, (batches.size() * 2 + 1) * sizeof(u32), sizeof(u32), D3D12_RESOURCE_STATE_COMMON, true);
+			pFalseNegativeIndex_ = CreateBuffer(nullptr, cullUnits.size() * sizeof(u32), sizeof(u32), D3D12_RESOURCE_STATE_COMMON, true);
+			pFalseNegativeIndirect_ = CreateBuffer(nullptr, 3 * sizeof(u32), sizeof(u32), D3D12_RESOURCE_STATE_COMMON, true);
+			pInstanceData_ = CreateBuffer(nullptr, drawMeshCmds_.size() * sizeof(InstanceData), sizeof(InstanceData), D3D12_RESOURCE_STATE_COMMON, false);
+			pBatchData_ = CreateBuffer(batches.data(), batches.size() * sizeof(BatchData), sizeof(BatchData), D3D12_RESOURCE_STATE_COMMON, false);
+			pMeshletBoundData_ = CreateBuffer(meshletBounds.data(), meshletBounds.size() * sizeof(MeshletBoundData), sizeof(MeshletBoundData), D3D12_RESOURCE_STATE_COMMON, false);
+			pMeshletDrawData_ = CreateBuffer(meshletDraws.data(), meshletDraws.size() * sizeof(MeshletDrawData), sizeof(MeshletDrawData), D3D12_RESOURCE_STATE_COMMON, false);
 
 			// create views.
 			pCullUnitBV_ = new BufferView();

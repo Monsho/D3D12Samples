@@ -143,7 +143,7 @@ namespace sl12
 		{
 			sl12::u32 stride = sizeof(rtxgi::DDGIVolumeDescGPUPacked);
 			sl12::u32 size = stride * numVolumes;
-			if (!constantSTB_.Initialize(pParentDevice_, size, stride, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COPY_DEST, false, false))
+			if (!constantSTB_.Initialize(pParentDevice_, size, stride, sl12::BufferUsage::ShaderResource, D3D12_RESOURCE_STATE_COMMON, false, false))
 			{
 				return false;
 			}
